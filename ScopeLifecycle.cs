@@ -103,6 +103,7 @@ namespace ScopeHousingMeshSurgery
 
                 // Notify FOV controller the mode changed so it re-reads ScopeCameraData
                 FovController.OnModeSwitch();
+                ZoomController.OnModeSwitch();
 
                 // RESTORE all meshes first, then re-cut with new mode's plane position.
                 if (ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)

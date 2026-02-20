@@ -27,6 +27,7 @@ namespace ScopeHousingMeshSurgery
         private static bool  _fovRangeDiscovered;  // true once DiscoverFovRange has run for this scope
         private static bool  _isVariableZoom;      // true if ScopeZoomHandler was found (has zoom ring)
         private static float _scrollStartNativeFov; // native FOV when scroll zoom first activated
+        private static float _lastNativeFovForSwitchDetect; // rolling native FOV while scroll override is active
 
         /// <summary>Shader zoom is disabled permanently.</summary>
         public static bool ShaderAvailable => false;
@@ -109,15 +110,15 @@ namespace ScopeHousingMeshSurgery
                 // scroll zoom so the native change takes effect.
                 if (_scrollZoomActive && _scrollZoomFov > 0f)
                 {
-                    if (Mathf.Abs(scopeFov - _scrollStartNativeFov) > 0.3f)
+                    if (Mathf.Abs(scopeFov - _lastNativeFovForSwitchDetect) > 0.03f)
                     {
                         ScopeHousingMeshSurgeryPlugin.LogInfo(
-                            $"[ZoomController] Native FOV changed {_scrollStartNativeFov:F2}° → {scopeFov:F2}° — resetting scroll zoom");
-                        _scrollZoomActive = false;
-                        _scrollZoomFov = 0f;
+                            $"[ZoomController] Native FOV changed {_lastNativeFovForSwitchDetect:F2}° → {scopeFov:F2}° — resetting scroll zoom");
+                        ClearScrollOverride();
                     }
                     else
                     {
+                        _lastNativeFovForSwitchDetect = scopeFov;
                         return 35f / _scrollZoomFov;
                     }
                 }
@@ -180,8 +181,11 @@ namespace ScopeHousingMeshSurgery
             {
                 _scrollZoomFov = _nativeFov;
                 _scrollStartNativeFov = _nativeFov;
+                _lastNativeFovForSwitchDetect = _nativeFov;
                 _scrollZoomActive = true;
             }
+
+            float before = _scrollZoomFov;
 
             // Multiplicative scaling in FOV space:
             // scroll up (+) = zoom in = smaller FOV → divide
@@ -194,6 +198,9 @@ namespace ScopeHousingMeshSurgery
 
             _scrollZoomFov = Mathf.Clamp(_scrollZoomFov, minFov, maxFov);
 
+            if (Mathf.Abs(_scrollZoomFov - before) < 0.0001f)
+                return false;
+
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[ZoomController] Scroll zoom: FOV={_scrollZoomFov:F2}° (range={minFov:F2}°-{maxFov:F2}°)");
 
@@ -205,11 +212,30 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void ResetScrollZoom()
         {
+            ClearScrollOverride();
+            _fovRangeDiscovered = false;
+            _isVariableZoom = false;
+        }
+
+        /// <summary>
+        /// Clears only the transient scroll override state.
+        /// </summary>
+        private static void ClearScrollOverride()
+        {
             _scrollZoomActive = false;
             _scrollZoomFov = 0f;
             _scrollStartNativeFov = 0f;
+            _lastNativeFovForSwitchDetect = 0f;
+        }
+
+        /// <summary>
+        /// Called when optic mode changes (mode_000 -> mode_001, etc.).
+        /// Forces FOV range re-discovery and clears any active scroll override.
+        /// </summary>
+        public static void OnModeSwitch()
+        {
             _fovRangeDiscovered = false;
-            _isVariableZoom = false;
+            ClearScrollOverride();
         }
 
         /// <summary>
@@ -283,14 +309,22 @@ namespace ScopeHousingMeshSurgery
 
                 if (maxFov > 0.1f && minFov > 0.1f && maxFov > minFov)
                 {
-                    // Double FOV values to match the ×2 applied in GetScopeFov
-                    maxFov *= 2f;
-                    minFov *= 2f;
-                    _nativeMaxFov = maxFov;
-                    _nativeMinFov = minFov;
+                    float rawMax = maxFov;
+                    float rawMin = minFov;
+
+                    float scale = 1f;
+                    bool fits1 = (_nativeFov >= rawMin - 0.05f) && (_nativeFov <= rawMax + 0.05f);
+                    bool fits2 = (_nativeFov >= (rawMin * 2f) - 0.05f) && (_nativeFov <= (rawMax * 2f) + 0.05f);
+                    if (!fits1 && fits2) scale = 2f;
+
+                    maxFov = rawMax * scale;
+                    minFov = rawMin * scale;
+
+                    _nativeMinFov = Mathf.Min(minFov, maxFov);
+                    _nativeMaxFov = Mathf.Max(minFov, maxFov);
                     _isVariableZoom = true;
                     ScopeHousingMeshSurgeryPlugin.LogInfo(
-                        $"[ZoomController] Discovered FOV range: {minFov:F2}° - {maxFov:F2}° " +
+                        $"[ZoomController] Discovered FOV range: {_nativeMinFov:F2}° - {_nativeMaxFov:F2}° " +
                         $"(variable zoom — scroll zoom enabled)");
                 }
                 else
