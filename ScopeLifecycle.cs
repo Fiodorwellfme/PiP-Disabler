@@ -102,6 +102,7 @@ namespace ScopeHousingMeshSurgery
                     ScopeEffectsRenderer.Cleanup();
                     LensTransparency.RestoreAll();
                     CameraSettingsManager.Restore();
+                    PiPDisabler.RestoreAllCameras();
                     if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
                         MeshSurgeryManager.RestoreForScope(os.transform);
                     PlaneVisualizer.Hide();
@@ -337,6 +338,7 @@ namespace ScopeHousingMeshSurgery
 
                 LensTransparency.RestoreAll();
                 CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
                 PlaneVisualizer.Hide();
                 ZeroingController.Reset();
                 return;

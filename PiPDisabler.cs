@@ -58,6 +58,13 @@ internal static void TickBaseOpticCamera()
         {
             if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
 
+            // Auto-bypass for high-mag scopes must re-enable vanilla PiP.
+            if (ScopeLifecycle.IsModBypassedForCurrentScope)
+            {
+                RestoreAllCameras();
+                return;
+            }
+
             // Scan occasionally to find BaseOpticCamera if/when it spawns.
             if (_baseOpticCams.Count == 0 || Time.frameCount >= _nextBaseScanFrame)
             {
