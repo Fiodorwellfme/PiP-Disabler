@@ -279,7 +279,7 @@ namespace ScopeHousingMeshSurgery
                     "Offset (meters) for plane 1 from linza/backLens origin along bore axis.\n" +
                     "Plane 1 radius is always CylinderRadius.",
                     new AcceptableValueRange<float>(-0.02f, 0.02f)));
-            Plane2Position = Config.Bind("3. Mesh Surgery", "Plane2Position", 0.25f,
+            Plane2Position = Config.Bind("3. Mesh Surgery", "Plane2Position", 0.05751174f,
                 new ConfigDescription(
                     "Normalized depth of plane 2 from near (0) to far (1).",
                     new AcceptableValueRange<float>(0f, 1f)));
@@ -291,7 +291,7 @@ namespace ScopeHousingMeshSurgery
                 new ConfigDescription(
                     "Normalized depth of plane 3 from near (0) to far (1).",
                     new AcceptableValueRange<float>(0f, 1f)));
-            Plane3Radius = Config.Bind("3. Mesh Surgery", "Plane3Radius", 0.02f,
+            Plane3Radius = Config.Bind("3. Mesh Surgery", "Plane3Radius", 0.2f,
                 new ConfigDescription(
                     "Radius (meters) at plane 3.",
                     new AcceptableValueRange<float>(0f, 0.2f)));
@@ -299,24 +299,24 @@ namespace ScopeHousingMeshSurgery
                 new ConfigDescription(
                     "Normalized depth of plane 4 from near (0) to far (1). Usually 1.",
                     new AcceptableValueRange<float>(0f, 1f)));
-            Plane4Radius = Config.Bind("3. Mesh Surgery", "Plane4Radius", 0.12f,
+            Plane4Radius = Config.Bind("3. Mesh Surgery", "Plane4Radius", 0.2f,
                 new ConfigDescription(
                     "Radius (meters) at plane 4 (away from player).",
                     new AcceptableValueRange<float>(0f, 0.2f)));
-            CutStartOffset = Config.Bind("3. Mesh Surgery", "CutStartOffset", 0.064f,
+            CutStartOffset = Config.Bind("3. Mesh Surgery", "CutStartOffset", 0.04084507f,
                 new ConfigDescription(
                     "How far behind the backLens (toward the camera) the near cut plane starts.\n" +
                     "The near plane is fixed at: backLens - (offset × boreAxis).\n" +
                     "0 = starts exactly at the backLens. 0.05 = 5cm behind it (catches interior tube geometry).\n" +
                     "Changing CutLength does NOT move this plane.",
                     new AcceptableValueRange<float>(0f, 0.3f)));
-            CutLength = Config.Bind("3. Mesh Surgery", "CutLength", 0.30f,
+            CutLength = Config.Bind("3. Mesh Surgery", "CutLength", 0.755493f,
                 new ConfigDescription(
                     "How far forward from the near plane the cut extends (toward the objective).\n" +
                     "The far plane is at: nearPlane + (length × boreAxis).\n" +
                     "Only the far plane moves when you change this value.",
                     new AcceptableValueRange<float>(0.01f, 1f)));
-            NearPreserveDepth = Config.Bind("3. Mesh Surgery", "NearPreserveDepth", 0.01f,
+            NearPreserveDepth = Config.Bind("3. Mesh Surgery", "NearPreserveDepth", 0.03042253f,
                 new ConfigDescription(
                     "Depth (meters) from the near cut plane where NO geometry is cut.\n" +
                     "Preserves the eyepiece housing closest to the camera so you\n" +
@@ -353,7 +353,7 @@ namespace ScopeHousingMeshSurgery
                     "0 = Unity default.  -1 = subtle sharpening.  -2 = very crisp at the cost\n" +
                     "of slight shimmering.  Adjust to taste with your scope.",
                     new AcceptableValueRange<float>(-4f, 0f)));
-            AdsSettledThreshold = Config.Bind("3. Mesh Surgery", "AdsSettledThreshold", 0.0001f,
+            AdsSettledThreshold = Config.Bind("3. Mesh Surgery", "AdsSettledThreshold", 0.006244131f,
                 new ConfigDescription(
                     "Lens movement threshold (units/frame) below which the weapon is\n" +
                     "considered settled after ADS-in.  The reticle/vignette/shadow are\n" +
@@ -377,21 +377,21 @@ namespace ScopeHousingMeshSurgery
             VignetteEnabled = Config.Bind("4. Scope Effects", "VignetteEnabled", true,
                 "Render a circular vignette ring around the scope aperture.\n" +
                 "A world-space quad at the lens position fading from transparent centre to black edge.");
-            VignetteOpacity = Config.Bind("4. Scope Effects", "VignetteOpacity", 0.85f,
+            VignetteOpacity = Config.Bind("4. Scope Effects", "VignetteOpacity", 0.5823944f,
                 new ConfigDescription("Maximum opacity of the lens vignette ring (0=invisible, 1=full black).",
                     new AcceptableValueRange<float>(0f, 1f)));
-            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 1.25f,
+            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 0.2730047f,
                 new ConfigDescription(
                     "Vignette quad diameter as a multiplier of ReticleBaseSize.\n" +
                     "1.0 = same size as reticle.  1.5 gives a visible border ring.\n" +
                     "Higher values (5-15) may be needed for high-magnification scopes.",
                     new AcceptableValueRange<float>(0.5f, 15f)));
-            VignetteSoftness = Config.Bind("4. Scope Effects", "VignetteSoftness", 0.35f,
+            VignetteSoftness = Config.Bind("4. Scope Effects", "VignetteSoftness", 1f,
                 new ConfigDescription(
                     "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
                     new AcceptableValueRange<float>(0f, 1f)));
 
-            ScopeShadowEnabled = Config.Bind("4. Scope Effects", "ScopeShadowEnabled", true,
+            ScopeShadowEnabled = Config.Bind("4. Scope Effects", "ScopeShadowEnabled", false,
                 "Overlay a fullscreen scope-tube shadow: black everywhere except a transparent\n" +
                 "circular window in the centre.  Simulates looking down a scope tube.");
             ScopeShadowOpacity = Config.Bind("4. Scope Effects", "ScopeShadowOpacity", 0.92f,
