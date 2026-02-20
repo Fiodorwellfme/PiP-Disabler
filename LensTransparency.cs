@@ -69,25 +69,22 @@ namespace ScopeHousingMeshSurgery
                               || ScopeHousingMeshSurgeryPlugin.DisablePiP.Value;
             if (!shouldHide) return;
 
-            Transform scopeRoot = FindScopeRoot(os.transform);
-            if (scopeRoot == null)
-                scopeRoot = os.transform.parent ?? os.transform;
-
-            // Expand search root upward through mod_scope/mount/optic containers
-            // (same logic as MeshSurgeryManager.FindTargetMeshFilters) to catch glass
-            // meshes that may live above scopeRoot.
-            Transform searchRoot = ExpandSearchRoot(scopeRoot);
+            // Only operate inside the current optic mode subtree.
+            // Hybrid sights keep multiple mode_* branches, and killing lenses outside
+            // the active OpticSight transform can destroy the collimator reticle.
+            Transform searchRoot = os.transform;
 
             // Always dump hierarchy on first enter
             DumpHierarchy(searchRoot);
 
-            // Kill all lens renderers found anywhere under the expanded root
+            // Kill lens renderers only inside the active optic mode subtree.
             var allRenderers = searchRoot.GetComponentsInChildren<Renderer>(true);
             int killed = 0;
             foreach (var r in allRenderers)
             {
                 if (r == null) continue;
-                if (IsLensSurface(r))
+                if (!IsDescendantOf(r.transform, os.transform)) continue;
+                if (IsLensSurface(r) && !ShouldSkipForCollimator(r))
                 {
                     KillMesh(r);
                     killed++;
@@ -100,8 +97,11 @@ namespace ScopeHousingMeshSurgery
                 var lens = os.LensRenderer;
                 if (lens != null)
                 {
-                    KillMesh(lens);
-                    killed++;
+                    if (IsDescendantOf(lens.transform, os.transform) && !ShouldSkipForCollimator(lens))
+                    {
+                        KillMesh(lens);
+                        killed++;
+                    }
                 }
             }
             catch { }
@@ -148,9 +148,6 @@ namespace ScopeHousingMeshSurgery
                 }
                 if (e.Renderer != null)
                 {
-                    if (e.Renderer.enabled)
-                        e.Renderer.enabled = false;
-
                     // Re-force material properties (EFT can reset these via CommandBuffer)
                     ForceMaterialTransparent(e.Renderer);
                 }
@@ -178,7 +175,6 @@ namespace ScopeHousingMeshSurgery
                     if (e.Renderer != null)
                     {
                         e.Renderer.forceRenderingOff = e.WasForceOff;
-                        e.Renderer.enabled = e.WasEnabled;
 
                         // Restore original shared materials (undoes our property forcing)
                         if (e.OriginalMaterials != null)
@@ -188,7 +184,7 @@ namespace ScopeHousingMeshSurgery
                         }
 
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' enabled={e.WasEnabled} forceOff={e.WasForceOff}");
+                            $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' forceOff={e.WasForceOff}");
                     }
                 }
                 catch { }
@@ -233,8 +229,8 @@ namespace ScopeHousingMeshSurgery
             };
             _hidden.Add(entry);
 
-            // Disable renderer as secondary kill switch
-            r.enabled = false;
+            // Keep renderer enabled state untouched; hybrid sights can manage this
+            // dynamically between optic/collimator modes.
             r.forceRenderingOff = true;
 
             // Force material properties to transparent as tertiary kill switch.
@@ -361,40 +357,40 @@ namespace ScopeHousingMeshSurgery
             return false;
         }
 
-        /// <summary>
-        /// Expand search root upward through scope/mod/mount container parents.
-        /// Mirrors the logic in MeshSurgeryManager.FindTargetMeshFilters so we catch
-        /// glass/lens meshes that live above the scopeRoot in the hierarchy.
-        /// </summary>
-        private static Transform ExpandSearchRoot(Transform scopeRoot)
+        private static bool IsDescendantOf(Transform child, Transform parent)
         {
-            Transform searchRoot = scopeRoot;
-            for (var p = scopeRoot.parent; p != null; p = p.parent)
-            {
-                var pName = p.name ?? "";
-                var plo = pName.ToLowerInvariant();
-                // Stop at weapon root
-                if (plo.Contains("weapon") || plo.Contains("receiver") || plo.Contains("anim"))
-                    break;
-                // Climb through scope/mod/optic/mount containers
-                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount"))
-                {
-                    searchRoot = p;
-                    continue;
-                }
-                break;
-            }
-
-            if (searchRoot != scopeRoot)
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[LensTransparency] Expanded search root: '{scopeRoot.name}' → '{searchRoot.name}'");
-
-            return searchRoot;
+            if (child == null || parent == null) return false;
+            return child == parent || child.IsChildOf(parent);
         }
 
-        private static Transform FindScopeRoot(Transform t)
+        private static bool ShouldSkipForCollimator(Renderer r)
         {
-            return ScopeHierarchy.FindScopeRoot(t);
+            if (r == null) return true;
+
+            try
+            {
+                if (r.GetComponentInParent<CollimatorSight>(true) != null)
+                    return true;
+            }
+            catch { }
+
+            try
+            {
+                var mats = r.sharedMaterials;
+                if (mats != null)
+                {
+                    for (int i = 0; i < mats.Length; i++)
+                    {
+                        var shaderName = mats[i]?.shader?.name;
+                        if (!string.IsNullOrEmpty(shaderName) &&
+                            shaderName.IndexOf("Collimator", StringComparison.OrdinalIgnoreCase) >= 0)
+                            return true;
+                    }
+                }
+            }
+            catch { }
+
+            return false;
         }
 
         // ===== Diagnostics =====

@@ -157,8 +157,22 @@ namespace ScopeHousingMeshSurgery
                 bool isOptic = (bool)_isOpticProp.GetValue(currentScope);
                 if (!isOptic) { reason = "not optic"; goto evaluate; }
 
+                var enabledOs = FindEnabledOpticFromPWA();
+                if (enabledOs == null)
+                {
+                    // Hybrid toggle case: CurrentScope may still report optic while the
+                    // enabled OpticSight switched off (e.g., now in collimator mode).
+                    // Force scope exit immediately so RestoreAll runs without waiting for
+                    // a full ADS exit.
+                    shouldBeScoped = false;
+                    reason = "optic flag true but no enabled OpticSight";
+                    goto evaluate;
+                }
+
                 shouldBeScoped = true;
-                reason = "aiming+optic";
+                _activeOptic = enabledOs;
+                _lastEnabledOptic = enabledOs;
+                reason = "aiming+optic+enabled OpticSight";
             }
             catch (Exception ex) { reason = $"exception: {ex.Message}"; }
 
@@ -530,6 +544,32 @@ namespace ScopeHousingMeshSurgery
                 foreach (var os in all)
                 {
                     if (os != null) return os;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Finds an enabled OpticSight, preferring active and cached instances before
+        /// a global search.
+        /// </summary>
+        private static OpticSight FindEnabledOpticFromPWA()
+        {
+            if (_activeOptic != null && _activeOptic.isActiveAndEnabled)
+                return _activeOptic;
+
+            if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled)
+                return _lastEnabledOptic;
+
+            try
+            {
+                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
+                foreach (var os in all)
+                {
+                    if (os != null && os.isActiveAndEnabled)
+                        return os;
                 }
             }
             catch { }
