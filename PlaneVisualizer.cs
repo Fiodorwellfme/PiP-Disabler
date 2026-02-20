@@ -63,12 +63,11 @@ namespace ScopeHousingMeshSurgery
 
                 if (isCylinder)
                 {
-                    float nearR = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
-                    float farR = ScopeHousingMeshSurgeryPlugin.FarCylinderRadius.Value;
-                    if (farR <= 0f) farR = nearR;
+                    float p1R = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
+                    float p4R = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
 
-                    _nearGO.transform.localScale = Vector3.one * nearR * 2f;
-                    _farGO.transform.localScale = Vector3.one * farR * 2f;
+                    _nearGO.transform.localScale = Vector3.one * p1R * 2f;
+                    _farGO.transform.localScale = Vector3.one * p4R * 2f;
                     _nearGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
                     _farGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
                 }
@@ -90,15 +89,17 @@ namespace ScopeHousingMeshSurgery
             // --- 3D tube volume (ShowCutVolume) ---
             if (showVolume && isCylinder)
             {
-                float nearR = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
-                float farR = ScopeHousingMeshSurgeryPlugin.FarCylinderRadius.Value;
-                float midR = ScopeHousingMeshSurgeryPlugin.MidCylinderRadius.Value;
-                float midPos = ScopeHousingMeshSurgeryPlugin.MidCylinderPosition.Value;
+                float p1R = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
+                float p2R = ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value;
+                float p2Pos = ScopeHousingMeshSurgeryPlugin.Plane2Position.Value;
+                float p3R = ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value;
+                float p3Pos = ScopeHousingMeshSurgeryPlugin.Plane3Position.Value;
+                float p4R = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
+                float p4Pos = ScopeHousingMeshSurgeryPlugin.Plane4Position.Value;
                 float opacity = ScopeHousingMeshSurgeryPlugin.CutVolumeOpacity.Value;
-                if (farR <= 0f) farR = nearR;
 
-                int hash = ComputeTubeHash(nearR, midR, midPos, farR, cutLength);
-                EnsureTubeCreated(nearR, midR, midPos, farR, cutLength, opacity, hash);
+                int hash = ComputeTubeHash(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, cutLength);
+                EnsureTubeCreated(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, cutLength, opacity, hash);
 
                 // Update opacity in real-time without regenerating mesh
                 if (_tubeMat != null)
@@ -124,7 +125,7 @@ namespace ScopeHousingMeshSurgery
                     EnsurePreserveRingCreated();
                     // Compute the radius at the preserve boundary using the same profile
                     float preserveT = cutLength > 1e-5f ? Mathf.Clamp01(preserve / cutLength) : 0f;
-                    float preserveR = MeshPlaneCutter.RadiusAtT(preserveT, nearR, midR, midPos, farR);
+                    float preserveR = MeshPlaneCutter.RadiusAtT4(preserveT, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos);
                     Vector3 preservePos = nearPos + planeNormal * preserve;
                     _preserveRingGO.SetActive(true);
                     _preserveRingGO.transform.position = preservePos;
@@ -190,28 +191,31 @@ namespace ScopeHousingMeshSurgery
         //  3D Tube Volume
         // ============================
 
-        private static int ComputeTubeHash(float nearR, float midR, float midPos, float farR, float len)
+        private static int ComputeTubeHash(float p1R, float p2R, float p2Pos, float p3R, float p3Pos, float p4R, float p4Pos, float len)
         {
             unchecked
             {
                 int h = 17;
-                h = h * 31 + nearR.GetHashCode();
-                h = h * 31 + midR.GetHashCode();
-                h = h * 31 + midPos.GetHashCode();
-                h = h * 31 + farR.GetHashCode();
+                h = h * 31 + p1R.GetHashCode();
+                h = h * 31 + p2R.GetHashCode();
+                h = h * 31 + p2Pos.GetHashCode();
+                h = h * 31 + p3R.GetHashCode();
+                h = h * 31 + p3Pos.GetHashCode();
+                h = h * 31 + p4R.GetHashCode();
+                h = h * 31 + p4Pos.GetHashCode();
                 h = h * 31 + len.GetHashCode();
                 return h;
             }
         }
 
-        private static void EnsureTubeCreated(float nearR, float midR, float midPos, float farR,
+        private static void EnsureTubeCreated(float p1R, float p2R, float p2Pos, float p3R, float p3Pos, float p4R, float p4Pos,
             float cutLen, float opacity, int hash)
         {
             if (_tubeGO != null && _lastTubeHash == hash) return;
 
             // Regenerate mesh when config changes
             if (_tubeMesh != null) Object.Destroy(_tubeMesh);
-            _tubeMesh = GenerateTubeMesh(nearR, midR, midPos, farR, cutLen);
+            _tubeMesh = GenerateTubeMesh(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, cutLen);
 
             if (_tubeGO == null)
             {
@@ -230,7 +234,7 @@ namespace ScopeHousingMeshSurgery
         /// Double-sided (visible from both inside and outside the bore).
         /// End caps included so the volume appears as a solid shape.
         /// </summary>
-        private static Mesh GenerateTubeMesh(float nearR, float midR, float midPos, float farR, float cutLen)
+        private static Mesh GenerateTubeMesh(float p1R, float p2R, float p2Pos, float p3R, float p3Pos, float p4R, float p4Pos, float cutLen)
         {
             const int segments = 32;   // circumferential resolution
             const int rings = 20;      // longitudinal resolution
@@ -245,7 +249,7 @@ namespace ScopeHousingMeshSurgery
             {
                 float t = (float)r / rings;
                 float z = t * cutLen;
-                float radius = GetRadiusAtT(t, nearR, midR, midPos, farR);
+                float radius = GetRadiusAtT(t, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos);
 
                 for (int s = 0; s <= segments; s++)
                 {
@@ -282,11 +286,11 @@ namespace ScopeHousingMeshSurgery
 
             // ── Near cap (z = 0) ────────────────────────────────────────
             AddCapDisc(verts, norms, uvs, tris, segments,
-                GetRadiusAtT(0f, nearR, midR, midPos, farR), 0f, -Vector3.forward);
+                GetRadiusAtT(0f, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos), 0f, -Vector3.forward);
 
             // ── Far cap (z = cutLen) ────────────────────────────────────
             AddCapDisc(verts, norms, uvs, tris, segments,
-                GetRadiusAtT(1f, nearR, midR, midPos, farR), cutLen, Vector3.forward);
+                GetRadiusAtT(1f, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos), cutLen, Vector3.forward);
 
             var mesh = new Mesh { name = "CutVolumeTube" };
             mesh.SetVertices(verts);
@@ -297,7 +301,7 @@ namespace ScopeHousingMeshSurgery
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[PlaneVis] Generated tube: verts={verts.Count} tris={tris.Count / 3} " +
-                $"nearR={nearR:F4} midR={midR:F4}@{midPos:F2} farR={farR:F4} len={cutLen:F3}");
+                $"p1R={p1R:F4}@0.00 p2R={p2R:F4}@{p2Pos:F2} p3R={p3R:F4}@{p3Pos:F2} p4R={p4R:F4}@{p4Pos:F2} len={cutLen:F3}");
 
             return mesh;
         }
@@ -340,9 +344,9 @@ namespace ScopeHousingMeshSurgery
         /// Compute radius at normalized position t (0=near, 1=far).
         /// Delegates to MeshPlaneCutter.RadiusAtT so visualizer and cutter always agree.
         /// </summary>
-        private static float GetRadiusAtT(float t, float nearR, float midR, float midPos, float farR)
+        private static float GetRadiusAtT(float t, float p1R, float p2R, float p2Pos, float p3R, float p3Pos, float p4R, float p4Pos)
         {
-            return MeshPlaneCutter.RadiusAtT(t, nearR, midR, midPos, farR);
+            return MeshPlaneCutter.RadiusAtT4(t, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos);
         }
 
         // ============================

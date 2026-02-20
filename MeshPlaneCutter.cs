@@ -260,6 +260,9 @@ namespace ScopeHousingMeshSurgery
             float midRadius = 0f,
             float midPosition = 0.5f,
             float nearPreserveDepth = 0f,
+            float plane3Radius = 0f,
+            float plane3Position = 0.66f,
+            float plane4Position = 1f,
             float epsilon = 1e-5f)
         {
             if (mesh == null || nearRadius <= 0 || length <= 0) return false;
@@ -278,6 +281,9 @@ namespace ScopeHousingMeshSurgery
             float localStart = avgScale > 0.001f ? startOffset / avgScale : startOffset;
             float localLen   = avgScale > 0.001f ? length / avgScale : length;
             float localMidPos = Mathf.Clamp01(midPosition);
+            float localP3Pos = Mathf.Clamp01(plane3Position);
+            float localP4Pos = Mathf.Clamp01(plane4Position);
+            float localP3R = plane3Radius > 0f ? (avgScale > 0.001f ? plane3Radius / avgScale : plane3Radius) : 0f;
             float localPreserve = nearPreserveDepth > 0f
                 ? (avgScale > 0.001f ? nearPreserveDepth / avgScale : nearPreserveDepth)
                 : 0f;
@@ -292,16 +298,17 @@ namespace ScopeHousingMeshSurgery
                 // Sample the profile at 5 points for visual verification
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[MeshCutter] Profile samples: " +
-                    $"t=0.0→r={RadiusAtT(0f, localNearR, localMidR, localMidPos, localFarR):F5} " +
-                    $"t=0.25→r={RadiusAtT(0.25f, localNearR, localMidR, localMidPos, localFarR):F5} " +
-                    $"t=0.5→r={RadiusAtT(0.5f, localNearR, localMidR, localMidPos, localFarR):F5} " +
-                    $"t=0.75→r={RadiusAtT(0.75f, localNearR, localMidR, localMidPos, localFarR):F5} " +
-                    $"t=1.0→r={RadiusAtT(1f, localNearR, localMidR, localMidPos, localFarR):F5}");
+                    $"t=0.0→r={RadiusAtT4(0f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +
+                    $"t=0.25→r={RadiusAtT4(0.25f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +
+                    $"t=0.5→r={RadiusAtT4(0.5f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +
+                    $"t=0.75→r={RadiusAtT4(0.75f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +
+                    $"t=1.0→r={RadiusAtT4(1f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5}");
             }
 
             // Capture values explicitly for the local function (avoid any closure ambiguity)
             float _cNearR = localNearR, _cFarR = localFarR, _cMidR = localMidR;
-            float _cMidPos = localMidPos, _cStart = localStart, _cLen = localLen;
+            float _cMidPos = localMidPos, _cP3R = localP3R, _cP3Pos = localP3Pos, _cP4Pos = localP4Pos;
+            float _cStart = localStart, _cLen = localLen;
             float _cPreserve = localPreserve;
 
             // Start point is offset along axis from center (toward camera = negative axis dir in most setups)
@@ -351,7 +358,7 @@ namespace ScopeHousingMeshSurgery
 
                 // Interpolate radius based on axial position within the cut.
                 float t = (_cLen > epsilon) ? Mathf.Clamp01((axialDist - cutStart) / _cLen) : 0f;
-                float radiusAtDepth = RadiusAtT(t, _cNearR, _cMidR, _cMidPos, _cFarR);
+                float radiusAtDepth = RadiusAtT4(t, _cNearR, _cMidR, _cMidPos, _cP3R, _cP3Pos, _cFarR, _cP4Pos);
 
                 // Perpendicular distance from axis
                 Vector3 projected = axialDist * aL;
@@ -421,26 +428,51 @@ namespace ScopeHousingMeshSurgery
             return true;
         }
 
+
+        public static float RadiusAtT4(float t, float plane1R, float plane2R, float plane2Pos,
+            float plane3R, float plane3Pos, float plane4R, float plane4Pos)
+        {
+            t = Mathf.Clamp01(t);
+
+            float p1 = 0f;
+            float p2 = Mathf.Clamp01(plane2Pos);
+            float p3 = Mathf.Clamp01(plane3Pos);
+            float p4 = Mathf.Clamp01(plane4Pos);
+
+            float r1 = Mathf.Max(0f, plane1R);
+            float r2 = Mathf.Max(0f, plane2R);
+            float r3 = plane3R > 0f ? Mathf.Max(0f, plane3R) : r2;
+            float r4 = Mathf.Max(0f, plane4R);
+
+            if (p2 < p1) p2 = p1;
+            if (p3 < p2) p3 = p2;
+            if (p4 < p3) p4 = p3;
+
+            if (t <= p2)
+            {
+                float seg = p2 > 1e-5f ? t / p2 : 0f;
+                return Mathf.Lerp(r1, r2, seg);
+            }
+            if (t <= p3)
+            {
+                float denom = p3 - p2;
+                float seg = denom > 1e-5f ? (t - p2) / denom : 0f;
+                return Mathf.Lerp(r2, r3, seg);
+            }
+            {
+                float denom = p4 - p3;
+                float seg = denom > 1e-5f ? (t - p3) / denom : 1f;
+                return Mathf.Lerp(r3, r4, seg);
+            }
+        }
+
         /// <summary>
         /// Compute radius at normalized position t (0=near, 1=far) using piecewise interpolation.
         /// Shared between CutMeshFrustum (for vertex testing) and PlaneVisualizer (for tube mesh).
         /// </summary>
         public static float RadiusAtT(float t, float nearR, float midR, float midPos, float farR)
         {
-            if (midR > 0f)
-            {
-                if (t <= midPos)
-                {
-                    float segT = midPos > 1e-5f ? t / midPos : 0f;
-                    return Mathf.Lerp(nearR, midR, segT);
-                }
-                else
-                {
-                    float segT = (1f - midPos) > 1e-5f ? (t - midPos) / (1f - midPos) : 1f;
-                    return Mathf.Lerp(midR, farR, segT);
-                }
-            }
-            return Mathf.Lerp(nearR, farR, t);
+            return RadiusAtT4(t, nearR, midR, midPos, 0f, midPos, farR, 1f);
         }
 
         /// <summary>
