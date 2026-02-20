@@ -281,7 +281,7 @@ namespace ScopeHousingMeshSurgery
         /// Strategy:
         ///   1. First pass: find a parent with mode_* children (multi-mode scopes like Valday)
         ///   2. Fallback: find a parent that has a 'backLens' child (single-mode scopes like Bravo 4x30)
-        ///   3. Fallback: find a parent whose name contains 'scope' (broad catch)
+        ///   3. Fallback: find a parent whose name contains 'scope' (broad catch, includes mod_scope)
         /// </summary>
         public static Transform FindScopeRoot(Transform any)
         {
@@ -308,7 +308,7 @@ namespace ScopeHousingMeshSurgery
                 if (t.name != null)
                 {
                     var lo = t.name.ToLowerInvariant();
-                    if (lo.Contains("scope") && !lo.StartsWith("mod_scope"))
+                    if (lo.Contains("scope"))
                     {
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
                             $"[ScopeHierarchy] FindScopeRoot fallback (name match): '{t.name}'");
