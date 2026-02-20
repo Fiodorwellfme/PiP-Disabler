@@ -33,6 +33,7 @@ namespace ScopeHousingMeshSurgery
         private struct HiddenEntry
         {
             public MeshFilter Filter;
+            public SkinnedMeshRenderer Skinned;
             public Mesh OriginalMesh;
             public Renderer Renderer;
             public bool WasEnabled;
@@ -69,21 +70,18 @@ namespace ScopeHousingMeshSurgery
                               || ScopeHousingMeshSurgeryPlugin.DisablePiP.Value;
             if (!shouldHide) return;
 
-            // Only operate inside the current optic mode subtree.
-            // Hybrid sights keep multiple mode_* branches, and killing lenses outside
-            // the active OpticSight transform can destroy the collimator reticle.
-            Transform searchRoot = os.transform;
+            Transform searchRoot = FindScopeSearchRoot(os.transform);
 
             // Always dump hierarchy on first enter
             DumpHierarchy(searchRoot);
 
-            // Kill lens renderers only inside the active optic mode subtree.
+            // Kill only ACTIVE lens renderers (prevents nuking inactive sibling modes on hybrids)
             var allRenderers = searchRoot.GetComponentsInChildren<Renderer>(true);
             int killed = 0;
             foreach (var r in allRenderers)
             {
                 if (r == null) continue;
-                if (!IsDescendantOf(r.transform, os.transform)) continue;
+                if (!r.gameObject.activeInHierarchy) continue;
                 if (IsLensSurface(r) && !ShouldSkipForCollimator(r))
                 {
                     KillMesh(r);
@@ -95,13 +93,10 @@ namespace ScopeHousingMeshSurgery
             try
             {
                 var lens = os.LensRenderer;
-                if (lens != null)
+                if (lens != null && lens.gameObject.activeInHierarchy && !ShouldSkipForCollimator(lens))
                 {
-                    if (IsDescendantOf(lens.transform, os.transform) && !ShouldSkipForCollimator(lens))
-                    {
-                        KillMesh(lens);
-                        killed++;
-                    }
+                    KillMesh(lens);
+                    killed++;
                 }
             }
             catch { }
@@ -140,7 +135,13 @@ namespace ScopeHousingMeshSurgery
                 if (excludeRenderer != null && e.Renderer == excludeRenderer)
                     continue;
 
-                if (e.Filter != null && e.Filter.sharedMesh != emptyMesh)
+                if (e.Skinned != null && e.Skinned.sharedMesh != emptyMesh)
+                {
+                    e.Skinned.sharedMesh = emptyMesh;
+                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        $"[LensTransparency] Re-emptied skinned mesh on '{e.Skinned.gameObject.name}'");
+                }
+                else if (e.Filter != null && e.Filter.sharedMesh != emptyMesh)
                 {
                     e.Filter.sharedMesh = emptyMesh;
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
@@ -166,7 +167,13 @@ namespace ScopeHousingMeshSurgery
                 var e = _hidden[i];
                 try
                 {
-                    if (e.Filter != null && e.OriginalMesh != null)
+                    if (e.Skinned != null && e.OriginalMesh != null)
+                    {
+                        e.Skinned.sharedMesh = e.OriginalMesh;
+                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                            $"[LensTransparency] Restored skinned mesh on '{e.Skinned.gameObject.name}' → {e.OriginalMesh.vertexCount} verts");
+                    }
+                    else if (e.Filter != null && e.OriginalMesh != null)
                     {
                         e.Filter.sharedMesh = e.OriginalMesh;
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
@@ -206,9 +213,15 @@ namespace ScopeHousingMeshSurgery
                 if (_hidden[i].Renderer == r) return;
 
             var mf = r.GetComponent<MeshFilter>();
+            var smr = r as SkinnedMeshRenderer;
             Mesh origMesh = null;
 
-            if (mf != null)
+            if (smr != null)
+            {
+                origMesh = smr.sharedMesh;
+                smr.sharedMesh = GetEmptyMesh();
+            }
+            else if (mf != null)
             {
                 origMesh = mf.sharedMesh;
                 mf.sharedMesh = GetEmptyMesh();
@@ -221,6 +234,7 @@ namespace ScopeHousingMeshSurgery
             var entry = new HiddenEntry
             {
                 Filter = mf,
+                Skinned = smr,
                 OriginalMesh = origMesh,
                 Renderer = r,
                 WasEnabled = r.enabled,
@@ -241,7 +255,7 @@ namespace ScopeHousingMeshSurgery
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[LensTransparency] MESH DESTROYED: '{r.gameObject.name}' " +
                 $"(had {(origMesh != null ? origMesh.vertexCount.ToString() : "?")} verts → 0) " +
-                $"MeshFilter={(mf != null ? "yes" : "NO")}");
+                $"MeshFilter={(mf != null ? "yes" : "NO")}, Skinned={(smr != null ? "yes" : "NO")}");
         }
 
         /// <summary>
@@ -357,10 +371,40 @@ namespace ScopeHousingMeshSurgery
             return false;
         }
 
-        private static bool IsDescendantOf(Transform child, Transform parent)
+        private static Transform FindScopeSearchRoot(Transform t)
         {
-            if (child == null || parent == null) return false;
-            return child == parent || child.IsChildOf(parent);
+            if (t == null) return null;
+
+            // Prefer a parent that contains the mode_* branches (common in hybrid sights)
+            Transform best = t;
+            Transform cur = t;
+
+            for (int depth = 0; cur != null && depth < 10; depth++, cur = cur.parent)
+            {
+                string n = (cur.name ?? "").ToLowerInvariant();
+
+                // Typical container name
+                if (n.Contains("mod_scope"))
+                    best = cur;
+
+                // Or a parent that contains mode_* children
+                int modeChildren = 0;
+                for (int i = 0; i < cur.childCount; i++)
+                {
+                    var c = cur.GetChild(i);
+                    if (c != null && c.name != null &&
+                        c.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase))
+                        modeChildren++;
+                }
+                if (modeChildren >= 1)
+                    best = cur;
+
+                // Don’t climb into the whole weapon/player hierarchy
+                if (n.Contains("weapon") || n.Contains("player") || n.Contains("hands"))
+                    break;
+            }
+
+            return best ?? t;
         }
 
         private static bool ShouldSkipForCollimator(Renderer r)
