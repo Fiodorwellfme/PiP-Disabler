@@ -289,21 +289,11 @@ namespace ScopeHousingMeshSurgery
 
         private static string BuildScopeCacheKey(Transform scopeRoot, Transform activeMode)
         {
-            var sb = new StringBuilder(512);
+            // Intentionally scope-only key (not cut-setting dependent):
+            // first ADS generates cache, all future ADS reuses it forever.
+            var sb = new StringBuilder(256);
             sb.AppendLine($"scopeRoot={scopeRoot?.name}");
             sb.AppendLine($"activeMode={activeMode?.name}");
-            sb.AppendLine($"cutMode={ScopeHousingMeshSurgeryPlugin.CutMode.Value}");
-            sb.AppendLine($"axis={ScopeHousingMeshSurgeryPlugin.PlaneNormalAxis.Value}");
-            sb.AppendLine($"offset={ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value:F6}");
-            sb.AppendLine($"plane1={ScopeHousingMeshSurgeryPlugin.Plane1OffsetMeters.Value:F6}");
-            sb.AppendLine($"radius={ScopeHousingMeshSurgeryPlugin.CutRadius.Value:F6}");
-            sb.AppendLine($"nearR={ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value:F6}");
-            sb.AppendLine($"start={ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value:F6}");
-            sb.AppendLine($"len={ScopeHousingMeshSurgeryPlugin.CutLength.Value:F6}");
-            sb.AppendLine($"p2={ScopeHousingMeshSurgeryPlugin.Plane2Position.Value:F6}/{ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value:F6}");
-            sb.AppendLine($"p3={ScopeHousingMeshSurgeryPlugin.Plane3Position.Value:F6}/{ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value:F6}");
-            sb.AppendLine($"p4={ScopeHousingMeshSurgeryPlugin.Plane4Position.Value:F6}/{ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value:F6}");
-            sb.AppendLine($"preserve={ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value:F6}");
             return HashToHex(sb.ToString());
         }
 
