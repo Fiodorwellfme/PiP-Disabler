@@ -46,7 +46,7 @@ namespace ScopeHousingMeshSurgery
             if (!activeMode) activeMode = os.transform;
 
             if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
-                out var planePoint, out var planeNormal, out var camPos))
+                out var planePoint, out var planeNormal, out var camPos, out var backLensTf))
             {
                 ScopeHousingMeshSurgeryPlugin.LogVerbose("[MeshSurgery] TryGetPlane failed — no plane found.");
                 return;
@@ -120,24 +120,33 @@ namespace ScopeHousingMeshSurgery
 
                     if (isCylinder)
                     {
-                        float nearR = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
-                        float farR = ScopeHousingMeshSurgeryPlugin.FarCylinderRadius.Value;
-                        float midR = ScopeHousingMeshSurgeryPlugin.MidCylinderRadius.Value;
-                        float midPos = ScopeHousingMeshSurgeryPlugin.MidCylinderPosition.Value;
-                        float startOff = ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value;
-                        float cutLen = ScopeHousingMeshSurgeryPlugin.CutLength.Value;
-                        float preserve = ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value;
-                        if (farR <= 0f) farR = nearR; // default to cylinder
+                        Transform linzaTf = ScopeHierarchy.FindLinzaTransform(scopeRoot, activeMode);
+                        float lensRadius = ScopeHierarchy.EstimateLensRadius(os, scopeRoot, activeMode);
+                        float p1Offset = ScopeHousingMeshSurgeryPlugin.Plane1Offset.Value;
+                        float p1Radius = Mathf.Max(0.001f,
+                            lensRadius * ScopeHousingMeshSurgeryPlugin.Plane1RadiusMultiplier.Value);
+                        float p2Offset = ScopeHousingMeshSurgeryPlugin.Plane2Offset.Value;
+                        float p2Radius = ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value;
+                        float p3Offset = ScopeHousingMeshSurgeryPlugin.Plane3Offset.Value;
+                        float p3Radius = ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value;
+                        float p4Offset = ScopeHousingMeshSurgeryPlugin.Plane4Offset.Value;
+                        float p4Radius = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
 
-                        ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
-                            planePoint, planeNormal, nearR, farR, startOff, cutLen,
-                            keepInside: false, midRadius: midR, midPosition: midPos,
-                            nearPreserveDepth: preserve);
+                        float[] offsets = { p1Offset, p2Offset, p3Offset, p4Offset };
+                        float[] radii = { p1Radius, p2Radius, p3Radius, p4Radius };
+                        SortProfile(offsets, radii);
+
+                        Vector3 profileOrigin = linzaTf != null
+                            ? linzaTf.position
+                            : (backLensTf != null ? backLensTf.position : planePoint);
+
+                        ok = MeshPlaneCutter.CutMeshRadialProfile(readable, mf.transform,
+                            profileOrigin, planeNormal, offsets, radii, keepInside: false);
+
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[MeshSurgery] Frustum cut '{originalAsset.name}': nearR={nearR:F4} " +
-                            $"{(midR > 0f ? $"midR={midR:F4}@{midPos:F2} " : "")}" +
-                            $"farR={farR:F4} start={startOff:F4} len={cutLen:F4}" +
-                            $"{(preserve > 0f ? $" preserve={preserve:F4}" : "")}");
+                            $"[MeshSurgery] 4-plane cut '{originalAsset.name}': " +
+                            $"P1(o={offsets[0]:F4},r={radii[0]:F4}) P2(o={offsets[1]:F4},r={radii[1]:F4}) " +
+                            $"P3(o={offsets[2]:F4},r={radii[2]:F4}) P4(o={offsets[3]:F4},r={radii[3]:F4}) lensR={lensRadius:F4}");
                     }
                     else
                     {
@@ -264,6 +273,21 @@ namespace ScopeHousingMeshSurgery
                 return !cameraIsPositive;
 
             return cameraIsPositive;
+        }
+
+        private static void SortProfile(float[] offsets, float[] radii)
+        {
+            for (int i = 0; i < offsets.Length - 1; i++)
+            {
+                for (int j = i + 1; j < offsets.Length; j++)
+                {
+                    if (offsets[j] < offsets[i])
+                    {
+                        float to = offsets[i]; offsets[i] = offsets[j]; offsets[j] = to;
+                        float tr = radii[i]; radii[i] = radii[j]; radii[j] = tr;
+                    }
+                }
+            }
         }
     }
 
@@ -403,11 +427,12 @@ namespace ScopeHousingMeshSurgery
         }
 
         public static bool TryGetPlane(OpticSight os, Transform scopeRoot, Transform activeMode,
-            out Vector3 planePoint, out Vector3 planeNormal, out Vector3 camPos)
+            out Vector3 planePoint, out Vector3 planeNormal, out Vector3 camPos, out Transform backLensTransform)
         {
             planePoint = default;
             planeNormal = default;
             camPos = default;
+            backLensTransform = null;
 
             Transform viewerTf = null;
             try { viewerTf = os != null ? os.ScopeTransform : null; } catch { }
@@ -423,6 +448,7 @@ namespace ScopeHousingMeshSurgery
             {
                 planePoint = backLens.position;
                 refTransform = backLens;
+                backLensTransform = backLens;
             }
 
             if (refTransform == null)
@@ -502,127 +528,17 @@ namespace ScopeHousingMeshSurgery
 
         public static List<MeshFilter> FindTargetMeshFilters(Transform scopeRoot, Transform activeMode)
         {
-            if (scopeRoot == null) return new List<MeshFilter>();
-
-            var excludes = ParseExcludes(ScopeHousingMeshSurgeryPlugin.ExcludeNameContainsCsv.Value);
-
-            bool IsExcluded(string s)
+            var all = UnityEngine.Object.FindObjectsOfType<MeshFilter>(true);
+            var result = new List<MeshFilter>(all.Length);
+            for (int i = 0; i < all.Length; i++)
             {
-                if (string.IsNullOrEmpty(s)) return false;
-                var l = s.ToLowerInvariant();
-                for (int i = 0; i < excludes.Count; i++)
-                    if (l.Contains(excludes[i])) return true;
-                return false;
-            }
-
-            Transform GetModeAncestor(Transform t, Transform searchRoot)
-            {
-                for (var p = t; p != null && p != searchRoot; p = p.parent)
-                    if (p.name != null && (p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
-                        || p.name.Equals("mode", StringComparison.OrdinalIgnoreCase)))
-                        return p;
-                return null;
-            }
-
-            bool IsLensNode(Transform t, Transform searchRoot)
-            {
-                for (var p = t; p != null && p != searchRoot; p = p.parent)
-                {
-                    if (p == null || p.name == null) continue;
-                    var n = p.name.ToLowerInvariant();
-                    if (n.Contains("optic_camera")) return true;
-                    if (n == "backlens" || n.StartsWith("backlens")) return true;
-                    if (n.Contains("linza")) return true;
-                    if (n == "frontlens" || n.StartsWith("frontlens")) return true;
-                    if (n == "scopereticleoverlay") return true;
-                }
-                return false;
-            }
-
-            // Determine search root: go up through intermediate containers to catch
-            // housing + mount meshes.  EFT hierarchy variants:
-            //
-            //   mount_xxx(Clone)/               ← mount LODs often HERE
-            //     mod_scope_000/                ← intermediate container
-            //       scope_xxx(Clone)/           ← scopeRoot (has mode_* children)
-            //         mode_000/ | mode/
-            //
-            //   mod_scope_xxx/                  ← housing meshes often HERE
-            //     scope_xxx(Clone)/             ← scopeRoot
-            //       mode_000/ | mode/
-            //
-            // We climb up through parents that look like scope/mod containers,
-            // stopping at the weapon root or a non-scope parent.
-            Transform searchRoot = scopeRoot;
-            for (var p = scopeRoot.parent; p != null; p = p.parent)
-            {
-                var pName = p.name ?? "";
-                var plo = pName.ToLowerInvariant();
-                // Stop at weapon root, receiver, or anything that's clearly not scope-related
-                if (plo.Contains("weapon") || plo.Contains("receiver") || plo.Contains("anim"))
-                    break;
-                // Climb through scope/mod/optic/mount containers
-                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount"))
-                {
-                    searchRoot = p;
-                    continue; // keep climbing
-                }
-                break; // unknown parent — stop
-            }
-            if (searchRoot != scopeRoot)
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[ScopeHierarchy] Expanded search root: '{scopeRoot.name}' → '{searchRoot.name}'");
-
-            // Collect all OTHER scope roots under searchRoot so we can skip their subtrees
-            var otherScopeRoots = new List<Transform>(4);
-            if (searchRoot != scopeRoot)
-            {
-                CollectOtherScopeRoots(searchRoot, scopeRoot, otherScopeRoots);
-                if (otherScopeRoots.Count > 0)
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[ScopeHierarchy] Found {otherScopeRoots.Count} sibling scope root(s) — will exclude their subtrees");
-            }
-
-            bool IsUnderOtherScope(Transform t)
-            {
-                for (int i = 0; i < otherScopeRoots.Count; i++)
-                    if (t.IsChildOf(otherScopeRoots[i])) return true;
-                return false;
-            }
-
-            var result = new List<MeshFilter>(64);
-            int skippedLens = 0, skippedExclude = 0, skippedMode = 0, skippedOther = 0;
-
-            foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
-            {
+                var mf = all[i];
                 if (!mf || !mf.sharedMesh) continue;
-
-                // Skip meshes under other scope roots (sibling scopes, canted sights)
-                if (otherScopeRoots.Count > 0 && IsUnderOtherScope(mf.transform))
-                { skippedOther++; continue; }
-
-                if (IsLensNode(mf.transform, searchRoot))
-                { skippedLens++; continue; }
-
-                var goName = mf.transform.name ?? "";
-                var meshName = mf.sharedMesh.name ?? "";
-
-                if (IsExcluded(goName) || IsExcluded(meshName))
-                { skippedExclude++; continue; }
-
-                // Skip meshes belonging to a DIFFERENT mode (not the active one)
-                var modeAncestor = GetModeAncestor(mf.transform, searchRoot);
-                if (modeAncestor != null && activeMode != null && modeAncestor != activeMode)
-                { skippedMode++; continue; }
-
                 result.Add(mf);
             }
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
-                $"{result.Count} targets, skipped: lens={skippedLens} exclude={skippedExclude} " +
-                $"mode={skippedMode} otherScope={skippedOther}");
-
+                $"[ScopeHierarchy] FindTargets global: {result.Count} mesh filters in scene");
             return result;
         }
 
@@ -652,17 +568,52 @@ namespace ScopeHousingMeshSurgery
             }
         }
 
-        private static List<string> ParseExcludes(string csv)
+        public static float EstimateLensRadius(OpticSight os, Transform scopeRoot, Transform activeMode)
         {
-            var list = new List<string>();
-            if (string.IsNullOrWhiteSpace(csv)) return list;
-            foreach (var part in csv.Split(','))
+            try
             {
-                var t = part.Trim();
-                if (t.Length == 0) continue;
-                list.Add(t.ToLowerInvariant());
+                if (os != null && os.LensRenderer != null)
+                {
+                    var ext = os.LensRenderer.bounds.extents;
+                    float r = Mathf.Max(ext.x, ext.y, ext.z);
+                    if (r > 0.0005f) return r;
+                }
             }
-            return list;
+            catch { }
+
+            var linza = FindLinzaTransform(scopeRoot, activeMode);
+            if (linza != null)
+            {
+                var mr = linza.GetComponent<MeshRenderer>();
+                if (mr != null)
+                {
+                    var ext = mr.bounds.extents;
+                    float r = Mathf.Max(ext.x, ext.y, ext.z);
+                    if (r > 0.0005f) return r;
+                }
+
+                var mrs = linza.GetComponentsInChildren<MeshRenderer>(true);
+                for (int i = 0; i < mrs.Length; i++)
+                {
+                    if (mrs[i] == null) continue;
+                    var ext = mrs[i].bounds.extents;
+                    float r = Mathf.Max(ext.x, ext.y, ext.z);
+                    if (r > 0.0005f) return r;
+                }
+            }
+
+            return Mathf.Max(0.001f, ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value);
+        }
+
+        public static Transform FindLinzaTransform(Transform scopeRoot, Transform activeMode)
+        {
+            if (activeMode != null)
+            {
+                var inMode = FindDeepChild(activeMode, "linza");
+                if (inMode != null) return inMode;
+            }
+
+            return scopeRoot != null ? FindDeepChild(scopeRoot, "linza") : null;
         }
     }
 }

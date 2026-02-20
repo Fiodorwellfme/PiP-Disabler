@@ -99,12 +99,10 @@ namespace ScopeHousingMeshSurgery
             sb.AppendLine($"[Diagnostics]   CutMode          : {ScopeHousingMeshSurgeryPlugin.CutMode.Value}");
             sb.AppendLine($"[Diagnostics]   PlaneNormalAxis  : {ScopeHousingMeshSurgeryPlugin.PlaneNormalAxis.Value}");
             sb.AppendLine($"[Diagnostics]   PlaneOffsetMeters: {ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value:F4}");
-            sb.AppendLine($"[Diagnostics]   CylinderRadius   : {ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value:F4}");
-            sb.AppendLine($"[Diagnostics]   MidCylinderRadius: {ScopeHousingMeshSurgeryPlugin.MidCylinderRadius.Value:F4} @ pos={ScopeHousingMeshSurgeryPlugin.MidCylinderPosition.Value:F2}");
-            sb.AppendLine($"[Diagnostics]   FarCylinderRadius: {ScopeHousingMeshSurgeryPlugin.FarCylinderRadius.Value:F4}");
-            sb.AppendLine($"[Diagnostics]   CutStartOffset   : {ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value:F4}");
-            sb.AppendLine($"[Diagnostics]   CutLength        : {ScopeHousingMeshSurgeryPlugin.CutLength.Value:F4}");
-            sb.AppendLine($"[Diagnostics]   NearPreserveDepth: {ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value:F4}");
+            sb.AppendLine($"[Diagnostics]   Plane1           : off={ScopeHousingMeshSurgeryPlugin.Plane1Offset.Value:F4} mult={ScopeHousingMeshSurgeryPlugin.Plane1RadiusMultiplier.Value:F3}");
+            sb.AppendLine($"[Diagnostics]   Plane2           : off={ScopeHousingMeshSurgeryPlugin.Plane2Offset.Value:F4} r={ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value:F4}");
+            sb.AppendLine($"[Diagnostics]   Plane3           : off={ScopeHousingMeshSurgeryPlugin.Plane3Offset.Value:F4} r={ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value:F4}");
+            sb.AppendLine($"[Diagnostics]   Plane4           : off={ScopeHousingMeshSurgeryPlugin.Plane4Offset.Value:F4} r={ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value:F4}");
             sb.AppendLine($"[Diagnostics]   CutRadius        : {ScopeHousingMeshSurgeryPlugin.CutRadius.Value:F4}");
             sb.AppendLine($"[Diagnostics]   RemoveCameraSide : {ScopeHousingMeshSurgeryPlugin.RemoveCameraSide.Value}");
 
@@ -123,7 +121,7 @@ namespace ScopeHousingMeshSurgery
                     sb.AppendLine($"[Diagnostics]   backLens        : NOT FOUND");
 
                 if (ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode ?? scopeRoot,
-                    out var pp, out var pn, out _))
+                    out var pp, out var pn, out _, out _))
                 {
                     pp += pn * ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value;
                     sb.AppendLine($"[Diagnostics]   Plane point     : {pp:F4}");
@@ -158,7 +156,7 @@ namespace ScopeHousingMeshSurgery
                         $"verts={mf.sharedMesh?.vertexCount}  path={relPath}");
                 }
                 if (targets.Count == 0)
-                    sb.AppendLine($"[Diagnostics]   (none — check ExcludeNameContainsCsv or CutRadius)");
+                    sb.AppendLine($"[Diagnostics]   (none — check CutRadius and scope hierarchy)");
             }
             else
             {

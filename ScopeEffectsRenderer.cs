@@ -197,19 +197,16 @@ namespace ScopeHousingMeshSurgery
         {
             if (cam == null) return;
 
-            // Screen-filling quad (same approach as shadow).
-            // The vignette texture is a circular gradient — it covers the
-            // same screen area regardless of magnification or FOV.
-            // Oversized by 3x to prevent edge artifacts.
-            float dist = cam.nearClipPlane + 0.04f;  // slightly closer than shadow
-            float halfH = dist * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            float halfW = halfH * cam.aspect;
+            // World-anchored at eyepiece so it naturally tracks scope movement and FOV zoom.
+            Transform lens = _lensTransform != null ? _lensTransform : cam.transform;
+            Vector3 toCam = (cam.transform.position - lens.position);
+            Vector3 n = toCam.sqrMagnitude > 1e-6f ? toCam.normalized : -lens.forward;
+            Quaternion rot = Quaternion.LookRotation(n, lens.up);
 
-            Vector3 pos = cam.transform.position + cam.transform.forward * dist;
-            Quaternion rot = cam.transform.rotation;
-            Vector3 scale = new Vector3(halfW * 6f, halfH * 6f, 1f);
-
-            _vigMatrix = Matrix4x4.TRS(pos, rot, scale);
+            float mult = ScopeHousingMeshSurgeryPlugin.VignetteSizeMult.Value;
+            float fovFactor = Mathf.Clamp(cam.fieldOfView / 50f, 0.35f, 1.25f);
+            float diameter = Mathf.Max(0.001f, _baseSize) * Mathf.Max(1f, _magnification) * mult * fovFactor;
+            _vigMatrix = Matrix4x4.TRS(lens.position, rot, new Vector3(diameter, diameter, 1f));
         }
 
         private static void RebuildShadowMatrix(Camera cam)
@@ -308,13 +305,8 @@ namespace ScopeHousingMeshSurgery
                 _vigTex.filterMode = FilterMode.Bilinear;
             }
 
-            // VignetteSizeMult controls where the vignette ring sits.
-            // mult=1 → ring at ~edge of a circle inscribed in height.
-            // mult<1 → ring moves inward (more visible darkening).
-            // mult>1 → ring moves outward (less darkening).
-            float baseR = mult;
-            float innerR = baseR * Mathf.Clamp01(1f - soft);
-            float outerR = baseR;
+            float innerR = Mathf.Clamp01(1f - soft);
+            float outerR = 1f;
 
             var pixels = new Color32[S * S];
             for (int y = 0; y < S; y++)

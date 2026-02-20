@@ -214,10 +214,11 @@ namespace ScopeHousingMeshSurgery
                 if (_activeOptic != null)
                 {
                     float mag = ZoomController.GetMagnification(_activeOptic);
+                    float scopeDiameter = ComputeScopeDiameter(_activeOptic);
                     ZoomController.SetZoom(mag);
                     // Update reticle + effects position (smoothed), rotation, and scale each frame
                     ReticleRenderer.UpdateTransform(mag);
-                    ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
+                    ScopeEffectsRenderer.UpdateTransform(baseSize: scopeDiameter, magnification: mag);
                 }
                 ZoomController.EnsureLensVisible();
 
@@ -235,8 +236,9 @@ namespace ScopeHousingMeshSurgery
                 if (_activeOptic != null)
                 {
                     float mag = ZoomController.GetMagnification(_activeOptic);
+                    float scopeDiameter = ComputeScopeDiameter(_activeOptic);
                     ReticleRenderer.UpdateTransform(mag);
-                    ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
+                    ScopeEffectsRenderer.UpdateTransform(baseSize: scopeDiameter, magnification: mag);
                 }
             }
 
@@ -315,10 +317,8 @@ namespace ScopeHousingMeshSurgery
 
             // 4b. Show lens vignette + scope shadow effects (always shown, even for blacklisted scopes)
             Transform lensT = os.LensRenderer != null ? os.LensRenderer.transform : os.transform;
-            float baseSize = ScopeHousingMeshSurgeryPlugin.ReticleBaseSize.Value;
-            if (baseSize < 0.001f) baseSize = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value * 2f;
-            if (baseSize < 0.001f) baseSize = 0.030f;
-            ScopeEffectsRenderer.Show(lensT, baseSize, mag);
+            float scopeDiameter = ComputeScopeDiameter(os);
+            ScopeEffectsRenderer.Show(lensT, scopeDiameter, mag);
 
             // 5. Shader zoom (if available)
             if (ZoomController.ShaderAvailable && ScopeHousingMeshSurgeryPlugin.EnableShaderZoom.Value)
@@ -493,7 +493,7 @@ namespace ScopeHousingMeshSurgery
 
                 Transform activeMode = os.transform;
                 if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
-                    out var planePoint, out var planeNormal, out var camPos))
+                    out var planePoint, out var planeNormal, out var camPos, out _))
                     return;
 
                 planePoint += planeNormal * ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value;
@@ -510,6 +510,17 @@ namespace ScopeHousingMeshSurgery
                 return gw != null ? gw.MainPlayer : null;
             }
             catch { return null; }
+        }
+
+        private static float ComputeScopeDiameter(OpticSight os)
+        {
+            var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
+            Transform activeMode = ScopeHierarchy.FindBestMode(scopeRoot) ?? os.transform;
+            float lensR = ScopeHierarchy.EstimateLensRadius(os, scopeRoot, activeMode);
+            float diameter = lensR * 2f;
+            if (diameter < 0.001f) diameter = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value * 2f;
+            if (diameter < 0.001f) diameter = 0.030f;
+            return diameter;
         }
 
         /// <summary>

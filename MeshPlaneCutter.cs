@@ -422,6 +422,146 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
+        /// Multi-plane radial profile cut.
+        ///
+        /// offsets/radii define radial control points along axisWorld relative to centerWorld:
+        ///   axial = offsets[i] => radius = radii[i]
+        /// Radius between control points is linearly interpolated.
+        ///
+        /// keepInside=false removes geometry inside the radial profile volume.
+        /// </summary>
+        public static bool CutMeshRadialProfile(
+            Mesh mesh,
+            Transform meshTransform,
+            Vector3 centerWorld,
+            Vector3 axisWorld,
+            float[] offsets,
+            float[] radii,
+            bool keepInside,
+            float epsilon = 1e-5f)
+        {
+            if (mesh == null || offsets == null || radii == null) return false;
+            if (offsets.Length < 2 || offsets.Length != radii.Length) return false;
+
+            Vector3 cL = meshTransform.InverseTransformPoint(centerWorld);
+            Vector3 aL = meshTransform.InverseTransformDirection(axisWorld).normalized;
+
+            Vector3 lossyScale = meshTransform.lossyScale;
+            float avgScale = (Mathf.Abs(lossyScale.x) + Mathf.Abs(lossyScale.y) + Mathf.Abs(lossyScale.z)) / 3f;
+
+            int n = offsets.Length;
+            var localOffsets = new float[n];
+            var localRadii = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                localOffsets[i] = avgScale > 0.001f ? offsets[i] / avgScale : offsets[i];
+                localRadii[i] = avgScale > 0.001f ? radii[i] / avgScale : radii[i];
+            }
+
+            var verts = mesh.vertices;
+            var norms = mesh.normals;
+            var tangs = mesh.tangents;
+            var uvs   = mesh.uv;
+
+            bool hasNormals  = norms != null && norms.Length == verts.Length;
+            bool hasTangents = tangs != null && tangs.Length == verts.Length;
+            bool hasUV       = uvs   != null && uvs.Length   == verts.Length;
+
+            int subMeshCount = mesh.subMeshCount;
+
+            var outVerts = new List<Vector3>(verts.Length);
+            var outNorms = hasNormals  ? new List<Vector3>(verts.Length) : null;
+            var outTangs = hasTangents ? new List<Vector4>(verts.Length) : null;
+            var outUVs   = hasUV       ? new List<Vector2>(verts.Length) : null;
+            var keptMap = new Dictionary<int, int>(verts.Length);
+
+            var outTris = new List<int>[subMeshCount];
+            for (int s = 0; s < subMeshCount; s++)
+                outTris[s] = new List<int>(mesh.GetTriangles(s).Length);
+
+            float RadiusAtOffset(float off)
+            {
+                if (off <= localOffsets[0]) return localRadii[0];
+                if (off >= localOffsets[n - 1]) return localRadii[n - 1];
+
+                for (int i = 0; i < n - 1; i++)
+                {
+                    float a = localOffsets[i];
+                    float b = localOffsets[i + 1];
+                    if (off >= a - epsilon && off <= b + epsilon)
+                    {
+                        float t = Mathf.Abs(b - a) > epsilon ? Mathf.Clamp01((off - a) / (b - a)) : 0f;
+                        return Mathf.Lerp(localRadii[i], localRadii[i + 1], t);
+                    }
+                }
+
+                return localRadii[n - 1];
+            }
+
+            bool IsInside(Vector3 v)
+            {
+                Vector3 diff = v - cL;
+                float axialDist = Vector3.Dot(diff, aL);
+                if (axialDist < localOffsets[0] - epsilon || axialDist > localOffsets[n - 1] + epsilon)
+                    return false;
+
+                float radiusAtDepth = RadiusAtOffset(axialDist);
+                Vector3 projected = axialDist * aL;
+                float perpDist = (diff - projected).magnitude;
+                return perpDist <= radiusAtDepth + epsilon;
+            }
+
+            int AddVertexFromOld(int oldIndex)
+            {
+                if (keptMap.TryGetValue(oldIndex, out int ni)) return ni;
+                int newIndex = outVerts.Count;
+                outVerts.Add(verts[oldIndex]);
+                if (hasNormals) outNorms.Add(norms[oldIndex]);
+                if (hasTangents) outTangs.Add(tangs[oldIndex]);
+                if (hasUV) outUVs.Add(uvs[oldIndex]);
+                keptMap[oldIndex] = newIndex;
+                return newIndex;
+            }
+
+            for (int s = 0; s < subMeshCount; s++)
+            {
+                int[] tris = mesh.GetTriangles(s);
+                for (int i = 0; i < tris.Length; i += 3)
+                {
+                    int i0 = tris[i], i1 = tris[i + 1], i2 = tris[i + 2];
+                    bool in0 = IsInside(verts[i0]);
+                    bool in1 = IsInside(verts[i1]);
+                    bool in2 = IsInside(verts[i2]);
+
+                    bool keepTri = keepInside ? (in0 || in1 || in2) : (!in0 && !in1 && !in2);
+                    if (!keepTri) continue;
+
+                    outTris[s].Add(AddVertexFromOld(i0));
+                    outTris[s].Add(AddVertexFromOld(i1));
+                    outTris[s].Add(AddVertexFromOld(i2));
+                }
+            }
+
+            long triCount = 0;
+            for (int s = 0; s < subMeshCount; s++) triCount += outTris[s].Count;
+            if (triCount == 0) return false;
+
+            mesh.Clear();
+            mesh.SetVertices(outVerts);
+            if (hasNormals)  mesh.SetNormals(outNorms);
+            if (hasTangents) mesh.SetTangents(outTangs);
+            if (hasUV)       mesh.SetUVs(0, outUVs);
+
+            mesh.subMeshCount = subMeshCount;
+            for (int s = 0; s < subMeshCount; s++)
+                mesh.SetTriangles(outTris[s], s, true);
+
+            mesh.RecalculateBounds();
+            if (!hasNormals) mesh.RecalculateNormals();
+            return true;
+        }
+
+        /// <summary>
         /// Compute radius at normalized position t (0=near, 1=far) using piecewise interpolation.
         /// Shared between CutMeshFrustum (for vertex testing) and PlaneVisualizer (for tube mesh).
         /// </summary>

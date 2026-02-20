@@ -81,7 +81,14 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> RemoveCameraSide;
         internal static ConfigEntry<bool> ForceManualKeepSide;
         internal static ConfigEntry<bool> ManualKeepPositive;
-        internal static ConfigEntry<string> ExcludeNameContainsCsv;
+        internal static ConfigEntry<float> Plane1Offset;
+        internal static ConfigEntry<float> Plane1RadiusMultiplier;
+        internal static ConfigEntry<float> Plane2Offset;
+        internal static ConfigEntry<float> Plane2Radius;
+        internal static ConfigEntry<float> Plane3Offset;
+        internal static ConfigEntry<float> Plane3Radius;
+        internal static ConfigEntry<float> Plane4Offset;
+        internal static ConfigEntry<float> Plane4Radius;
 
         // --- Scope Effects ---
         internal static ConfigEntry<bool>  VignetteEnabled;
@@ -333,9 +340,34 @@ namespace ScopeHousingMeshSurgery
                 "If true, ignores auto keep-side selection.");
             ManualKeepPositive = Config.Bind("3. Mesh Surgery", "ManualKeepPositive", true,
                 "Only used when ForceManualKeepSide=true.");
-            ExcludeNameContainsCsv = Config.Bind("3. Mesh Surgery", "ExcludeNameContainsCsv",
-                "linza,lens,glass,reticle,collider,trigger,shadow,backlens",
-                "Comma-separated substrings to exclude from mesh cutting.");
+            Plane1Offset = Config.Bind("3. Mesh Surgery", "Plane1Offset", 0.001f,
+                new ConfigDescription(
+                    "Plane 1 offset (meters) from linza origin along bore axis.\n" +
+                    "Small tuning value to move the first cut plane toward/away from the player.",
+                    new AcceptableValueRange<float>(-0.05f, 0.05f)));
+            Plane1RadiusMultiplier = Config.Bind("3. Mesh Surgery", "Plane1RadiusMultiplier", 1.0f,
+                new ConfigDescription(
+                    "Plane 1 radius multiplier applied to detected linza radius.\n" +
+                    "1.0 = same as linza radius.",
+                    new AcceptableValueRange<float>(0.5f, 2.0f)));
+            Plane2Offset = Config.Bind("3. Mesh Surgery", "Plane2Offset", 0.05f,
+                new ConfigDescription("Distance (meters) from plane 1 to plane 2 along bore axis.",
+                    new AcceptableValueRange<float>(0.001f, 1.5f)));
+            Plane2Radius = Config.Bind("3. Mesh Surgery", "Plane2Radius", 0.02f,
+                new ConfigDescription("Cut radius (meters) at plane 2.",
+                    new AcceptableValueRange<float>(0.001f, 0.5f)));
+            Plane3Offset = Config.Bind("3. Mesh Surgery", "Plane3Offset", 0.14f,
+                new ConfigDescription("Distance (meters) from plane 1 to plane 3 along bore axis.",
+                    new AcceptableValueRange<float>(0.001f, 1.5f)));
+            Plane3Radius = Config.Bind("3. Mesh Surgery", "Plane3Radius", 0.06f,
+                new ConfigDescription("Cut radius (meters) at plane 3.",
+                    new AcceptableValueRange<float>(0.001f, 0.5f)));
+            Plane4Offset = Config.Bind("3. Mesh Surgery", "Plane4Offset", 0.30f,
+                new ConfigDescription("Distance (meters) from plane 1 to plane 4 along bore axis.",
+                    new AcceptableValueRange<float>(0.001f, 1.5f)));
+            Plane4Radius = Config.Bind("3. Mesh Surgery", "Plane4Radius", 0.12f,
+                new ConfigDescription("Cut radius (meters) at plane 4.",
+                    new AcceptableValueRange<float>(0.001f, 0.8f)));
 
             // --- Scope Effects ---
             VignetteEnabled = Config.Bind("4. Scope Effects", "VignetteEnabled", true,
@@ -344,12 +376,11 @@ namespace ScopeHousingMeshSurgery
             VignetteOpacity = Config.Bind("4. Scope Effects", "VignetteOpacity", 0.85f,
                 new ConfigDescription("Maximum opacity of the lens vignette ring (0=invisible, 1=full black).",
                     new AcceptableValueRange<float>(0f, 1f)));
-            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 1.25f,
+            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 1.00f,
                 new ConfigDescription(
-                    "Vignette quad diameter as a multiplier of ReticleBaseSize.\n" +
-                    "1.0 = same size as reticle.  1.5 gives a visible border ring.\n" +
-                    "Higher values (5-15) may be needed for high-magnification scopes.",
-                    new AcceptableValueRange<float>(0.5f, 15f)));
+                    "Vignette radius multiplier relative to the projected scope aperture.\n" +
+                    "1.0 = matches scope radius exactly. Lower/higher nudges ring inward/outward.",
+                    new AcceptableValueRange<float>(0.7f, 1.3f)));
             VignetteSoftness = Config.Bind("4. Scope Effects", "VignetteSoftness", 0.35f,
                 new ConfigDescription(
                     "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
