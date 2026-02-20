@@ -44,13 +44,17 @@ namespace ScopeHousingMeshSurgery
 
         internal static bool IsLocalPlayerOptic(OpticSight os)
         {
-            if (os == null) return false;
+            var localPlayer = GetLocalPlayer();
+            return IsOpticOwnedByPlayer(os, localPlayer);
+        }
+
+        private static bool IsOpticOwnedByPlayer(OpticSight os, Player player)
+        {
+            if (os == null || player == null) return false;
 
             try
             {
-                var player = os.GetComponentInParent<Player>();
-                var localPlayer = GetLocalPlayer();
-                return player != null && localPlayer != null && player == localPlayer;
+                return os.GetComponentInParent<Player>() == player;
             }
             catch
             {
@@ -94,8 +98,20 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void OnOpticEnabled(OpticSight os)
         {
-            if (os != null)
-                _lastEnabledOptic = os;
+            var localPlayer = GetLocalPlayer();
+            if (localPlayer == null || os == null)
+            {
+                CheckAndUpdate();
+                return;
+            }
+
+            if (!IsOpticOwnedByPlayer(os, localPlayer))
+            {
+                CheckAndUpdate();
+                return;
+            }
+
+            _lastEnabledOptic = os;
 
             // If already scoped and a DIFFERENT optic enables → genuine mode switch.
             // Guard against sibling mode_000/mode_001 co-activating on scope enter, which
@@ -164,6 +180,19 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void OnOpticDisabled(OpticSight os)
         {
+            var localPlayer = GetLocalPlayer();
+            if (localPlayer == null || os == null)
+            {
+                CheckAndUpdate();
+                return;
+            }
+
+            if (!IsOpticOwnedByPlayer(os, localPlayer))
+            {
+                CheckAndUpdate();
+                return;
+            }
+
             CheckAndUpdate();
         }
 
@@ -592,33 +621,27 @@ namespace ScopeHousingMeshSurgery
             catch { return null; }
         }
 
-        private static ProceduralWeaponAnimation GetLocalPwa()
-        {
-            var player = GetLocalPlayer();
-            return player != null ? player.ProceduralWeaponAnimation : null;
-        }
-
         /// <summary>
         /// Fallback: find local-player OpticSight if _lastEnabledOptic wasn't cached.
         /// Searches only the local player's weapon hierarchy.
         /// </summary>
         private static OpticSight FindOpticFromPWA()
         {
-            var pwa = GetLocalPwa();
-            if (pwa == null) return null;
+            var localPlayer = GetLocalPlayer();
+            if (localPlayer == null) return null;
 
             try
             {
-                var all = pwa.GetComponentsInChildren<OpticSight>(true);
+                var all = localPlayer.GetComponentsInChildren<OpticSight>(true);
                 foreach (var os in all)
                 {
-                    if (os != null && os.isActiveAndEnabled && IsLocalPlayerOptic(os))
+                    if (os != null && os.isActiveAndEnabled && IsOpticOwnedByPlayer(os, localPlayer))
                         return os;
                 }
 
                 foreach (var os in all)
                 {
-                    if (os != null && IsLocalPlayerOptic(os)) return os;
+                    if (os != null && IsOpticOwnedByPlayer(os, localPlayer)) return os;
                 }
             }
             catch { }
@@ -638,15 +661,15 @@ namespace ScopeHousingMeshSurgery
             if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled && IsLocalPlayerOptic(_lastEnabledOptic))
                 return _lastEnabledOptic;
 
-            var pwa = GetLocalPwa();
-            if (pwa == null) return null;
+            var localPlayer = GetLocalPlayer();
+            if (localPlayer == null) return null;
 
             try
             {
-                var all = pwa.GetComponentsInChildren<OpticSight>(true);
+                var all = localPlayer.GetComponentsInChildren<OpticSight>(true);
                 foreach (var os in all)
                 {
-                    if (os != null && os.isActiveAndEnabled && IsLocalPlayerOptic(os))
+                    if (os != null && os.isActiveAndEnabled && IsOpticOwnedByPlayer(os, localPlayer))
                         return os;
                 }
             }

@@ -243,6 +243,24 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
             }
         }
 
+        private static bool IsLocalPlayerUpdater(OpticComponentUpdater updater)
+        {
+            if (updater == null) return false;
+
+            try
+            {
+                var localPlayer = Comfort.Common.Singleton<EFT.GameWorld>.Instance?.MainPlayer;
+                if (localPlayer == null) return false;
+
+                var owner = updater.GetComponentInParent<EFT.Player>();
+                return owner == localPlayer;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static void RestoreAllCameras()
         {
             for (int i = 0; i < _cams.Count; i++)
@@ -322,6 +340,7 @@ _ignoreOnDisableFrame.Clear();
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
                 if (__instance == null) return;
+                if (!IsLocalPlayerUpdater(__instance)) return;
                 if (!TryGetLocalPlayerOptic(__instance, out _)) return;
                 if (ShouldSkipPiPDisableForHighMagnification(__instance)) return;
 
@@ -358,6 +377,7 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return true;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
+                if (!IsLocalPlayerUpdater(__instance)) return true;
                 if (!TryGetLocalPlayerOptic(__instance, out _)) return true;
                 if (ShouldSkipPiPDisableForHighMagnification(__instance)) return true;
 
