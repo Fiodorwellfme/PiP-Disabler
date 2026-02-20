@@ -31,8 +31,10 @@ namespace ScopeHousingMeshSurgery
         private static float      _lastVigOpacity   = -1f;
         private static float      _lastVigSizeMult  = -1f;
         private static float      _lastVigAspect    = -1f;
+        private static float      _lastVigFovScale  = -1f;
         private static Matrix4x4  _vigMatrix = Matrix4x4.identity;
         private static bool       _vigActive;
+        private static float      _vignetteReferenceFov = -1f;
 
         // ── Shadow ──────────────────────────────────────────────────────────
         private static Mesh       _shadowMesh;
@@ -64,6 +66,8 @@ namespace ScopeHousingMeshSurgery
             _lensTransform = lensTransform;
             _baseSize = baseSize;
             _magnification = magnification;
+            var mainCam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            _vignetteReferenceFov = mainCam != null ? Mathf.Max(1f, mainCam.fieldOfView) : 60f;
 
             if (ScopeHousingMeshSurgeryPlugin.VignetteEnabled.Value)
             {
@@ -111,6 +115,7 @@ namespace ScopeHousingMeshSurgery
         {
             _vigActive = false;
             _shadowActive = false;
+            _vignetteReferenceFov = -1f;
             DetachFromCamera();
         }
 
@@ -286,18 +291,25 @@ namespace ScopeHousingMeshSurgery
             float soft = ScopeHousingMeshSurgeryPlugin.VignetteSoftness.Value;
             float opac = ScopeHousingMeshSurgeryPlugin.VignetteOpacity.Value;
             float mult = ScopeHousingMeshSurgeryPlugin.VignetteSizeMult.Value;
+            float scopeRadius = ScopeHousingMeshSurgeryPlugin.ScopeShadowRadius.Value;
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
             float aspect = cam != null ? cam.aspect : (16f / 9f);
+            float currentFov = cam != null ? Mathf.Max(1f, cam.fieldOfView) : 60f;
+            if (_vignetteReferenceFov < 0f) _vignetteReferenceFov = currentFov;
+            float fovScale = Mathf.Tan(_vignetteReferenceFov * 0.5f * Mathf.Deg2Rad) /
+                             Mathf.Max(0.001f, Mathf.Tan(currentFov * 0.5f * Mathf.Deg2Rad));
 
             if (Mathf.Abs(soft - _lastVigSoftness) < 0.001f &&
                 Mathf.Abs(opac - _lastVigOpacity)  < 0.005f &&
                 Mathf.Abs(mult - _lastVigSizeMult) < 0.001f &&
-                Mathf.Abs(aspect - _lastVigAspect) < 0.01f) return;
+                Mathf.Abs(aspect - _lastVigAspect) < 0.01f &&
+                Mathf.Abs(fovScale - _lastVigFovScale) < 0.01f) return;
             _lastVigSoftness = soft;
             _lastVigOpacity  = opac;
             _lastVigSizeMult = mult;
             _lastVigAspect   = aspect;
+            _lastVigFovScale = fovScale;
 
             const int S = 256;
             if (_vigTex == null)
@@ -308,11 +320,10 @@ namespace ScopeHousingMeshSurgery
                 _vigTex.filterMode = FilterMode.Bilinear;
             }
 
-            // VignetteSizeMult controls where the vignette ring sits.
-            // mult=1 → ring at ~edge of a circle inscribed in height.
-            // mult<1 → ring moves inward (more visible darkening).
-            // mult>1 → ring moves outward (less darkening).
-            float baseR = mult;
+            // Match the vignette ring to the scope shadow's clear aperture radius,
+            // then scale it with current camera FOV so the ring stays locked to the
+            // eyepiece when the view zooms in (reduced FOV).
+            float baseR = (scopeRadius * 2f) * mult * fovScale;
             float innerR = baseR * Mathf.Clamp01(1f - soft);
             float outerR = baseR;
 

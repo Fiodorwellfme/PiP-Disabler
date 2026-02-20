@@ -344,12 +344,12 @@ namespace ScopeHousingMeshSurgery
             VignetteOpacity = Config.Bind("4. Scope Effects", "VignetteOpacity", 0.85f,
                 new ConfigDescription("Maximum opacity of the lens vignette ring (0=invisible, 1=full black).",
                     new AcceptableValueRange<float>(0f, 1f)));
-            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 1.25f,
+            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 1.0f,
                 new ConfigDescription(
-                    "Vignette quad diameter as a multiplier of ReticleBaseSize.\n" +
-                    "1.0 = same size as reticle.  1.5 gives a visible border ring.\n" +
-                    "Higher values (5-15) may be needed for high-magnification scopes.",
-                    new AcceptableValueRange<float>(0.5f, 15f)));
+                    "Multiplier applied to the scope-aperture-matched vignette radius.\n" +
+                    "Tied to FOV so the vignette stays aligned to the eyepiece while zooming.\n" +
+                    "Use small adjustments around 1.0 for fine tuning.",
+                    new AcceptableValueRange<float>(0.6f, 1.6f)));
             VignetteSoftness = Config.Bind("4. Scope Effects", "VignetteSoftness", 0.35f,
                 new ConfigDescription(
                     "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
