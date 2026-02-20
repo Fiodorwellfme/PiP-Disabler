@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using EFT.CameraControl;
 using UnityEngine;
 
@@ -21,11 +24,16 @@ namespace ScopeHousingMeshSurgery
         {
             public Mesh OriginalAssetMesh;   // The original (non-readable) asset mesh
             public Mesh CutMesh;             // Our GPU-copied + cut mesh (to be Destroyed on restore)
+            public bool IsPersistentCacheMesh;
             public bool Applied;
         }
 
         private static readonly Dictionary<MeshFilter, MeshState> _tracked =
             new Dictionary<MeshFilter, MeshState>(64);
+        private static readonly Dictionary<string, Mesh> _persistentCache =
+            new Dictionary<string, Mesh>(128);
+        private static readonly string _cacheDir =
+            Path.Combine(Path.GetDirectoryName(typeof(ScopeHousingMeshSurgeryPlugin).Assembly.Location) ?? ".", "MeshCache");
         private static bool _loggedGpuCopy;
 
         public static void ApplyForOptic(OpticSight os)
@@ -71,6 +79,7 @@ namespace ScopeHousingMeshSurgery
 
             var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
             float cutRadius = ScopeHousingMeshSurgeryPlugin.CutRadius.Value;
+            string scopeCacheKey = BuildScopeCacheKey(scopeRoot, activeMode);
 
             foreach (var mf in targets)
             {
@@ -95,6 +104,20 @@ namespace ScopeHousingMeshSurgery
 
                 // First time: save original and create cut mesh.
                 Mesh originalAsset = mf.sharedMesh;
+                string meshCacheKey = BuildMeshCacheKey(scopeCacheKey, scopeRoot, mf, originalAsset);
+
+                if (TryGetPersistentCutMesh(meshCacheKey, out var cachedMesh))
+                {
+                    mf.sharedMesh = cachedMesh;
+                    _tracked[mf] = new MeshState
+                    {
+                        OriginalAssetMesh = originalAsset,
+                        CutMesh = cachedMesh,
+                        IsPersistentCacheMesh = true,
+                        Applied = true
+                    };
+                    continue;
+                }
 
                 try
                 {
@@ -170,11 +193,15 @@ namespace ScopeHousingMeshSurgery
                     // Step 3: Swap onto the MeshFilter
                     mf.sharedMesh = readable;
 
+                    RegisterPersistentCutMesh(meshCacheKey, readable);
+                    SaveMeshToPersistentCache(meshCacheKey, readable);
+
                     // Step 4: Track for restore
                     _tracked[mf] = new MeshState
                     {
                         OriginalAssetMesh = originalAsset,
                         CutMesh = readable,
+                        IsPersistentCacheMesh = true,
                         Applied = true
                     };
                 }
@@ -251,12 +278,213 @@ namespace ScopeHousingMeshSurgery
             // Destroy our created mesh to free GPU/CPU memory
             try
             {
-                if (st.CutMesh != null)
+                if (st.CutMesh != null && !st.IsPersistentCacheMesh)
                     UnityEngine.Object.Destroy(st.CutMesh);
             }
             catch { }
 
             _tracked.Remove(mf);
+        }
+
+
+        private static string BuildScopeCacheKey(Transform scopeRoot, Transform activeMode)
+        {
+            var sb = new StringBuilder(512);
+            sb.AppendLine($"scopeRoot={scopeRoot?.name}");
+            sb.AppendLine($"activeMode={activeMode?.name}");
+            sb.AppendLine($"cutMode={ScopeHousingMeshSurgeryPlugin.CutMode.Value}");
+            sb.AppendLine($"axis={ScopeHousingMeshSurgeryPlugin.PlaneNormalAxis.Value}");
+            sb.AppendLine($"offset={ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value:F6}");
+            sb.AppendLine($"plane1={ScopeHousingMeshSurgeryPlugin.Plane1OffsetMeters.Value:F6}");
+            sb.AppendLine($"radius={ScopeHousingMeshSurgeryPlugin.CutRadius.Value:F6}");
+            sb.AppendLine($"nearR={ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value:F6}");
+            sb.AppendLine($"start={ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value:F6}");
+            sb.AppendLine($"len={ScopeHousingMeshSurgeryPlugin.CutLength.Value:F6}");
+            sb.AppendLine($"p2={ScopeHousingMeshSurgeryPlugin.Plane2Position.Value:F6}/{ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value:F6}");
+            sb.AppendLine($"p3={ScopeHousingMeshSurgeryPlugin.Plane3Position.Value:F6}/{ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value:F6}");
+            sb.AppendLine($"p4={ScopeHousingMeshSurgeryPlugin.Plane4Position.Value:F6}/{ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value:F6}");
+            sb.AppendLine($"preserve={ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value:F6}");
+            return HashToHex(sb.ToString());
+        }
+
+        private static string BuildMeshCacheKey(string scopeCacheKey, Transform scopeRoot, MeshFilter mf, Mesh originalAsset)
+        {
+            string relPath = BuildRelativePath(scopeRoot, mf.transform);
+            string raw = $"{scopeCacheKey}|{relPath}|{originalAsset.name}|v={originalAsset.vertexCount}|s={originalAsset.subMeshCount}";
+            return HashToHex(raw);
+        }
+
+        private static string BuildRelativePath(Transform root, Transform leaf)
+        {
+            if (root == null || leaf == null) return leaf?.name ?? "unknown";
+            var names = new List<string>(16);
+            for (var t = leaf; t != null; t = t.parent)
+            {
+                names.Add(t.name ?? "unnamed");
+                if (t == root) break;
+            }
+            names.Reverse();
+            return string.Join("/", names);
+        }
+
+        private static string HashToHex(string input)
+        {
+            using (var sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(input ?? string.Empty));
+                var sb = new StringBuilder(hash.Length * 2);
+                for (int i = 0; i < hash.Length; i++)
+                    sb.Append(hash[i].ToString("x2"));
+                return sb.ToString();
+            }
+        }
+
+        private static bool TryGetPersistentCutMesh(string meshCacheKey, out Mesh mesh)
+        {
+            if (_persistentCache.TryGetValue(meshCacheKey, out mesh) && mesh != null)
+                return true;
+
+            var path = Path.Combine(_cacheDir, meshCacheKey + ".bin");
+            if (!File.Exists(path))
+                return false;
+
+            try
+            {
+                mesh = LoadMesh(path);
+                if (mesh == null) return false;
+                mesh.name = "CUT_CACHE_" + meshCacheKey.Substring(0, 8);
+                _persistentCache[meshCacheKey] = mesh;
+                ScopeHousingMeshSurgeryPlugin.LogVerbose($"[MeshSurgery] Loaded cached cut mesh: {path}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogWarn($"[MeshSurgery] Failed loading cache '{path}': {ex.Message}");
+                mesh = null;
+                return false;
+            }
+        }
+
+        private static void RegisterPersistentCutMesh(string meshCacheKey, Mesh mesh)
+        {
+            if (mesh == null) return;
+            _persistentCache[meshCacheKey] = mesh;
+        }
+
+        private static void SaveMeshToPersistentCache(string meshCacheKey, Mesh mesh)
+        {
+            if (mesh == null) return;
+
+            try
+            {
+                Directory.CreateDirectory(_cacheDir);
+                var path = Path.Combine(_cacheDir, meshCacheKey + ".bin");
+                if (File.Exists(path)) return;
+                SaveMesh(path, mesh);
+                ScopeHousingMeshSurgeryPlugin.LogVerbose($"[MeshSurgery] Saved cut mesh cache: {path}");
+            }
+            catch (Exception ex)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogWarn($"[MeshSurgery] Failed saving cache '{meshCacheKey}': {ex.Message}");
+            }
+        }
+
+        private static void SaveMesh(string path, Mesh mesh)
+        {
+            using (var fs = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var bw = new BinaryWriter(fs))
+            {
+                bw.Write("SHMS_MESH_CACHE_V1");
+
+                var vertices = mesh.vertices ?? Array.Empty<Vector3>();
+                var normals = mesh.normals ?? Array.Empty<Vector3>();
+                var tangents = mesh.tangents ?? Array.Empty<Vector4>();
+                var uv = mesh.uv ?? Array.Empty<Vector2>();
+
+                bw.Write(vertices.Length);
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    bw.Write(vertices[i].x); bw.Write(vertices[i].y); bw.Write(vertices[i].z);
+                }
+
+                bw.Write(normals.Length);
+                for (int i = 0; i < normals.Length; i++)
+                {
+                    bw.Write(normals[i].x); bw.Write(normals[i].y); bw.Write(normals[i].z);
+                }
+
+                bw.Write(tangents.Length);
+                for (int i = 0; i < tangents.Length; i++)
+                {
+                    bw.Write(tangents[i].x); bw.Write(tangents[i].y); bw.Write(tangents[i].z); bw.Write(tangents[i].w);
+                }
+
+                bw.Write(uv.Length);
+                for (int i = 0; i < uv.Length; i++)
+                {
+                    bw.Write(uv[i].x); bw.Write(uv[i].y);
+                }
+
+                bw.Write(mesh.subMeshCount);
+                for (int s = 0; s < mesh.subMeshCount; s++)
+                {
+                    var tris = mesh.GetTriangles(s);
+                    bw.Write(tris.Length);
+                    for (int i = 0; i < tris.Length; i++) bw.Write(tris[i]);
+                }
+            }
+        }
+
+        private static Mesh LoadMesh(string path)
+        {
+            using (var fs = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var br = new BinaryReader(fs))
+            {
+                string magic = br.ReadString();
+                if (!string.Equals(magic, "SHMS_MESH_CACHE_V1", StringComparison.Ordinal))
+                    throw new InvalidDataException("Unexpected mesh cache header");
+
+                int vCount = br.ReadInt32();
+                var vertices = new Vector3[vCount];
+                for (int i = 0; i < vCount; i++)
+                    vertices[i] = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+
+                int nCount = br.ReadInt32();
+                var normals = new Vector3[nCount];
+                for (int i = 0; i < nCount; i++)
+                    normals[i] = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+
+                int tCount = br.ReadInt32();
+                var tangents = new Vector4[tCount];
+                for (int i = 0; i < tCount; i++)
+                    tangents[i] = new Vector4(br.ReadSingle(), br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+
+                int uvCount = br.ReadInt32();
+                var uv = new Vector2[uvCount];
+                for (int i = 0; i < uvCount; i++)
+                    uv[i] = new Vector2(br.ReadSingle(), br.ReadSingle());
+
+                int subMeshCount = br.ReadInt32();
+                var mesh = new Mesh();
+                if (vertices.Length > 65535)
+                    mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+                mesh.SetVertices(vertices);
+                if (normals.Length == vertices.Length) mesh.SetNormals(normals);
+                if (tangents.Length == vertices.Length) mesh.SetTangents(tangents);
+                if (uv.Length == vertices.Length) mesh.SetUVs(0, uv);
+                mesh.subMeshCount = subMeshCount;
+                for (int s = 0; s < subMeshCount; s++)
+                {
+                    int triCount = br.ReadInt32();
+                    var tris = new int[triCount];
+                    for (int i = 0; i < triCount; i++) tris[i] = br.ReadInt32();
+                    mesh.SetTriangles(tris, s, true);
+                }
+
+                if (normals.Length != vertices.Length) mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+                return mesh;
+            }
         }
 
         private static bool DecideKeepPositive(Vector3 planePoint, Vector3 planeNormal, Vector3 camPos)
