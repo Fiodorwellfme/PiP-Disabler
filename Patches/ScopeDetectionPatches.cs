@@ -15,6 +15,8 @@ namespace ScopeHousingMeshSurgery.Patches
         [PatchPostfix]
         private static void Postfix(OpticSight __instance)
         {
+            if (!ScopeLifecycle.IsLocalPlayerOptic(__instance)) return;
+
             // Always cache the enabled optic (so it's ready if mod is toggled on later)
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[Patch] OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
@@ -33,6 +35,9 @@ namespace ScopeHousingMeshSurgery.Patches
         [PatchPostfix]
         private static void Postfix(OpticSight __instance)
         {
+            if (PiPDisabler.ShouldIgnoreOnDisable(__instance)) return;
+            if (!ScopeLifecycle.IsLocalPlayerOptic(__instance)) return;
+
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[Patch] OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"frame={Time.frameCount}");

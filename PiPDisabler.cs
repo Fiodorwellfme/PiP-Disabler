@@ -184,16 +184,10 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
         private static bool ShouldSkipPiPDisableForHighMagnification(OpticComponentUpdater updater)
         {
             if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value) return false;
-            if (updater == null) return false;
+            if (!TryGetLocalPlayerOptic(updater, out var os)) return false;
 
             try
             {
-                var field = GetOpticSightField();
-                if (field == null) return false;
-
-                var os = field.GetValue(updater) as OpticSight;
-                if (os == null) return false;
-
                 return ZoomController.GetMaxMagnification(os) > 10f;
             }
             catch
@@ -225,6 +219,28 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                         "[PiPDisabler] Could not find any OpticSight field on OpticComponentUpdater!");
             }
             return _opticSightField;
+        }
+
+        private static bool TryGetLocalPlayerOptic(OpticComponentUpdater updater, out OpticSight opticSight)
+        {
+            opticSight = null;
+            if (updater == null) return false;
+
+            try
+            {
+                var field = GetOpticSightField();
+                if (field == null) return false;
+
+                var os = field.GetValue(updater) as OpticSight;
+                if (!ScopeLifecycle.IsLocalPlayerOptic(os)) return false;
+
+                opticSight = os;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public static void RestoreAllCameras()
@@ -306,6 +322,7 @@ _ignoreOnDisableFrame.Clear();
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
                 if (__instance == null) return;
+                if (!TryGetLocalPlayerOptic(__instance, out _)) return;
                 if (ShouldSkipPiPDisableForHighMagnification(__instance)) return;
 
                 // Cache the optic camera transform for ReticleRenderer camera alignment
@@ -341,6 +358,7 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return true;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
+                if (!TryGetLocalPlayerOptic(__instance, out _)) return true;
                 if (ShouldSkipPiPDisableForHighMagnification(__instance)) return true;
 
                 // Ensure the camera can't render, but let LateUpdate run for transforms.

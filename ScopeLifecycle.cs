@@ -42,6 +42,22 @@ namespace ScopeHousingMeshSurgery
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
         public static OpticSight ActiveOptic => _activeOptic;
 
+        internal static bool IsLocalPlayerOptic(OpticSight os)
+        {
+            if (os == null) return false;
+
+            try
+            {
+                var player = os.GetComponentInParent<Player>();
+                var localPlayer = GetLocalPlayer();
+                return player != null && localPlayer != null && player == localPlayer;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         /// <summary>
         /// One-time reflection setup. Call from plugin Awake.
         /// </summary>
@@ -576,23 +592,33 @@ namespace ScopeHousingMeshSurgery
             catch { return null; }
         }
 
+        private static ProceduralWeaponAnimation GetLocalPwa()
+        {
+            var player = GetLocalPlayer();
+            return player != null ? player.ProceduralWeaponAnimation : null;
+        }
+
         /// <summary>
-        /// Fallback: find OpticSight if _lastEnabledOptic wasn't cached.
-        /// Uses FindObjectsOfType as last resort.
+        /// Fallback: find local-player OpticSight if _lastEnabledOptic wasn't cached.
+        /// Searches only the local player's weapon hierarchy.
         /// </summary>
         private static OpticSight FindOpticFromPWA()
         {
+            var pwa = GetLocalPwa();
+            if (pwa == null) return null;
+
             try
             {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
+                var all = pwa.GetComponentsInChildren<OpticSight>(true);
                 foreach (var os in all)
                 {
-                    if (os != null && os.isActiveAndEnabled)
+                    if (os != null && os.isActiveAndEnabled && IsLocalPlayerOptic(os))
                         return os;
                 }
+
                 foreach (var os in all)
                 {
-                    if (os != null) return os;
+                    if (os != null && IsLocalPlayerOptic(os)) return os;
                 }
             }
             catch { }
@@ -601,23 +627,26 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Finds an enabled OpticSight, preferring active and cached instances before
-        /// a global search.
+        /// Finds an enabled local-player OpticSight, preferring active and cached
+        /// instances before searching the local player's weapon hierarchy.
         /// </summary>
         private static OpticSight FindEnabledOpticFromPWA()
         {
-            if (_activeOptic != null && _activeOptic.isActiveAndEnabled)
+            if (_activeOptic != null && _activeOptic.isActiveAndEnabled && IsLocalPlayerOptic(_activeOptic))
                 return _activeOptic;
 
-            if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled)
+            if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled && IsLocalPlayerOptic(_lastEnabledOptic))
                 return _lastEnabledOptic;
+
+            var pwa = GetLocalPwa();
+            if (pwa == null) return null;
 
             try
             {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
+                var all = pwa.GetComponentsInChildren<OpticSight>(true);
                 foreach (var os in all)
                 {
-                    if (os != null && os.isActiveAndEnabled)
+                    if (os != null && os.isActiveAndEnabled && IsLocalPlayerOptic(os))
                         return os;
                 }
             }
