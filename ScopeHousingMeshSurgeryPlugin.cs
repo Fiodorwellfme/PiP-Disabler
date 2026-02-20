@@ -67,6 +67,13 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<float> MidCylinderRadius;
         internal static ConfigEntry<float> MidCylinderPosition;
         internal static ConfigEntry<float> FarCylinderRadius;
+        internal static ConfigEntry<float> Plane1OffsetMeters;
+        internal static ConfigEntry<float> Plane2Position;
+        internal static ConfigEntry<float> Plane2Radius;
+        internal static ConfigEntry<float> Plane3Position;
+        internal static ConfigEntry<float> Plane3Radius;
+        internal static ConfigEntry<float> Plane4Position;
+        internal static ConfigEntry<float> Plane4Radius;
         internal static ConfigEntry<float> CutStartOffset;
         internal static ConfigEntry<float> CutLength;
         internal static ConfigEntry<float> NearPreserveDepth;
@@ -266,6 +273,35 @@ namespace ScopeHousingMeshSurgery
                     "Far radius (meters) of the cone cut (objective side).\n" +
                     "0 = same as CylinderRadius (pure cylinder). >0 creates a cone/frustum shape.\n" +
                     "Set larger than CylinderRadius to widen the bore toward the objective lens.",
+                    new AcceptableValueRange<float>(0f, 0.2f)));
+            Plane1OffsetMeters = Config.Bind("3. Mesh Surgery", "Plane1OffsetMeters", 0f,
+                new ConfigDescription(
+                    "Offset (meters) for plane 1 from linza/backLens origin along bore axis.\n" +
+                    "Plane 1 radius is always CylinderRadius.",
+                    new AcceptableValueRange<float>(-0.02f, 0.02f)));
+            Plane2Position = Config.Bind("3. Mesh Surgery", "Plane2Position", 0.25f,
+                new ConfigDescription(
+                    "Normalized depth of plane 2 from near (0) to far (1).",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            Plane2Radius = Config.Bind("3. Mesh Surgery", "Plane2Radius", 0.013f,
+                new ConfigDescription(
+                    "Radius (meters) at plane 2.",
+                    new AcceptableValueRange<float>(0f, 0.2f)));
+            Plane3Position = Config.Bind("3. Mesh Surgery", "Plane3Position", 0.55f,
+                new ConfigDescription(
+                    "Normalized depth of plane 3 from near (0) to far (1).",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            Plane3Radius = Config.Bind("3. Mesh Surgery", "Plane3Radius", 0.02f,
+                new ConfigDescription(
+                    "Radius (meters) at plane 3.",
+                    new AcceptableValueRange<float>(0f, 0.2f)));
+            Plane4Position = Config.Bind("3. Mesh Surgery", "Plane4Position", 1f,
+                new ConfigDescription(
+                    "Normalized depth of plane 4 from near (0) to far (1). Usually 1.",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            Plane4Radius = Config.Bind("3. Mesh Surgery", "Plane4Radius", 0.12f,
+                new ConfigDescription(
+                    "Radius (meters) at plane 4 (away from player).",
                     new AcceptableValueRange<float>(0f, 0.2f)));
             CutStartOffset = Config.Bind("3. Mesh Surgery", "CutStartOffset", 0.064f,
                 new ConfigDescription(

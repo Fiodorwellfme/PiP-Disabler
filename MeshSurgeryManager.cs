@@ -52,7 +52,11 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
-            planePoint += planeNormal * ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value;
+            bool isCylinderMode = ScopeHousingMeshSurgeryPlugin.CutMode.Value == "Cylinder";
+            float plane1Offset = isCylinderMode
+                ? ScopeHousingMeshSurgeryPlugin.Plane1OffsetMeters.Value
+                : ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value;
+            planePoint += planeNormal * plane1Offset;
 
             bool keepPositive = DecideKeepPositive(planePoint, planeNormal, camPos);
             var keepSide = keepPositive
@@ -121,23 +125,26 @@ namespace ScopeHousingMeshSurgery
                     if (isCylinder)
                     {
                         float nearR = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
-                        float farR = ScopeHousingMeshSurgeryPlugin.FarCylinderRadius.Value;
-                        float midR = ScopeHousingMeshSurgeryPlugin.MidCylinderRadius.Value;
-                        float midPos = ScopeHousingMeshSurgeryPlugin.MidCylinderPosition.Value;
                         float startOff = ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value;
                         float cutLen = ScopeHousingMeshSurgeryPlugin.CutLength.Value;
                         float preserve = ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value;
-                        if (farR <= 0f) farR = nearR; // default to cylinder
+                        float p2 = ScopeHousingMeshSurgeryPlugin.Plane2Position.Value;
+                        float r2 = ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value;
+                        float p3 = ScopeHousingMeshSurgeryPlugin.Plane3Position.Value;
+                        float r3 = ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value;
+                        float p4 = ScopeHousingMeshSurgeryPlugin.Plane4Position.Value;
+                        float r4 = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
 
                         ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
-                            planePoint, planeNormal, nearR, farR, startOff, cutLen,
-                            keepInside: false, midRadius: midR, midPosition: midPos,
-                            nearPreserveDepth: preserve);
+                            planePoint, planeNormal, nearR, r4, startOff, cutLen,
+                            keepInside: false, midRadius: r2, midPosition: p2,
+                            nearPreserveDepth: preserve,
+                            plane3Radius: r3, plane3Position: p3, plane4Position: p4);
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[MeshSurgery] Frustum cut '{originalAsset.name}': nearR={nearR:F4} " +
-                            $"{(midR > 0f ? $"midR={midR:F4}@{midPos:F2} " : "")}" +
-                            $"farR={farR:F4} start={startOff:F4} len={cutLen:F4}" +
-                            $"{(preserve > 0f ? $" preserve={preserve:F4}" : "")}");
+                            $"[MeshSurgery] Frustum cut '{originalAsset.name}': p1R={nearR:F4}@0.00 " +
+                            $"p2R={r2:F4}@{p2:F2} p3R={r3:F4}@{p3:F2} p4R={r4:F4}@{p4:F2} " +
+                            $"start={startOff:F4} len={cutLen:F4} offset={plane1Offset:F4}" +
+                            (preserve > 0f ? $" preserve={preserve:F4}" : ""));
                     }
                     else
                     {
