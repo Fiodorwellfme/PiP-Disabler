@@ -34,7 +34,7 @@ namespace ScopeHousingMeshSurgery
         private static float _nativeMaxFov = 35f;  // scope's max FOV (min zoom) from ScopeZoomHandler
         private static bool  _fovRangeDiscovered;  // true once DiscoverFovRange has run for this scope
         private static bool  _isVariableZoom;      // true if ScopeZoomHandler was found (has zoom ring)
-        private static float _scrollStartNativeFov; // native FOV when scroll zoom first activated
+        private static float _lastNativeFovForSwitchDetect; // tracks native FOV changes while scroll override is active
 
         /// <summary>True if the shader AssetBundle was loaded successfully.</summary>
         public static bool ShaderAvailable => _shaderLoaded;
@@ -125,20 +125,23 @@ namespace ScopeHousingMeshSurgery
                 }
 
                 // Scroll zoom override — but detect mode switches first.
-                // If the native FOV changed significantly from when scroll zoom started
+                // If the native FOV changes while scroll override is active
                 // (e.g. user alt+right-clicked to switch magnification level), reset
-                // scroll zoom so the native change takes effect.
+                // scroll zoom so the native change takes effect immediately.
                 if (_scrollZoomActive && _scrollZoomFov > 0f)
                 {
-                    if (Mathf.Abs(scopeFov - _scrollStartNativeFov) > 0.3f)
+                    // Use a small epsilon so each discrete magnification step is detected immediately.
+                    // Larger thresholds caused multiple mode toggles to be required before reset.
+                    if (Mathf.Abs(scopeFov - _lastNativeFovForSwitchDetect) > 0.03f)
                     {
                         ScopeHousingMeshSurgeryPlugin.LogInfo(
-                            $"[ZoomController] Native FOV changed {_scrollStartNativeFov:F2}° → {scopeFov:F2}° — resetting scroll zoom");
+                            $"[ZoomController] Native FOV changed {_lastNativeFovForSwitchDetect:F2}° → {scopeFov:F2}° — resetting scroll zoom");
                         _scrollZoomActive = false;
                         _scrollZoomFov = 0f;
                     }
                     else
                     {
+                        _lastNativeFovForSwitchDetect = scopeFov;
                         return 35f / _scrollZoomFov;
                     }
                 }
@@ -200,7 +203,7 @@ namespace ScopeHousingMeshSurgery
             if (!_scrollZoomActive)
             {
                 _scrollZoomFov = _nativeFov;
-                _scrollStartNativeFov = _nativeFov;
+                _lastNativeFovForSwitchDetect = _nativeFov;
                 _scrollZoomActive = true;
             }
 
@@ -228,7 +231,7 @@ namespace ScopeHousingMeshSurgery
         {
             _scrollZoomActive = false;
             _scrollZoomFov = 0f;
-            _scrollStartNativeFov = 0f;
+            _lastNativeFovForSwitchDetect = 0f;
             _fovRangeDiscovered = false;
             _isVariableZoom = false;
         }
