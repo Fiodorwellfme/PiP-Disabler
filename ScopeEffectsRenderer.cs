@@ -31,7 +31,6 @@ namespace ScopeHousingMeshSurgery
         private static float      _lastVigOpacity   = -1f;
         private static float      _lastVigSizeMult  = -1f;
         private static float      _lastVigAspect    = -1f;
-        private static float      _lastVigFovScale  = -1f;
         private static Matrix4x4  _vigMatrix = Matrix4x4.identity;
         private static bool       _vigActive;
 
@@ -43,7 +42,6 @@ namespace ScopeHousingMeshSurgery
         private static float      _lastShadowSoftness = -1f;
         private static float      _lastShadowOpacity  = -1f;
         private static float      _lastShadowAspect   = -1f;
-        private static float      _lastShadowFovScale = -1f;
         private static Matrix4x4  _shadowMatrix = Matrix4x4.identity;
         private static bool       _shadowActive;
 
@@ -209,7 +207,8 @@ namespace ScopeHousingMeshSurgery
 
             Vector3 pos = cam.transform.position + cam.transform.forward * dist;
             Quaternion rot = cam.transform.rotation;
-            Vector3 scale = new Vector3(halfW * 6f, halfH * 6f, 1f);
+            float fovScale = GetFovScale(cam);
+            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
 
             _vigMatrix = Matrix4x4.TRS(pos, rot, scale);
         }
@@ -228,7 +227,8 @@ namespace ScopeHousingMeshSurgery
 
             Vector3 pos = cam.transform.position + cam.transform.forward * dist;
             Quaternion rot = cam.transform.rotation;
-            Vector3 scale = new Vector3(halfW * 6f, halfH * 6f, 1f);
+            float fovScale = GetFovScale(cam);
+            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
 
             _shadowMatrix = Matrix4x4.TRS(pos, rot, scale);
         }
@@ -291,18 +291,15 @@ namespace ScopeHousingMeshSurgery
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
             float aspect = cam != null ? cam.aspect : (16f / 9f);
-            float fovScale = GetFovScale(cam);
 
             if (Mathf.Abs(soft - _lastVigSoftness) < 0.001f &&
                 Mathf.Abs(opac - _lastVigOpacity)  < 0.005f &&
                 Mathf.Abs(mult - _lastVigSizeMult) < 0.001f &&
-                Mathf.Abs(aspect - _lastVigAspect) < 0.01f &&
-                Mathf.Abs(fovScale - _lastVigFovScale) < 0.01f) return;
+                Mathf.Abs(aspect - _lastVigAspect) < 0.01f) return;
             _lastVigSoftness = soft;
             _lastVigOpacity  = opac;
             _lastVigSizeMult = mult;
             _lastVigAspect   = aspect;
-            _lastVigFovScale = fovScale;
 
             const int S = 256;
             if (_vigTex == null)
@@ -317,7 +314,7 @@ namespace ScopeHousingMeshSurgery
             // mult=1 → ring at ~edge of a circle inscribed in height.
             // mult<1 → ring moves inward (more visible darkening).
             // mult>1 → ring moves outward (less darkening).
-            float baseR = mult * fovScale;
+            float baseR = mult;
             float innerR = baseR * Mathf.Clamp01(1f - soft);
             float outerR = baseR;
 
@@ -379,18 +376,15 @@ namespace ScopeHousingMeshSurgery
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
             float aspect = cam != null ? cam.aspect : (16f / 9f);
-            float fovScale = GetFovScale(cam);
 
             if (Mathf.Abs(radius - _lastShadowRadius)   < 0.001f &&
                 Mathf.Abs(soft   - _lastShadowSoftness) < 0.001f &&
                 Mathf.Abs(opac   - _lastShadowOpacity)  < 0.005f &&
-                Mathf.Abs(aspect - _lastShadowAspect)   < 0.01f &&
-                Mathf.Abs(fovScale - _lastShadowFovScale) < 0.01f) return;
+                Mathf.Abs(aspect - _lastShadowAspect)   < 0.01f) return;
             _lastShadowRadius   = radius;
             _lastShadowSoftness = soft;
             _lastShadowOpacity  = opac;
             _lastShadowAspect   = aspect;
-            _lastShadowFovScale = fovScale;
 
             const int S = 512;
             if (_shadowTex == null)
@@ -401,8 +395,8 @@ namespace ScopeHousingMeshSurgery
                 _shadowTex.filterMode = FilterMode.Bilinear;
             }
 
-            float innerR = radius * 2f * fovScale;
-            float softR  = soft * 2f * fovScale;
+            float innerR = radius * 2f;
+            float softR  = soft * 2f;
             float outerR = innerR + softR;
             var   pixels = new Color32[S * S];
 
@@ -430,7 +424,7 @@ namespace ScopeHousingMeshSurgery
             float currentFov = cam != null ? cam.fieldOfView : 35f;
             float referenceFov = Mathf.Max(1f, ScopeHousingMeshSurgeryPlugin.ScopedFov.Value);
 
-            // Lower FOV = larger vignette/shadow aperture, higher FOV = smaller.
+            // Lower FOV = larger on-screen effects, higher FOV = smaller.
             return Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
         }
 
