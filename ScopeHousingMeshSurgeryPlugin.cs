@@ -385,7 +385,7 @@ namespace ScopeHousingMeshSurgery
                     "Vignette quad diameter as a multiplier of ReticleBaseSize.\n" +
                     "1.0 = same size as reticle.  1.5 gives a visible border ring.\n" +
                     "Higher values (5-15) may be needed for high-magnification scopes.",
-                    new AcceptableValueRange<float>(0.5f, 15f)));
+                    new AcceptableValueRange<float>(0f, 1f)));
             VignetteSoftness = Config.Bind("4. Scope Effects", "VignetteSoftness", 1f,
                 new ConfigDescription(
                     "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
