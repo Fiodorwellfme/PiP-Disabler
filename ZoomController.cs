@@ -186,17 +186,34 @@ namespace ScopeHousingMeshSurgery
             float minFov = _nativeMinFov;
             float maxFov = _nativeMaxFov;
 
+            // Stay slightly inside native limits so we don't stick exactly on hard endpoints.
+            // This helps mode-switch detection when users scroll to the extremes.
+            const float boundaryInset = 0.1f;
+            float hardMinFov = _nativeMinFov + boundaryInset;
+            float hardMaxFov = _nativeMaxFov - boundaryInset;
+
+            // Safety: if scope range is too narrow, fall back to full native range.
+            if (hardMaxFov <= hardMinFov + 0.01f)
+            {
+                hardMinFov = _nativeMinFov;
+                hardMaxFov = _nativeMaxFov;
+            }
+
             // Config overrides are in magnification units for user-friendliness
             float cfgMinMag = ScopeHousingMeshSurgeryPlugin.ScrollZoomMin.Value;
             float cfgMaxMag = ScopeHousingMeshSurgeryPlugin.ScrollZoomMax.Value;
             if (cfgMaxMag > 0f) minFov = 35f / cfgMaxMag;
             if (cfgMinMag > 0f) maxFov = 35f / cfgMinMag;
 
-            // Safety: if range is degenerate after config overrides, allow ±50%
+            // Keep requested range within slightly inset native boundaries.
+            minFov = Mathf.Clamp(minFov, hardMinFov, hardMaxFov);
+            maxFov = Mathf.Clamp(maxFov, hardMinFov, hardMaxFov);
+
+            // Safety: if range is degenerate after config overrides and clamping, allow inset-native range.
             if (maxFov <= minFov + 0.05f)
             {
-                minFov = _nativeFov * 0.5f;
-                maxFov = _nativeFov * 2f;
+                minFov = hardMinFov;
+                maxFov = hardMaxFov;
             }
 
             // Initialize from native FOV if this is the first scroll
