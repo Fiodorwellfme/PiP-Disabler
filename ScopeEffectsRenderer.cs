@@ -207,7 +207,8 @@ namespace ScopeHousingMeshSurgery
 
             Vector3 pos = cam.transform.position + cam.transform.forward * dist;
             Quaternion rot = cam.transform.rotation;
-            Vector3 scale = new Vector3(halfW * 6f, halfH * 6f, 1f);
+            float fovScale = GetFovScale(cam);
+            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
 
             _vigMatrix = Matrix4x4.TRS(pos, rot, scale);
         }
@@ -226,7 +227,8 @@ namespace ScopeHousingMeshSurgery
 
             Vector3 pos = cam.transform.position + cam.transform.forward * dist;
             Quaternion rot = cam.transform.rotation;
-            Vector3 scale = new Vector3(halfW * 6f, halfH * 6f, 1f);
+            float fovScale = GetFovScale(cam);
+            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
 
             _shadowMatrix = Matrix4x4.TRS(pos, rot, scale);
         }
@@ -415,6 +417,15 @@ namespace ScopeHousingMeshSurgery
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[ScopeEffects] Shadow texture rebuilt: aspect={aspect:F2} radius={radius} soft={soft}");
+        }
+
+        private static float GetFovScale(Camera cam)
+        {
+            float currentFov = cam != null ? cam.fieldOfView : 35f;
+            float referenceFov = Mathf.Max(1f, ScopeHousingMeshSurgeryPlugin.ScopedFov.Value);
+
+            // Lower FOV = larger on-screen effects, higher FOV = smaller.
+            return Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
         }
 
         // ─────────────────────────────────────────────────────────────────────
