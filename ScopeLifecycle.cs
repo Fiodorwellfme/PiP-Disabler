@@ -463,6 +463,7 @@ namespace ScopeHousingMeshSurgery
         public static void ReapplyFov()
         {
             if (!_isScoped) return;
+            if (_modBypassedForCurrentScope) return;
             ApplyFov(false); // false = short duration for scroll feel
         }
 
@@ -474,6 +475,7 @@ namespace ScopeHousingMeshSurgery
         {
             try
             {
+                if (_modBypassedForCurrentScope) return;
                 if (!ScopeHousingMeshSurgeryPlugin.EnableZoom.Value) return;
                 if (ZoomController.ShaderAvailable && ScopeHousingMeshSurgeryPlugin.EnableShaderZoom.Value)
                     return; // Shader zoom mode doesn't need FOV changes

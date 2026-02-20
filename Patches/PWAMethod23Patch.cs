@@ -50,6 +50,9 @@ namespace ScopeHousingMeshSurgery.Patches
                 // Only apply when actually scoped (prevents FOV changes outside ADS)
                 if (!ScopeLifecycle.IsScoped) return;
 
+                // Auto-bypass mode for high-magnification optics: keep vanilla EFT FOV behavior.
+                if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
+
                 // Only in first person, aiming, not sprinting.
                 if (!__instance.IsAiming) return;
                 if (__instance.Sprint) return;
