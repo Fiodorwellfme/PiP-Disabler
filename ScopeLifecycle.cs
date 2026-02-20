@@ -36,8 +36,10 @@ namespace ScopeHousingMeshSurgery
         private static bool _isScoped;
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
+        private static bool _modBypassedForCurrentScope;
 
         public static bool IsScoped => _isScoped;
+        public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
         public static OpticSight ActiveOptic => _activeOptic;
 
         /// <summary>
@@ -89,6 +91,26 @@ namespace ScopeHousingMeshSurgery
 
                 // Update the active optic to the new mode
                 _activeOptic = os;
+
+                float maxMag = ZoomController.GetMaxMagnification(os);
+                bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
+                    && maxMag > 10f;
+                if (bypassForMode)
+                {
+                    _modBypassedForCurrentScope = true;
+                    ReticleRenderer.Cleanup();
+                    ScopeEffectsRenderer.Cleanup();
+                    LensTransparency.RestoreAll();
+                    CameraSettingsManager.Restore();
+                    PiPDisabler.RestoreAllCameras();
+                    if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                        MeshSurgeryManager.RestoreForScope(os.transform);
+                    PlaneVisualizer.Hide();
+                    ZeroingController.Reset();
+                    return;
+                }
+
+                _modBypassedForCurrentScope = false;
 
                 // Re-extract reticle from the NEW mode's linza
                 ReticleRenderer.Cleanup();
@@ -221,6 +243,7 @@ namespace ScopeHousingMeshSurgery
         public static void Tick()
         {
             if (!_isScoped) return;
+            if (_modBypassedForCurrentScope) return;
 
             // Ensure lens stays hidden + update variable zoom
             if (ZoomController.IsActive)
@@ -268,6 +291,7 @@ namespace ScopeHousingMeshSurgery
         {
             if (_isScoped)
                 DoScopeExit();
+            _modBypassedForCurrentScope = false;
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
             _lastEnabledOptic = null;
@@ -303,6 +327,22 @@ namespace ScopeHousingMeshSurgery
 
             _isScoped = true;
             _activeOptic = os;
+
+            float maxMag = ZoomController.GetMaxMagnification(os);
+            _modBypassedForCurrentScope = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
+                && maxMag > 10f;
+            if (_modBypassedForCurrentScope)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[ScopeLifecycle] Bypassing mod for high-magnification scope: max={maxMag:F1}x (>10x)");
+
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
+                return;
+            }
 
             // Check blacklist before doing anything — blacklisted scopes skip surgery + reticle
             var scopeRootForBlacklist = ScopeHierarchy.FindScopeRoot(os.transform);
@@ -372,6 +412,13 @@ namespace ScopeHousingMeshSurgery
             _isScoped = false;
             _activeOptic = null;
 
+            // If this scope was bypassed (high magnification), skip mod cleanup paths.
+            if (_modBypassedForCurrentScope)
+            {
+                _modBypassedForCurrentScope = false;
+                return;
+            }
+
             // 1. Restore FOV INSTANTLY (duration=0, no sluggish exit feel)
             RestoreFov();
 
@@ -418,6 +465,7 @@ namespace ScopeHousingMeshSurgery
         public static void ReapplyFov()
         {
             if (!_isScoped) return;
+            if (_modBypassedForCurrentScope) return;
             ApplyFov(false); // false = short duration for scroll feel
         }
 
@@ -429,6 +477,7 @@ namespace ScopeHousingMeshSurgery
         {
             try
             {
+                if (_modBypassedForCurrentScope) return;
                 if (!ScopeHousingMeshSurgeryPlugin.EnableZoom.Value) return;
                 if (ZoomController.ShaderAvailable && ScopeHousingMeshSurgeryPlugin.EnableShaderZoom.Value)
                     return; // Shader zoom mode doesn't need FOV changes

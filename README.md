@@ -44,6 +44,7 @@ If you skip this step, the mod falls back to FOV zoom (camera FOV change).
 | Setting | Default | Description |
 |---------|---------|-------------|
 | DisablePiP | true | Kill optic camera |
+| AutoDisableForHighMagnificationScopes | false | Auto-disable the mod when scoped optic max magnification is above 10x |
 | MakeLensesTransparent | true | Hide lens surfaces |
 
 ## How Shader Zoom Works

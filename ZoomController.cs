@@ -130,6 +130,61 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
+        /// Returns the optic's maximum magnification.
+        /// For variable zoom scopes this is read from ScopeZoomHandler range.
+        /// For fixed scopes this falls back to current magnification.
+        /// </summary>
+        public static float GetMaxMagnification(OpticSight os)
+        {
+            if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
+
+            try
+            {
+                var szh = os.GetComponentInParent<ScopeZoomHandler>();
+                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
+                if (szh != null)
+                {
+                    var szhType = szh.GetType();
+                    float minFov = 0f; // min FOV = highest zoom
+
+                    var s1Prop = szhType.GetProperty("Single_1",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                    if (s1Prop != null && s1Prop.PropertyType == typeof(float))
+                        minFov = (float)s1Prop.GetValue(szh);
+
+                    if (minFov < 0.1f)
+                    {
+                        foreach (var field in szhType.GetFields(
+                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+                        {
+                            if (field.FieldType.Name.Contains("IAdjustableOpticData") ||
+                                field.FieldType.Name.Contains("AdjustableOptic") ||
+                                field.Name.Contains("iadjustableOpticData"))
+                            {
+                                var opticData = field.GetValue(szh);
+                                if (opticData == null) continue;
+
+                                var mmfProp = opticData.GetType().GetProperty("MinMaxFov");
+                                if (mmfProp != null && mmfProp.PropertyType == typeof(Vector3))
+                                {
+                                    var mmf = (Vector3)mmfProp.GetValue(opticData);
+                                    minFov = mmf.y;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (minFov > 0.1f)
+                        return 35f / (minFov * 2f);
+                }
+            }
+            catch { }
+
+            return GetMagnification(os);
+        }
+
+        /// <summary>
         /// Returns the current effective magnification as a scope FOV value.
         /// Used by FovController to keep FOV and reticle in sync.
         /// Returns 0 if no override is active.
