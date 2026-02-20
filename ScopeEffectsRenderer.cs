@@ -299,7 +299,7 @@ namespace ScopeHousingMeshSurgery
             _lastVigSizeMult = mult;
             _lastVigAspect   = aspect;
 
-            const int S = 256;
+            const int S = 512;
             if (_vigTex == null)
             {
                 _vigTex            = new Texture2D(S, S, TextureFormat.RGBA32, false);
@@ -321,8 +321,8 @@ namespace ScopeHousingMeshSurgery
             for (int x = 0; x < S; x++)
             {
                 // Aspect-corrected distance from center (normalized -1..1)
-                float nx   = ((float)x / S - 0.5f) * 2f * aspect;
-                float ny   = ((float)y / S - 0.5f) * 2f;
+                float nx   = (((float)x + 0.5f) / S - 0.5f) * 2f * aspect;
+                float ny   = (((float)y + 0.5f) / S - 0.5f) * 2f;
                 float dist = Mathf.Sqrt(nx * nx + ny * ny);
 
                 byte a;
@@ -401,8 +401,8 @@ namespace ScopeHousingMeshSurgery
             for (int y = 0; y < S; y++)
             for (int x = 0; x < S; x++)
             {
-                float nx   = ((float)x / S - 0.5f) * 2f * aspect;
-                float ny   = ((float)y / S - 0.5f) * 2f;
+                float nx   = (((float)x + 0.5f) / S - 0.5f) * 2f * aspect;
+                float ny   = (((float)y + 0.5f) / S - 0.5f) * 2f;
                 float dist = Mathf.Sqrt(nx * nx + ny * ny);
                 float t    = Mathf.Clamp01((dist - innerR) / Mathf.Max(0.01f, outerR - innerR));
                 byte  a    = (byte)(Mathf.SmoothStep(0f, 1f, t) * opac * 255f);

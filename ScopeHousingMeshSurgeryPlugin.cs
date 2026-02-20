@@ -388,8 +388,8 @@ namespace ScopeHousingMeshSurgery
                     new AcceptableValueRange<float>(0.5f, 15f)));
             VignetteSoftness = Config.Bind("4. Scope Effects", "VignetteSoftness", 0.35f,
                 new ConfigDescription(
-                    "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
-                    new AcceptableValueRange<float>(0f, 1f)));
+                    "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 0.5=maximum softness).",
+                    new AcceptableValueRange<float>(0f, 0.5f)));
 
             ScopeShadowEnabled = Config.Bind("4. Scope Effects", "ScopeShadowEnabled", true,
                 "Overlay a fullscreen scope-tube shadow: black everywhere except a transparent\n" +
