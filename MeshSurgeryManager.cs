@@ -24,8 +24,8 @@ namespace ScopeHousingMeshSurgery
             public bool Applied;
         }
 
-        private static readonly Dictionary<MeshFilter, MeshState> _tracked =
-            new Dictionary<MeshFilter, MeshState>(64);
+        private static readonly Dictionary<Component, MeshState> _tracked =
+            new Dictionary<Component, MeshState>(64);
         private static bool _loggedGpuCopy;
 
         public static void ApplyForOptic(OpticSight os)
@@ -69,32 +69,32 @@ namespace ScopeHousingMeshSurgery
             // Show visualizer (if enabled)
             PlaneVisualizer.Show(planePoint, planeNormal);
 
-            var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
+            var targets = ScopeHierarchy.FindTargetMeshComponents(scopeRoot, activeMode);
             float cutRadius = ScopeHousingMeshSurgeryPlugin.CutRadius.Value;
 
-            foreach (var mf in targets)
+            foreach (var target in targets)
             {
-                if (!mf || !mf.sharedMesh) continue;
+                if (!target) continue;
+
+                Mesh originalAsset = GetSharedMesh(target);
+                if (!originalAsset) continue;
 
                 // Radius filter: skip meshes too far from the cut center.
                 if (cutRadius > 0f)
                 {
-                    var boundsCenter = mf.GetComponent<Renderer>()?.bounds.center ?? mf.transform.position;
+                    var boundsCenter = target.GetComponent<Renderer>()?.bounds.center ?? target.transform.position;
                     float dist = Vector3.Distance(boundsCenter, planePoint);
                     if (dist > cutRadius)
                     {
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[MeshSurgery] Skipping '{mf.sharedMesh.name}' — dist={dist:F4} > radius={cutRadius:F4}");
+                            $"[MeshSurgery] Skipping '{originalAsset.name}' — dist={dist:F4} > radius={cutRadius:F4}");
                         continue;
                     }
                 }
 
                 // Already applied? Skip.
-                if (_tracked.TryGetValue(mf, out var existing) && existing.Applied)
+                if (_tracked.TryGetValue(target, out var existing) && existing.Applied)
                     continue;
-
-                // First time: save original and create cut mesh.
-                Mesh originalAsset = mf.sharedMesh;
 
                 try
                 {
@@ -135,7 +135,7 @@ namespace ScopeHousingMeshSurgery
                         float p4 = ScopeHousingMeshSurgeryPlugin.Plane4Position.Value;
                         float r4 = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
 
-                        ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
+                        ok = MeshPlaneCutter.CutMeshFrustum(readable, target.transform,
                             planePoint, planeNormal, nearR, r4, startOff, cutLen,
                             keepInside: false, midRadius: r2, midPosition: p2,
                             nearPreserveDepth: preserve,
@@ -148,7 +148,7 @@ namespace ScopeHousingMeshSurgery
                     }
                     else
                     {
-                        ok = MeshPlaneCutter.CutMeshDirect(readable, mf.transform,
+                        ok = MeshPlaneCutter.CutMeshDirect(readable, target.transform,
                             planePoint, planeNormal, keepSide);
                     }
 
@@ -168,10 +168,10 @@ namespace ScopeHousingMeshSurgery
                         $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
 
                     // Step 3: Swap onto the MeshFilter
-                    mf.sharedMesh = readable;
+                    SetSharedMesh(target, readable);
 
                     // Step 4: Track for restore
-                    _tracked[mf] = new MeshState
+                    _tracked[target] = new MeshState
                     {
                         OriginalAssetMesh = originalAsset,
                         CutMesh = readable,
@@ -206,7 +206,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             var toRestore = _tracked.Keys
-                .Where(mf => mf && mf.transform && mf.transform.IsChildOf(searchRoot))
+                .Where(target => target && target.transform && target.transform.IsChildOf(searchRoot))
                 .ToArray();
 
             if (toRestore.Length == 0) return;
@@ -214,8 +214,8 @@ namespace ScopeHousingMeshSurgery
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[MeshSurgery] RestoreForScope: {toRestore.Length} meshes to restore (searchRoot='{searchRoot.name}')");
 
-            foreach (var mf in toRestore)
-                RestoreMeshFilter(mf);
+            foreach (var target in toRestore)
+                RestoreMeshTarget(target);
         }
 
         public static void RestoreAll()
@@ -226,21 +226,21 @@ namespace ScopeHousingMeshSurgery
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[MeshSurgery] RestoreAll: {keys.Length} meshes to restore");
 
-            foreach (var mf in keys)
-                RestoreMeshFilter(mf);
+            foreach (var target in keys)
+                RestoreMeshTarget(target);
         }
 
-        private static void RestoreMeshFilter(MeshFilter mf)
+        private static void RestoreMeshTarget(Component target)
         {
-            if (!mf) { _tracked.Remove(mf); return; }
-            if (!_tracked.TryGetValue(mf, out var st) || st == null) return;
+            if (!target) { _tracked.Remove(target); return; }
+            if (!_tracked.TryGetValue(target, out var st) || st == null) return;
 
             // Restore original asset mesh
             try
             {
-                mf.sharedMesh = st.OriginalAssetMesh;
+                SetSharedMesh(target, st.OriginalAssetMesh);
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[MeshSurgery] Restored '{st.OriginalAssetMesh?.name}' on {mf.gameObject.name}");
+                    $"[MeshSurgery] Restored '{st.OriginalAssetMesh?.name}' on {target.gameObject.name}");
             }
             catch (Exception ex)
             {
@@ -256,7 +256,20 @@ namespace ScopeHousingMeshSurgery
             }
             catch { }
 
-            _tracked.Remove(mf);
+            _tracked.Remove(target);
+        }
+
+        private static Mesh GetSharedMesh(Component target)
+        {
+            if (target is MeshFilter mf) return mf.sharedMesh;
+            if (target is SkinnedMeshRenderer smr) return smr.sharedMesh;
+            return null;
+        }
+
+        private static void SetSharedMesh(Component target, Mesh mesh)
+        {
+            if (target is MeshFilter mf) mf.sharedMesh = mesh;
+            else if (target is SkinnedMeshRenderer smr) smr.sharedMesh = mesh;
         }
 
         private static bool DecideKeepPositive(Vector3 planePoint, Vector3 planeNormal, Vector3 camPos)
@@ -507,9 +520,9 @@ namespace ScopeHousingMeshSurgery
             }
         }
 
-        public static List<MeshFilter> FindTargetMeshFilters(Transform scopeRoot, Transform activeMode)
+        public static List<Component> FindTargetMeshComponents(Transform scopeRoot, Transform activeMode)
         {
-            if (scopeRoot == null) return new List<MeshFilter>();
+            if (scopeRoot == null) return new List<Component>();
 
             var excludes = ParseExcludes(ScopeHousingMeshSurgeryPlugin.ExcludeNameContainsCsv.Value);
 
@@ -597,39 +610,73 @@ namespace ScopeHousingMeshSurgery
                 return false;
             }
 
-            var result = new List<MeshFilter>(64);
+            var result = new List<Component>(64);
             int skippedLens = 0, skippedExclude = 0, skippedMode = 0, skippedOther = 0;
+            int skippedNoMesh = 0;
 
-            foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
+            foreach (var r in searchRoot.GetComponentsInChildren<Renderer>(true))
             {
-                if (!mf || !mf.sharedMesh) continue;
+                if (!r) continue;
+
+                Component target = null;
+                Mesh mesh = null;
+
+                if (r is MeshRenderer)
+                {
+                    var mf = r.GetComponent<MeshFilter>();
+                    if (mf != null)
+                    {
+                        target = mf;
+                        mesh = mf.sharedMesh;
+                    }
+                }
+                else if (r is SkinnedMeshRenderer smr)
+                {
+                    target = smr;
+                    mesh = smr.sharedMesh;
+                }
+
+                if (target == null || mesh == null)
+                { skippedNoMesh++; continue; }
 
                 // Skip meshes under other scope roots (sibling scopes, canted sights)
-                if (otherScopeRoots.Count > 0 && IsUnderOtherScope(mf.transform))
+                if (otherScopeRoots.Count > 0 && IsUnderOtherScope(target.transform))
                 { skippedOther++; continue; }
 
-                if (IsLensNode(mf.transform, searchRoot))
+                if (IsLensNode(target.transform, searchRoot))
                 { skippedLens++; continue; }
 
-                var goName = mf.transform.name ?? "";
-                var meshName = mf.sharedMesh.name ?? "";
+                var goName = target.transform.name ?? "";
+                var meshName = mesh.name ?? "";
 
                 if (IsExcluded(goName) || IsExcluded(meshName))
                 { skippedExclude++; continue; }
 
                 // Skip meshes belonging to a DIFFERENT mode (not the active one)
-                var modeAncestor = GetModeAncestor(mf.transform, searchRoot);
+                var modeAncestor = GetModeAncestor(target.transform, searchRoot);
                 if (modeAncestor != null && activeMode != null && modeAncestor != activeMode)
                 { skippedMode++; continue; }
 
-                result.Add(mf);
+                result.Add(target);
             }
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
                 $"{result.Count} targets, skipped: lens={skippedLens} exclude={skippedExclude} " +
-                $"mode={skippedMode} otherScope={skippedOther}");
+                $"mode={skippedMode} otherScope={skippedOther} noMesh={skippedNoMesh}");
 
+            return result;
+        }
+
+        public static List<MeshFilter> FindTargetMeshFilters(Transform scopeRoot, Transform activeMode)
+        {
+            var components = FindTargetMeshComponents(scopeRoot, activeMode);
+            var result = new List<MeshFilter>(components.Count);
+            for (int i = 0; i < components.Count; i++)
+            {
+                if (components[i] is MeshFilter mf)
+                    result.Add(mf);
+            }
             return result;
         }
 
