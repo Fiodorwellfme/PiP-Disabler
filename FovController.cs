@@ -21,6 +21,9 @@ namespace ScopeHousingMeshSurgery
     /// </summary>
     internal static class FovController
     {
+        // Keep zoom math anchored to EFT's standard baseline, regardless of player settings.
+        public const float ZoomBaselineFov = 50f;
+
         // Cache the discovered ScopeCameraData type and field
         private static Type _scopeCamDataType;
         private static FieldInfo _scopeCamDataFovField;
@@ -30,10 +33,15 @@ namespace ScopeHousingMeshSurgery
         private static float _lastScopeFov;
 
         /// <summary>
-        /// Computes the zoomed FOV given the player's base FOV.
+        /// Computes the zoomed FOV from a fixed baseline FOV (50°).
         /// </summary>
         public static float ComputeZoomedFov(float baseFov, ProceduralWeaponAnimation pwa)
         {
+            _ = baseFov;
+            _ = pwa;
+
+            float effectiveBaseFov = ZoomBaselineFov;
+
             if (ScopeHousingMeshSurgeryPlugin.AutoFovFromScope.Value)
             {
                 // Check scroll zoom override first — keeps FOV and reticle in sync
@@ -43,7 +51,7 @@ namespace ScopeHousingMeshSurgery
                 if (scopeFov > 0.1f)
                 {
                     float magnification = 35f / scopeFov;
-                    float baseFovRad = baseFov * Mathf.Deg2Rad;
+                    float baseFovRad = effectiveBaseFov * Mathf.Deg2Rad;
                     float resultFovRad = 2f * Mathf.Atan2(Mathf.Tan(baseFovRad * 0.5f), magnification);
                     float resultFov = resultFovRad * Mathf.Rad2Deg;
 
@@ -53,7 +61,7 @@ namespace ScopeHousingMeshSurgery
                         _lastScopeFov = scopeFov;
                         ScopeHousingMeshSurgeryPlugin.LogInfo(
                             $"[FovController] scopeFov={scopeFov:F2} → mag={magnification:F2}x → " +
-                            $"mainFov={resultFov:F1} (baseFov={baseFov:F0})" +
+                            $"mainFov={resultFov:F1} (baseFov={effectiveBaseFov:F0})" +
                             (overrideFov > 0.1f ? " [SCROLL OVERRIDE]" : ""));
                     }
 

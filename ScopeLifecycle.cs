@@ -426,10 +426,11 @@ namespace ScopeHousingMeshSurgery
                 var pwa = player.ProceduralWeaponAnimation;
                 if (pwa == null) return;
 
-                float baseFov = pwa.Single_2;
-                float zoomedFov = FovController.ComputeZoomedFov(baseFov, pwa);
+                float playerBaseFov = pwa.Single_2;
+                float zoomBaseFov = FovController.ZoomBaselineFov;
+                float zoomedFov = FovController.ComputeZoomedFov(playerBaseFov, pwa);
 
-                if (zoomedFov >= 0.5f && zoomedFov < baseFov)
+                if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                 {
                     float duration = isTransition
                         ? ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value

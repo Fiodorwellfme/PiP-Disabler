@@ -62,10 +62,11 @@ namespace ScopeHousingMeshSurgery.Patches
 
                 if (!CameraClass.Exist) return;
 
-                float baseFov = __instance.Single_2; // Player's FOV setting (50-75)
-                float zoomedFov = FovController.ComputeZoomedFov(baseFov, __instance);
+                float playerBaseFov = __instance.Single_2; // Player's own FOV setting
+                float zoomBaseFov = FovController.ZoomBaselineFov; // Fixed baseline for zoom strength
+                float zoomedFov = FovController.ComputeZoomedFov(playerBaseFov, __instance);
 
-                if (zoomedFov < 0.5f || zoomedFov >= baseFov) return;
+                if (zoomedFov < 0.5f || zoomedFov >= zoomBaseFov) return;
 
                 // Use FovAnimationDuration for smooth animated transition into zoom.
                 // EFT's own SetFov starts a coroutine that smoothly animates to the target.
@@ -73,7 +74,7 @@ namespace ScopeHousingMeshSurgery.Patches
                 CameraClass.Instance.SetFov(zoomedFov, duration, false);
 
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[PWAPatch] FOV zoom: base={baseFov:F0} → zoom={zoomedFov:F1} dur={duration:F2}s");
+                    $"[PWAPatch] FOV zoom: playerBase={playerBaseFov:F0} fixedBase={zoomBaseFov:F0} → zoom={zoomedFov:F1} dur={duration:F2}s");
             }
             catch (Exception ex)
             {
