@@ -17,9 +17,7 @@ namespace ScopeHousingMeshSurgery
 
         // Per-scope state
         private static Renderer _activeLensRenderer;
-        private static Material _originalLensMaterial;
         private static bool _isActive;
-        private static float _lastLoggedZoom = -1f;
 
         /// <summary>
         /// The lens renderer currently managed by ZoomController (shader zoom target).
@@ -59,15 +57,14 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Apply the zoom shader to the scope's lens renderer.
-        /// Called on scope-in. Replaces the lens material (which normally shows PiP or is hidden).
+        /// Legacy shader-zoom entry point kept for API compatibility.
+        /// Shader zoom was removed, so this now acts as a safe no-op.
         /// </summary>
         public static void Apply(OpticSight os, float magnification)
         {
             // No-op: shader path removed.
             _isActive = false;
             _activeLensRenderer = null;
-            _originalLensMaterial = null;
         }
 
         /// <summary>
@@ -79,14 +76,12 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Restore the original lens material. Called on scope-out.
+        /// Legacy shader-zoom cleanup hook; currently a no-op plus scroll reset.
         /// </summary>
         public static void Restore()
         {
             _activeLensRenderer = null;
-            _originalLensMaterial = null;
             _isActive = false;
-            _lastLoggedZoom = -1f;
 
             // Reset scroll zoom on scope exit
             ResetScrollZoom();
