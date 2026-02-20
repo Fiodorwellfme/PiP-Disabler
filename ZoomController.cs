@@ -343,6 +343,12 @@ namespace ScopeHousingMeshSurgery
                     minFov *= 2f;
                     _nativeMaxFov = maxFov;
                     _nativeMinFov = minFov;
+
+                    if (_nativeMaxFov > 50f)
+                    {
+                        _nativeMinFov = NormalizeFovFromMax(_nativeMinFov, _nativeMaxFov);
+                        _nativeMaxFov = 50f;
+                    }
                     _isVariableZoom = true;
                     ScopeHousingMeshSurgeryPlugin.LogInfo(
                         $"[ZoomController] Discovered FOV range: {minFov:F2}° - {maxFov:F2}° " +
@@ -375,7 +381,13 @@ namespace ScopeHousingMeshSurgery
                 if (szh != null)
                 {
                     float fov = szh.FiledOfView; // Note: EFT typo "Filed" not "Field"
-                    if (fov > 0.1f) return fov * 2f;
+                    if (fov > 0.1f)
+                    {
+                        float scopeFov = fov * 2f;
+                        float maxFov = GetScopeZoomHandlerMaxFov(szh);
+                        float normalized = NormalizeFovFromMax(scopeFov, maxFov);
+                        return normalized > 0.1f ? normalized : scopeFov;
+                    }
                 }
             }
             catch { }
@@ -405,7 +417,9 @@ namespace ScopeHousingMeshSurgery
                         {
                             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                                 $"[ZoomController] GetScopeFov from '{mb.gameObject.name}' type={type.Name}: {fov:F2} (×2 = {fov*2f:F2})");
-                            return fov * 2f;
+                            float scopeFov = fov * 2f;
+                            float normalized = NormalizeFovFromMax(scopeFov, _nativeMaxFov);
+                            return normalized > 0.1f ? normalized : scopeFov;
                         }
                     }
                 }
@@ -413,6 +427,25 @@ namespace ScopeHousingMeshSurgery
             catch { }
 
             return 0f;
+        }
+
+        private static float GetScopeZoomHandlerMaxFov(ScopeZoomHandler szh)
+        {
+            if (szh == null) return _nativeMaxFov;
+
+            try
+            {
+                var s0Prop = szh.GetType().GetProperty("Single_0",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (s0Prop != null && s0Prop.PropertyType == typeof(float))
+                {
+                    float maxFov = (float)s0Prop.GetValue(szh) * 2f;
+                    if (maxFov > 0.1f) return maxFov;
+                }
+            }
+            catch { }
+
+            return _nativeMaxFov;
         }
 
         private static bool IsOnSameMode(Transform candidate, Transform optic)
@@ -429,6 +462,19 @@ namespace ScopeHousingMeshSurgery
             var modeO = GetMode(optic);
             if (modeC == null || modeO == null) return modeC == modeO;
             return modeC == modeO;
+        }
+
+        /// <summary>
+        /// Normalizes oversized scope FOV values to a 50° max while keeping
+        /// zoom steps proportional across the scope's full FOV range.
+        /// </summary>
+        private static float NormalizeFovFromMax(float currentFov, float maxFov)
+        {
+            if (currentFov <= 0.1f || maxFov <= 0.1f) return currentFov;
+            if (maxFov <= 50f) return currentFov;
+
+            float scale = maxFov / 50f;
+            return currentFov / scale;
         }
     }
 }
