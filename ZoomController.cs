@@ -27,6 +27,7 @@ namespace ScopeHousingMeshSurgery
         private static bool  _fovRangeDiscovered;  // true once DiscoverFovRange has run for this scope
         private static bool  _isVariableZoom;      // true if ScopeZoomHandler was found (has zoom ring)
         private static float _scrollStartNativeFov; // native FOV when scroll zoom first activated
+        private static Transform _activeModeTransform; // currently active mode_XXX transform
 
         /// <summary>Shader zoom is disabled permanently.</summary>
         public static bool ShaderAvailable => false;
@@ -91,6 +92,8 @@ namespace ScopeHousingMeshSurgery
         {
             if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
+            RefreshModeState(os);
+
             float scopeFov = GetScopeFov(os);
             if (scopeFov > 0.1f)
             {
@@ -153,6 +156,10 @@ namespace ScopeHousingMeshSurgery
             if (!ScopeHousingMeshSurgeryPlugin.EnableScrollZoom.Value) return false;
             if (Mathf.Abs(scrollDelta) < 0.01f) return false;
 
+            var os = ScopeLifecycle.ActiveOptic;
+            if (os != null)
+                RefreshModeState(os);
+
             // Don't allow scroll zoom on fixed scopes (no ScopeZoomHandler found)
             if (!_isVariableZoom) return false;
 
@@ -210,6 +217,35 @@ namespace ScopeHousingMeshSurgery
             _scrollStartNativeFov = 0f;
             _fovRangeDiscovered = false;
             _isVariableZoom = false;
+            _activeModeTransform = null;
+        }
+
+        /// <summary>
+        /// Detects optic mode_XXX changes and invalidates cached FOV bounds so each mode
+        /// gets its own min/max range. Also clears active scroll override when mode changes.
+        /// </summary>
+        private static void RefreshModeState(OpticSight os)
+        {
+            Transform mode = GetModeTransform(os.transform);
+            if (mode == _activeModeTransform) return;
+
+            string oldModeName = _activeModeTransform != null ? _activeModeTransform.name : "<none>";
+            string newModeName = mode != null ? mode.name : "<none>";
+            bool hadScrollOverride = _scrollZoomActive && _scrollZoomFov > 0f;
+
+            _activeModeTransform = mode;
+            _fovRangeDiscovered = false;
+
+            if (hadScrollOverride)
+            {
+                _scrollZoomActive = false;
+                _scrollZoomFov = 0f;
+                _scrollStartNativeFov = 0f;
+            }
+
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                $"[ZoomController] Mode change {oldModeName} → {newModeName}; refreshing FOV bounds" +
+                (hadScrollOverride ? " and clearing scroll override" : ""));
         }
 
         /// <summary>
@@ -362,18 +398,21 @@ namespace ScopeHousingMeshSurgery
 
         private static bool IsOnSameMode(Transform candidate, Transform optic)
         {
-            Transform GetMode(Transform t)
-            {
-                for (var p = t; p != null; p = p.parent)
-                    if (p.name != null && (p.name.StartsWith("mode_", System.StringComparison.OrdinalIgnoreCase)
-                        || p.name.Equals("mode", System.StringComparison.OrdinalIgnoreCase)))
-                        return p;
-                return null;
-            }
-            var modeC = GetMode(candidate);
-            var modeO = GetMode(optic);
+            var modeC = GetModeTransform(candidate);
+            var modeO = GetModeTransform(optic);
             if (modeC == null || modeO == null) return modeC == modeO;
             return modeC == modeO;
+        }
+
+        private static Transform GetModeTransform(Transform t)
+        {
+            for (var p = t; p != null; p = p.parent)
+            {
+                if (p.name != null && (p.name.StartsWith("mode_", System.StringComparison.OrdinalIgnoreCase)
+                    || p.name.Equals("mode", System.StringComparison.OrdinalIgnoreCase)))
+                    return p;
+            }
+            return null;
         }
     }
 }
