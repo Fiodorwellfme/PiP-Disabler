@@ -96,18 +96,18 @@ namespace ScopeHousingMeshSurgery
                 if (szh != null)
                 {
                     float fov = szh.FiledOfView; // EFT typo
-                    if (fov > 0.1f) return fov * 2f;
+                    if (fov > 0.1f) return fov;
                 }
             }
             catch { }
 
             // === Try 2: ScopeCameraData component via reflection scan ===
             float scdFov = GetFovFromScopeCameraData(os);
-            if (scdFov > 0.1f) return scdFov * 2f;
+            if (scdFov > 0.1f) return scdFov;
 
             // === Try 3: Brute-force scan all MonoBehaviours for FieldOfView field ===
             float bruteFov = BruteForceFovSearch(os);
-            if (bruteFov > 0.1f) return bruteFov * 2f;
+            if (bruteFov > 0.1f) return bruteFov;
 
             return 0f;
         }

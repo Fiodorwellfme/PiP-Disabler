@@ -176,7 +176,7 @@ namespace ScopeHousingMeshSurgery
                     }
 
                     if (minFov > 0.1f)
-                        return 35f / (minFov * 2f);
+                        return 35f / minFov;
                 }
             }
             catch { }
@@ -338,9 +338,6 @@ namespace ScopeHousingMeshSurgery
 
                 if (maxFov > 0.1f && minFov > 0.1f && maxFov > minFov)
                 {
-                    // Double FOV values to match the ×2 applied in GetScopeFov
-                    maxFov *= 2f;
-                    minFov *= 2f;
                     _nativeMaxFov = maxFov;
                     _nativeMinFov = minFov;
                     _isVariableZoom = true;
@@ -375,7 +372,7 @@ namespace ScopeHousingMeshSurgery
                 if (szh != null)
                 {
                     float fov = szh.FiledOfView; // Note: EFT typo "Filed" not "Field"
-                    if (fov > 0.1f) return fov * 2f;
+                    if (fov > 0.1f) return fov;
                 }
             }
             catch { }
@@ -404,8 +401,8 @@ namespace ScopeHousingMeshSurgery
                         if (fov > 0.1f && fov < 180f)
                         {
                             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                                $"[ZoomController] GetScopeFov from '{mb.gameObject.name}' type={type.Name}: {fov:F2} (×2 = {fov*2f:F2})");
-                            return fov * 2f;
+                                $"[ZoomController] GetScopeFov from '{mb.gameObject.name}' type={type.Name}: {fov:F2}");
+                            return fov;
                         }
                     }
                 }
