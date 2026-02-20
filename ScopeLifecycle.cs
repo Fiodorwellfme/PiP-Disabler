@@ -6,6 +6,7 @@ using EFT.CameraControl;
 using Comfort.Common;
 using HarmonyLib;
 using UnityEngine;
+using Stopwatch = System.Diagnostics.Stopwatch;
 
 namespace ScopeHousingMeshSurgery
 {
@@ -159,6 +160,8 @@ namespace ScopeHousingMeshSurgery
         {
             if (!_reflectionReady) return;
 
+            var sw = ScopeHousingMeshSurgeryPlugin.PerfDiagnosticsEnabled ? Stopwatch.StartNew() : null;
+
             bool shouldBeScoped = false;
             string reason = "unknown";
 
@@ -203,10 +206,13 @@ namespace ScopeHousingMeshSurgery
             // Log every state CHANGE (not every frame)
             if (shouldBeScoped != _isScoped)
             {
+                string opticName = _activeOptic != null ? _activeOptic.name : "null";
+                string lastEnabled = _lastEnabledOptic != null ? _lastEnabledOptic.name : "null";
+                string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[ScopeLifecycle] State change: {(_isScoped ? "SCOPED" : "NOT_SCOPED")} → " +
                     $"{(shouldBeScoped ? "SCOPED" : "NOT_SCOPED")} reason='{reason}' " +
-                    $"caller={GetCaller()} frame={Time.frameCount}");
+                    $"caller={GetCaller()} frame={Time.frameCount} scene='{sceneName}' active='{opticName}' lastEnabled='{lastEnabled}'");
             }
 
             if (shouldBeScoped && !_isScoped)
@@ -216,6 +222,25 @@ namespace ScopeHousingMeshSurgery
             else if (!shouldBeScoped && _isScoped)
             {
                 DoScopeExit();
+            }
+
+            if (sw != null)
+            {
+                sw.Stop();
+                long ms = sw.ElapsedMilliseconds;
+                int warn = ScopeHousingMeshSurgeryPlugin.PerfWarnMs != null
+                    ? ScopeHousingMeshSurgeryPlugin.PerfWarnMs.Value
+                    : 8;
+                if (ms >= warn)
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogPerfWarn(
+                        $"CheckAndUpdate took {ms}ms reason='{reason}' scopedNow={_isScoped} frame={Time.frameCount}");
+                }
+                else if (ms >= 2)
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogPerf(
+                        $"CheckAndUpdate took {ms}ms reason='{reason}' frame={Time.frameCount}");
+                }
             }
         }
 
@@ -582,6 +607,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         private static OpticSight FindOpticFromPWA()
         {
+            var sw = ScopeHousingMeshSurgeryPlugin.PerfDiagnosticsEnabled ? Stopwatch.StartNew() : null;
             try
             {
                 var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
@@ -596,6 +622,21 @@ namespace ScopeHousingMeshSurgery
                 }
             }
             catch { }
+            finally
+            {
+                if (sw != null)
+                {
+                    sw.Stop();
+                    long ms = sw.ElapsedMilliseconds;
+                    int warn = ScopeHousingMeshSurgeryPlugin.PerfWarnMs != null
+                        ? ScopeHousingMeshSurgeryPlugin.PerfWarnMs.Value
+                        : 8;
+                    if (ms >= warn)
+                        ScopeHousingMeshSurgeryPlugin.LogPerfWarn($"FindOpticFromPWA took {ms}ms");
+                    else if (ms >= 2)
+                        ScopeHousingMeshSurgeryPlugin.LogPerf($"FindOpticFromPWA took {ms}ms");
+                }
+            }
 
             return null;
         }
@@ -606,6 +647,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         private static OpticSight FindEnabledOpticFromPWA()
         {
+            var sw = ScopeHousingMeshSurgeryPlugin.PerfDiagnosticsEnabled ? Stopwatch.StartNew() : null;
             if (_activeOptic != null && _activeOptic.isActiveAndEnabled)
                 return _activeOptic;
 
@@ -622,6 +664,21 @@ namespace ScopeHousingMeshSurgery
                 }
             }
             catch { }
+            finally
+            {
+                if (sw != null)
+                {
+                    sw.Stop();
+                    long ms = sw.ElapsedMilliseconds;
+                    int warn = ScopeHousingMeshSurgeryPlugin.PerfWarnMs != null
+                        ? ScopeHousingMeshSurgeryPlugin.PerfWarnMs.Value
+                        : 8;
+                    if (ms >= warn)
+                        ScopeHousingMeshSurgeryPlugin.LogPerfWarn($"FindEnabledOpticFromPWA took {ms}ms");
+                    else if (ms >= 2)
+                        ScopeHousingMeshSurgeryPlugin.LogPerf($"FindEnabledOpticFromPWA took {ms}ms");
+                }
+            }
 
             return null;
         }

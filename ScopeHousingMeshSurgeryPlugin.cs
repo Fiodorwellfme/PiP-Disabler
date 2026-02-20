@@ -20,6 +20,23 @@ namespace ScopeHousingMeshSurgery
                 Instance.Logger.LogInfo("[V] " + msg);
         }
 
+        internal static bool PerfDiagnosticsEnabled
+        {
+            get { return Instance != null && PerformanceDiagnostics != null && PerformanceDiagnostics.Value; }
+        }
+
+        internal static void LogPerf(string msg)
+        {
+            if (PerfDiagnosticsEnabled)
+                LogInfo("[PERF] " + msg);
+        }
+
+        internal static void LogPerfWarn(string msg)
+        {
+            if (PerfDiagnosticsEnabled)
+                LogWarn("[PERF] " + msg);
+        }
+
         /// <summary>
         /// Returns the main FPS camera via CameraClass.Instance.Camera.
         /// Unlike Camera.main (which does FindObjectWithTag every call and
@@ -126,6 +143,8 @@ namespace ScopeHousingMeshSurgery
 
         // --- Debug ---
         internal static ConfigEntry<bool> VerboseLogging;
+        internal static ConfigEntry<bool> PerformanceDiagnostics;
+        internal static ConfigEntry<int> PerfWarnMs;
 
         private void Awake()
         {
@@ -424,6 +443,13 @@ namespace ScopeHousingMeshSurgery
             // --- Debug ---
             VerboseLogging = Config.Bind("6. Debug", "VerboseLogging", false,
                 "Enable detailed logging. Turn on to diagnose lens/zoom issues.");
+            PerformanceDiagnostics = Config.Bind("6. Debug", "PerformanceDiagnostics", true,
+                "Log timing diagnostics for expensive operations (scope checks, camera scans, optic lookups).\n" +
+                "Useful for investigating map-specific stalls/freezes.");
+            PerfWarnMs = Config.Bind("6. Debug", "PerfWarnMs", 8,
+                new ConfigDescription(
+                    "Warn when a single tracked operation exceeds this duration in milliseconds.",
+                    new AcceptableValueRange<int>(1, 200)));
 
             Patches.Patcher.Enable();
 

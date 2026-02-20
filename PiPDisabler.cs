@@ -4,6 +4,8 @@ using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using Stopwatch = System.Diagnostics.Stopwatch;
 
 namespace ScopeHousingMeshSurgery
 {
@@ -37,6 +39,8 @@ namespace ScopeHousingMeshSurgery
 
         private static int _nextBaseScanFrame = -1;
         private static bool _loggedBase;
+        private static int _consecutiveBaseScanMisses;
+        private static int _lastScanLogFrame = -1;
 
         /// <summary>
         /// The optic camera's Transform — synced to the scope's look direction
@@ -57,6 +61,17 @@ namespace ScopeHousingMeshSurgery
 internal static void TickBaseOpticCamera()
         {
             if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
+
+            if (ScopeHousingMeshSurgeryPlugin.PerfDiagnosticsEnabled && Time.frameCount % 300 == 0)
+            {
+                try
+                {
+                    var scene = SceneManager.GetActiveScene();
+                    ScopeHousingMeshSurgeryPlugin.LogPerf(
+                        $"TickBaseOpticCamera scene='{scene.name}' loaded={scene.isLoaded} baseCamCount={_baseOpticCams.Count} trackedCams={_cams.Count} frame={Time.frameCount}");
+                }
+                catch { }
+            }
 
             // Auto-bypass for high-mag scopes must re-enable vanilla PiP.
             if (ScopeLifecycle.IsModBypassedForCurrentScope)
@@ -138,6 +153,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
         private static void TryFindBaseOpticCameras()
         {
             _baseOpticCams.Clear();
+            var sw = ScopeHousingMeshSurgeryPlugin.PerfDiagnosticsEnabled ? Stopwatch.StartNew() : null;
 
             try
             {
@@ -171,6 +187,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                         if (!_loggedBase)
                         {
                             _loggedBase = true;
+                            _consecutiveBaseScanMisses = 0;
                             ScopeHousingMeshSurgeryPlugin.LogInfo(
                                 $"[PiPDisabler] Found BaseOpticCamera: {n} (cameras: {_baseOpticCams.Count})");
                         }
@@ -178,7 +195,38 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                     }
                 }
             }
-            catch { /* ignore */ }
+            catch (Exception ex)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogPerfWarn($"TryFindBaseOpticCameras exception: {ex.Message}");
+            }
+            finally
+            {
+                if (_baseOpticCams.Count == 0)
+                {
+                    _consecutiveBaseScanMisses++;
+                    if (ScopeHousingMeshSurgeryPlugin.PerfDiagnosticsEnabled
+                        && _consecutiveBaseScanMisses % 30 == 0
+                        && _lastScanLogFrame != Time.frameCount)
+                    {
+                        _lastScanLogFrame = Time.frameCount;
+                        ScopeHousingMeshSurgeryPlugin.LogPerfWarn(
+                            $"BaseOpticCamera not found for {_consecutiveBaseScanMisses} scans (frame={Time.frameCount})");
+                    }
+                }
+
+                if (sw != null)
+                {
+                    sw.Stop();
+                    long ms = sw.ElapsedMilliseconds;
+                    int warn = ScopeHousingMeshSurgeryPlugin.PerfWarnMs != null
+                        ? ScopeHousingMeshSurgeryPlugin.PerfWarnMs.Value
+                        : 8;
+                    if (ms >= warn)
+                        ScopeHousingMeshSurgeryPlugin.LogPerfWarn($"TryFindBaseOpticCameras took {ms}ms, found={_baseOpticCams.Count}");
+                    else if (ms >= 2)
+                        ScopeHousingMeshSurgeryPlugin.LogPerf($"TryFindBaseOpticCameras took {ms}ms, found={_baseOpticCams.Count}");
+                }
+            }
         }
 
         private static bool ShouldSkipPiPDisableForHighMagnification(OpticComponentUpdater updater)
@@ -263,6 +311,8 @@ _ignoreOnDisableFrame.Clear();
             _baseOpticCams.Clear();
             _loggedBase = false;
             _nextBaseScanFrame = -1;
+            _consecutiveBaseScanMisses = 0;
+            _lastScanLogFrame = -1;
             OpticCameraTransform = null;
         }
 
