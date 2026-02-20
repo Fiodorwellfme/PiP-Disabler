@@ -174,6 +174,27 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
             catch { /* ignore */ }
         }
 
+        private static bool ShouldSkipPiPDisableForHighMagnification(OpticComponentUpdater updater)
+        {
+            if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value) return false;
+            if (updater == null) return false;
+
+            try
+            {
+                var field = GetOpticSightField();
+                if (field == null) return false;
+
+                var os = field.GetValue(updater) as OpticSight;
+                if (os == null) return false;
+
+                return ZoomController.GetMaxMagnification(os) > 10f;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static FieldInfo GetOpticSightField()
         {
             if (!_opticSightFieldSearched)
@@ -278,6 +299,7 @@ _ignoreOnDisableFrame.Clear();
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
                 if (__instance == null) return;
+                if (ShouldSkipPiPDisableForHighMagnification(__instance)) return;
 
                 // Cache the optic camera transform for ReticleRenderer camera alignment
                 OpticCameraTransform = __instance.transform;
@@ -312,6 +334,7 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return true;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
+                if (ShouldSkipPiPDisableForHighMagnification(__instance)) return true;
 
                 // Ensure the camera can't render, but let LateUpdate run for transforms.
                 var cam = __instance != null ? __instance.GetComponent<Camera>() : null;
@@ -334,6 +357,7 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return true;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
+                if (ScopeLifecycle.IsModBypassedForCurrentScope) return true;
 
                 // In No-PiP mode, block LensFade to avoid material state issues.
                 // Lens hiding is handled by SSAA signal only — do NOT call
