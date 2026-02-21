@@ -140,6 +140,20 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
     return false;
 }
 
+        private static string GetPath(Transform t)
+        {
+            if (t == null) return "(null)";
+
+            var parts = new System.Collections.Generic.List<string>();
+            var cur = t;
+            while (cur != null)
+            {
+                parts.Insert(0, cur.name ?? "?");
+                cur = cur.parent;
+            }
+            return string.Join("/", parts);
+        }
+
         private static string GetIsYourPlayer(Player player)
         {
             if (player == null) return "n/a";
@@ -161,23 +175,78 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
             return "n/a";
         }
 
-        private static string DescribeOwnerPlayer(Component c)
+        private static Player ResolveOwnerPlayer(Component updater, OpticSight os)
         {
-            if (c == null) return "player=(none) isYourPlayer=n/a";
+            try
+            {
+                var p = updater != null ? updater.GetComponentInParent<Player>() : null;
+                if (p != null) return p;
+            }
+            catch { }
 
             try
             {
-                var player = c.GetComponentInParent<Player>();
+                var p = os != null ? os.GetComponentInParent<Player>() : null;
+                if (p != null) return p;
+            }
+            catch { }
+
+            if (os != null)
+            {
+                try
+                {
+                    var props = os.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    for (int i = 0; i < props.Length; i++)
+                    {
+                        var pr = props[i];
+                        if (pr == null || pr.PropertyType != typeof(Player) || !pr.CanRead) continue;
+                        var v = pr.GetValue(os) as Player;
+                        if (v != null) return v;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var fields = os.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    for (int i = 0; i < fields.Length; i++)
+                    {
+                        var f = fields[i];
+                        if (f == null || f.FieldType != typeof(Player)) continue;
+                        var v = f.GetValue(os) as Player;
+                        if (v != null) return v;
+                    }
+                }
+                catch { }
+            }
+
+            return null;
+        }
+
+        private static string DescribeOwnerPlayer(Component updater, OpticSight os)
+        {
+            try
+            {
+                var player = ResolveOwnerPlayer(updater, os);
                 if (player == null)
-                    return "player=(none) isYourPlayer=n/a";
+                    return "player=(none) isYourPlayer=n/a ownerSource=not-found";
 
                 string pname = string.IsNullOrEmpty(player.name) ? "(unnamed)" : player.name;
                 string isYour = GetIsYourPlayer(player);
-                return $"player={pname} isYourPlayer={isYour}";
+
+                string src = "reflection";
+                try
+                {
+                    if (updater != null && updater.GetComponentInParent<Player>() == player) src = "updater-parent";
+                    else if (os != null && os.GetComponentInParent<Player>() == player) src = "optic-parent";
+                }
+                catch { }
+
+                return $"player={pname} isYourPlayer={isYour} ownerSource={src}";
             }
             catch
             {
-                return "player=(error) isYourPlayer=n/a";
+                return "player=(error) isYourPlayer=n/a ownerSource=error";
             }
         }
 
@@ -202,13 +271,13 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                     var cam = up.GetComponent<Camera>();
                     string opticName = os != null ? os.name : "(null)";
                     string isActive = (os != null && active != null && os == active) ? "yes" : "no";
-                    string ownerInfo = DescribeOwnerPlayer(up);
+                    string ownerInfo = DescribeOwnerPlayer(up, os);
                     string camState = cam != null
                         ? $"enabled={cam.enabled} mask={cam.cullingMask} rt={(cam.targetTexture != null ? cam.targetTexture.name : "null")}" 
                         : "camera=(none)";
 
                     ScopeHousingMeshSurgeryPlugin.LogInfo(
-                        $"[Diagnostics]   [{i}] updater='{up.name}' id={up.GetInstanceID()} optic='{opticName}' activeOpticMatch={isActive} {ownerInfo} {camState}");
+                        $"[Diagnostics]   [{i}] updater='{up.name}' id={up.GetInstanceID()} updaterPath='{GetPath(up.transform)}' optic='{opticName}' opticPath='{GetPath(os != null ? os.transform : null)}' activeOpticMatch={isActive} {ownerInfo} {camState}");
                 }
             }
             catch (Exception ex)
@@ -404,10 +473,10 @@ _ignoreOnDisableFrame.Clear();
                     _lastOpticTransformSourceId = srcId;
                     string opticName = os != null ? os.name : "(null)";
                     string activeMatch = (os != null && ScopeLifecycle.ActiveOptic != null && os == ScopeLifecycle.ActiveOptic) ? "yes" : "no";
-                    string ownerInfo = DescribeOwnerPlayer(__instance);
+                    string ownerInfo = DescribeOwnerPlayer(__instance, os);
 
                     ScopeHousingMeshSurgeryPlugin.LogInfo(
-                        $"[PiPDisabler] OpticCameraTransform source changed: optic='{opticName}' updaterId={srcId} activeOpticMatch={activeMatch} {ownerInfo}");
+                        $"[PiPDisabler] OpticCameraTransform source changed: optic='{opticName}' opticPath='{GetPath(os != null ? os.transform : null)}' updaterId={srcId} updaterPath='{GetPath(__instance.transform)}' activeOpticMatch={activeMatch} {ownerInfo}");
                 }
 
                 var cam = __instance.GetComponent<Camera>();
