@@ -284,6 +284,26 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
+        /// LateUpdate maintenance: cache stabilized lens/camera alignment state
+        /// after animation and IK have updated transforms.
+        /// </summary>
+        public static void LateTick()
+        {
+            if (!_isScoped) return;
+            if (_modBypassedForCurrentScope) return;
+
+            var os = _activeOptic;
+            if (os == null) return;
+
+            var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            var lens = os.LensRenderer != null ? os.LensRenderer.transform : os.transform;
+            var opticTf = PiPDisabler.OpticCameraTransform ?? os.transform;
+
+            if (cam != null && lens != null && opticTf != null)
+                StabilizedState.UpdateStabilized(cam, lens, opticTf);
+        }
+
+        /// <summary>
         /// Force exit all mod effects (called on global toggle off or scene change).
         /// Clears cached optic so stale references don't ghost into the next session.
         /// </summary>
@@ -314,6 +334,8 @@ namespace ScopeHousingMeshSurgery
 
         private static void DoScopeEnter()
         {
+            StabilizedState.Reset();
+
             // Get the OpticSight — cached from OnEnable, or find from pwa
             var os = _lastEnabledOptic;
             if (os == null)
@@ -411,6 +433,7 @@ namespace ScopeHousingMeshSurgery
 
             _isScoped = false;
             _activeOptic = null;
+            StabilizedState.Reset();
 
             // If this scope was bypassed (high magnification), skip mod cleanup paths.
             if (_modBypassedForCurrentScope)

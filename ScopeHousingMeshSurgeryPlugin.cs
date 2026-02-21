@@ -441,6 +441,12 @@ namespace ScopeHousingMeshSurgery
             Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
         }
 
+        private void LateUpdate()
+        {
+            if (!ModEnabled.Value) return;
+            ScopeLifecycle.LateTick();
+        }
+
         private void Update()
         {
             // --- Global mod toggle (always active, even when mod is OFF) ---

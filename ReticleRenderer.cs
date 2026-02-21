@@ -155,7 +155,11 @@ namespace ScopeHousingMeshSurgery
                 if (!_settled)
                 {
                     _settledFrameCount = 0;
-                    _prevLensPos = _lensTransform != null ? _lensTransform.position : Vector3.zero;
+                    _prevLensPos = StabilizedState.IsInitialized
+                        ? _attachedCamera != null
+                            ? _attachedCamera.transform.TransformPoint(StabilizedState.LensCamSmoothed)
+                            : (_lensTransform != null ? _lensTransform.position : Vector3.zero)
+                        : (_lensTransform != null ? _lensTransform.position : Vector3.zero);
                 }
                 _alignmentActive = true;
 
@@ -285,7 +289,9 @@ namespace ScopeHousingMeshSurgery
             // ── Settled detection (position-based) ────────────────────────
             if (!_settled)
             {
-                Vector3 pos = _lensTransform.position;
+                Vector3 pos = StabilizedState.IsInitialized
+                    ? cam.transform.TransformPoint(StabilizedState.LensCamSmoothed)
+                    : _lensTransform.position;
                 float delta = (pos - _prevLensPos).sqrMagnitude;
                 _prevLensPos = pos;
 
@@ -330,7 +336,9 @@ namespace ScopeHousingMeshSurgery
                 Transform opticCamTf = PiPDisabler.OpticCameraTransform;
                 if (opticCamTf != null)
                 {
-                    cam.transform.rotation = opticCamTf.rotation;
+                    cam.transform.rotation = StabilizedState.IsInitialized
+                        ? StabilizedState.OpticRotSmoothed
+                        : opticCamTf.rotation;
                 }
             }
 
@@ -362,9 +370,11 @@ namespace ScopeHousingMeshSurgery
 
             // Size: match visual angle of (baseScale/mag) at real lens distance,
             // but drawn at RENDER_DISTANCE.
-            float realDist = _lensTransform != null
-                ? Vector3.Distance(camTf.position, _lensTransform.position)
-                : RENDER_DISTANCE;
+            float realDist = StabilizedState.IsInitialized
+                ? StabilizedState.LensCamSmoothed.magnitude
+                : (_lensTransform != null
+                    ? Vector3.Distance(camTf.position, _lensTransform.position)
+                    : RENDER_DISTANCE);
             if (realDist < 0.01f) realDist = RENDER_DISTANCE;
 
             float mag = Mathf.Max(1f, _lastMag);
