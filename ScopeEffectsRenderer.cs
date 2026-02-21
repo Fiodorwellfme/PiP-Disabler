@@ -13,7 +13,8 @@ namespace ScopeHousingMeshSurgery
     ///
     /// ── VIGNETTE ───────────────────────────────────────────────────────────────
     /// Screen-space quad centred in view, scaled by FOV.
-    /// Circular gradient: transparent centre → black ring at edge → transparent outside.
+    /// Circular feather: transparent centre → smooth darkening toward edge,
+    /// then holds darkness outside the aperture to blend with scope housing.
     ///
     /// ── SHADOW ─────────────────────────────────────────────────────────────────
     /// Screen-filling quad in front of the camera.  Circular hole in the centre
@@ -257,8 +258,8 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Circular gradient with aspect-ratio correction: transparent centre →
-        /// black ring at edge → transparent outside.
+        /// Circular feather with aspect-ratio correction: transparent centre →
+        /// smooth darkening toward edge, then keeps darkness outside.
         /// Now screen-filling (like shadow), so X distances are stretched by
         /// the aspect ratio to keep the circle round.
         /// </summary>
@@ -289,10 +290,10 @@ namespace ScopeHousingMeshSurgery
                 _vigTex.filterMode = FilterMode.Bilinear;
             }
 
-            // VignetteSizeMult controls where the vignette ring sits.
-            // mult=1 → ring at ~edge of a circle inscribed in height.
-            // mult<1 → ring moves inward (more visible darkening).
-            // mult>1 → ring moves outward (less darkening).
+            // VignetteSizeMult controls where the soft edge begins.
+            // mult=1 → feather starts near edge of a circle inscribed in height.
+            // mult<1 → feather starts inward (more visible darkening).
+            // mult>1 → feather starts outward (less darkening).
             float baseR = mult;
             float innerR = baseR * Mathf.Clamp01(1f - soft);
             float outerR = baseR;
@@ -307,14 +308,20 @@ namespace ScopeHousingMeshSurgery
                 float dist = Mathf.Sqrt(nx * nx + ny * ny);
 
                 byte a;
-                if (dist >= outerR)
+                if (dist <= innerR)
+                {
                     a = 0;
-                else if (dist <= innerR)
-                    a = 0;
+                }
                 else
                 {
-                    float t = (dist - innerR) / Mathf.Max(0.001f, outerR - innerR);
-                    a = (byte)(Mathf.SmoothStep(0f, 1f, t) * opac * 255f);
+                    float t = Mathf.Clamp01((dist - innerR) / Mathf.Max(0.001f, outerR - innerR));
+
+                    // Smoother response at edge so vignette blends into the housing/shadow
+                    // instead of reading as a hard dark ring.
+                    float feather = Mathf.SmoothStep(0f, 1f, t);
+                    feather = Mathf.Pow(feather, 1.35f);
+
+                    a = (byte)(feather * opac * 255f);
                 }
                 pixels[y * S + x] = new Color32(0, 0, 0, a);
             }
