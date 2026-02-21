@@ -34,7 +34,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             if (string.IsNullOrEmpty(pluginDir))
-                pluginDir = Paths.PluginPath;
+                pluginDir = Path.Combine(Paths.BepInExRootPath, "plugins");
 
             string cacheDir = Path.Combine(pluginDir, "mesh_cut_cache");
             if (!Directory.Exists(cacheDir))
