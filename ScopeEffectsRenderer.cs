@@ -202,8 +202,10 @@ namespace ScopeHousingMeshSurgery
             if (cam == null) return;
 
             // Clip-space centered overlay, independent of world/lens transforms.
+            // A quad scale of 2 fills the entire viewport in clip-space; keep a
+            // floor above that so FOV scaling can never leave uncovered edges.
             float screenScale = GetScreenSpaceScale(cam);
-            float ndcScale = Mathf.Clamp(3.2f * screenScale, 0.8f, 6f);
+            float ndcScale = Mathf.Max(2.25f, Mathf.Clamp(3.2f * screenScale, 0.8f, 6f));
 
             _shadowMatrix = Matrix4x4.TRS(
                 new Vector3(0f, 0f, 0.7f),
