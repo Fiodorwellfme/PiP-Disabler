@@ -42,6 +42,8 @@ namespace ScopeHousingMeshSurgery
         private static float      _lastShadowSoftness = -1f;
         private static float      _lastShadowOpacity  = -1f;
         private static float      _lastShadowAspect   = -1f;
+        private static int        _lastShadowTexWidth = -1;
+        private static int        _lastShadowTexHeight = -1;
         private static Matrix4x4  _shadowMatrix = Matrix4x4.identity;
         private static bool       _shadowActive;
 
@@ -214,7 +216,7 @@ namespace ScopeHousingMeshSurgery
             _cmdBuffer.Clear();
 
             _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            _cmdBuffer.SetViewport(new Rect(0, 0, Screen.width, Screen.height));
+            _cmdBuffer.SetViewport(GetCameraViewport(cam));
 
             // Pure screen-space draw (clip-space matrices).
             _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
@@ -265,7 +267,7 @@ namespace ScopeHousingMeshSurgery
             float mult = ScopeHousingMeshSurgeryPlugin.VignetteSizeMult.Value;
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
-            float aspect = cam != null ? cam.aspect : (16f / 9f);
+            float aspect = GetCameraAspect(cam);
 
             if (Mathf.Abs(soft - _lastVigSoftness) < 0.001f &&
                 Mathf.Abs(opac - _lastVigOpacity)  < 0.005f &&
@@ -352,21 +354,27 @@ namespace ScopeHousingMeshSurgery
             float opac   = ScopeHousingMeshSurgeryPlugin.ScopeShadowOpacity.Value;
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
-            float aspect = cam != null ? cam.aspect : (16f / 9f);
+            Rect viewport = GetCameraViewport(cam);
+            int texW = Mathf.Clamp(Mathf.RoundToInt(viewport.width), 64, 4096);
+            int texH = Mathf.Clamp(Mathf.RoundToInt(viewport.height), 64, 4096);
+            float aspect = texW / Mathf.Max(1f, (float)texH);
 
-            if (Mathf.Abs(radius - _lastShadowRadius)   < 0.001f &&
+            bool sizeChanged = texW != _lastShadowTexWidth || texH != _lastShadowTexHeight;
+            if (!sizeChanged &&
+                Mathf.Abs(radius - _lastShadowRadius)   < 0.001f &&
                 Mathf.Abs(soft   - _lastShadowSoftness) < 0.001f &&
                 Mathf.Abs(opac   - _lastShadowOpacity)  < 0.005f &&
                 Mathf.Abs(aspect - _lastShadowAspect)   < 0.01f) return;
-            _lastShadowRadius   = radius;
-            _lastShadowSoftness = soft;
-            _lastShadowOpacity  = opac;
-            _lastShadowAspect   = aspect;
+            _lastShadowRadius    = radius;
+            _lastShadowSoftness  = soft;
+            _lastShadowOpacity   = opac;
+            _lastShadowAspect    = aspect;
+            _lastShadowTexWidth  = texW;
+            _lastShadowTexHeight = texH;
 
-            const int S = 512;
-            if (_shadowTex == null)
+            if (_shadowTex == null || _shadowTex.width != texW || _shadowTex.height != texH)
             {
-                _shadowTex            = new Texture2D(S, S, TextureFormat.RGBA32, false);
+                _shadowTex            = new Texture2D(texW, texH, TextureFormat.RGBA32, false);
                 _shadowTex.name       = "ScopeShadowTex";
                 _shadowTex.wrapMode   = TextureWrapMode.Clamp;
                 _shadowTex.filterMode = FilterMode.Bilinear;
@@ -375,17 +383,17 @@ namespace ScopeHousingMeshSurgery
             float innerR = radius * 2f;
             float softR  = soft * 2f;
             float outerR = innerR + softR;
-            var   pixels = new Color32[S * S];
+            var   pixels = new Color32[texW * texH];
 
-            for (int y = 0; y < S; y++)
-            for (int x = 0; x < S; x++)
+            for (int y = 0; y < texH; y++)
+            for (int x = 0; x < texW; x++)
             {
-                float nx   = ((float)x / S - 0.5f) * 2f * aspect;
-                float ny   = ((float)y / S - 0.5f) * 2f;
+                float nx   = ((float)x / texW - 0.5f) * 2f * aspect;
+                float ny   = ((float)y / texH - 0.5f) * 2f;
                 float dist = Mathf.Sqrt(nx * nx + ny * ny);
                 float t    = Mathf.Clamp01((dist - innerR) / Mathf.Max(0.01f, outerR - innerR));
                 byte  a    = (byte)(Mathf.SmoothStep(0f, 1f, t) * opac * 255f);
-                pixels[y * S + x] = new Color32(0, 0, 0, a);
+                pixels[y * texW + x] = new Color32(0, 0, 0, a);
             }
 
             _shadowTex.SetPixels32(pixels);
@@ -393,7 +401,24 @@ namespace ScopeHousingMeshSurgery
             if (_shadowMat != null) _shadowMat.mainTexture = _shadowTex;
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                $"[ScopeEffects] Shadow texture rebuilt: aspect={aspect:F2} radius={radius} soft={soft}");
+                $"[ScopeEffects] Shadow texture rebuilt: {texW}x{texH} aspect={aspect:F2} radius={radius} soft={soft}");
+        }
+
+        private static Rect GetCameraViewport(Camera cam)
+        {
+            if (cam != null)
+            {
+                Rect r = cam.pixelRect;
+                if (r.width > 1f && r.height > 1f)
+                    return r;
+            }
+            return new Rect(0f, 0f, Screen.width, Screen.height);
+        }
+
+        private static float GetCameraAspect(Camera cam)
+        {
+            Rect r = GetCameraViewport(cam);
+            return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
         }
 
         private static float GetScreenSpaceScale(Camera cam)

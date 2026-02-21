@@ -316,7 +316,8 @@ namespace ScopeHousingMeshSurgery
             ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
             Vector3 pos = new Vector3(0f, 0f, 0.5f);
-            Vector3 scale = new Vector3(ndcSize, ndcSize, 1f);
+            float aspect = GetCameraAspect(cam);
+            Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
             _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
         }
 
@@ -330,7 +331,7 @@ namespace ScopeHousingMeshSurgery
 
             // ── DLSS/FSR viewport fix ─────────────────────────────────────
             _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            _cmdBuffer.SetViewport(new Rect(0, 0, Screen.width, Screen.height));
+            _cmdBuffer.SetViewport(GetCameraViewport(cam));
 
             // Pure screen-space draw (clip-space matrices).
             _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
@@ -339,6 +340,23 @@ namespace ScopeHousingMeshSurgery
         }
 
         // ── Private helpers ─────────────────────────────────────────────────
+
+        private static Rect GetCameraViewport(Camera cam)
+        {
+            if (cam != null)
+            {
+                Rect r = cam.pixelRect;
+                if (r.width > 1f && r.height > 1f)
+                    return r;
+            }
+            return new Rect(0f, 0f, Screen.width, Screen.height);
+        }
+
+        private static float GetCameraAspect(Camera cam)
+        {
+            Rect r = GetCameraViewport(cam);
+            return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
+        }
 
         private static void ApplyHorizontalFlip()
         {
