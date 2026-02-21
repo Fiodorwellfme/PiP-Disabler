@@ -110,12 +110,14 @@ namespace ScopeHousingMeshSurgery
 
             // ── Plane resolution ──────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Plane Resolution ---");
+            Transform backLens = null;
+
             if (scopeRoot != null)
             {
                 var activeMode = ScopeHierarchy.FindBestMode(scopeRoot);
                 sb.AppendLine($"[Diagnostics]   Active mode     : {(activeMode != null ? activeMode.name : "(none)")}");
 
-                var backLens = ScopeHierarchy.FindDeepChild(
+                backLens = ScopeHierarchy.FindDeepChild(
                     activeMode ?? scopeRoot, "backLens");
                 if (backLens != null)
                     sb.AppendLine($"[Diagnostics]   backLens pos    : {backLens.position:F4}  local fwd: {backLens.forward:F4}");
@@ -128,6 +130,7 @@ namespace ScopeHousingMeshSurgery
                     pp += pn * ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value;
                     sb.AppendLine($"[Diagnostics]   Plane point     : {pp:F4}");
                     sb.AppendLine($"[Diagnostics]   Plane normal    : {pn:F4}");
+                    sb.AppendLine($"[Diagnostics]   Plane↔backLens.fwd angle : {(backLens != null ? Vector3.Angle(pn, backLens.forward).ToString("F2") : "n/a")}°");
                 }
                 else
                 {
@@ -172,6 +175,43 @@ namespace ScopeHousingMeshSurgery
             sb.AppendLine($"[Diagnostics]   FlipHorizontal   : {ScopeHousingMeshSurgeryPlugin.ReticleFlipHorizontal.Value}");
             sb.AppendLine($"[Diagnostics]   SmoothingFrames  : {ScopeHousingMeshSurgeryPlugin.ReticleSmoothingFrames.Value}");
             sb.AppendLine($"[Diagnostics]   JitterThreshold  : {ScopeHousingMeshSurgeryPlugin.ReticleJitterThreshold.Value:F5}");
+
+            // ── Camera/Alignment context ───────────────────────────────────
+            sb.AppendLine("[Diagnostics] --- Camera Alignment ---");
+            var mainCam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            var opticCamTf = PiPDisabler.OpticCameraTransform;
+
+            if (mainCam != null)
+            {
+                sb.AppendLine($"[Diagnostics]   Main camera      : {mainCam.name}");
+                sb.AppendLine($"[Diagnostics]   Main cam fwd     : {mainCam.transform.forward:F4}");
+            }
+            else
+            {
+                sb.AppendLine("[Diagnostics]   Main camera      : (null)");
+            }
+
+            if (opticCamTf != null)
+            {
+                sb.AppendLine($"[Diagnostics]   Optic cam tf     : {GetPath(opticCamTf)}");
+                sb.AppendLine($"[Diagnostics]   Optic cam fwd    : {opticCamTf.forward:F4}");
+            }
+            else
+            {
+                sb.AppendLine("[Diagnostics]   Optic cam tf     : (null)");
+            }
+
+            if (mainCam != null && opticCamTf != null)
+            {
+                float camVsOptic = Vector3.Angle(mainCam.transform.forward, opticCamTf.forward);
+                sb.AppendLine($"[Diagnostics]   Main↔optic angle : {camVsOptic:F2}°");
+            }
+
+            if (backLens != null && opticCamTf != null)
+            {
+                float opticVsBackLens = Vector3.Angle(opticCamTf.forward, backLens.forward);
+                sb.AppendLine($"[Diagnostics]   Optic↔backLens   : {opticVsBackLens:F2}°");
+            }
 
             // ── Blacklist hint ────────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Blacklist ---");

@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using EFT;
 using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
@@ -25,6 +26,10 @@ namespace ScopeHousingMeshSurgery
         // discover it by type instead of relying on a hard-coded name.
         private static FieldInfo _opticSightField;
         private static bool _opticSightFieldSearched;
+        private static PropertyInfo _isYourPlayerProp;
+
+        // Track who most recently overwrote OpticCameraTransform.
+        private static int _lastOpticTransformSourceId = int.MinValue;
 
         // BaseOpticCamera is the global PiP camera. Disabling per-scope OpticComponentUpdater cameras
         // alone can still leave BaseOpticCamera rendering and costing performance.
@@ -134,6 +139,83 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
     return false;
 }
+
+        private static string GetIsYourPlayer(Player player)
+        {
+            if (player == null) return "n/a";
+
+            try
+            {
+                if (_isYourPlayerProp == null)
+                    _isYourPlayerProp = player.GetType().GetProperty("IsYourPlayer", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+                if (_isYourPlayerProp != null)
+                {
+                    object v = _isYourPlayerProp.GetValue(player);
+                    if (v is bool b) return b ? "true" : "false";
+                    if (v != null) return v.ToString();
+                }
+            }
+            catch { }
+
+            return "n/a";
+        }
+
+        private static string DescribeOwnerPlayer(Component c)
+        {
+            if (c == null) return "player=(none) isYourPlayer=n/a";
+
+            try
+            {
+                var player = c.GetComponentInParent<Player>();
+                if (player == null)
+                    return "player=(none) isYourPlayer=n/a";
+
+                string pname = string.IsNullOrEmpty(player.name) ? "(unnamed)" : player.name;
+                string isYour = GetIsYourPlayer(player);
+                return $"player={pname} isYourPlayer={isYour}";
+            }
+            catch
+            {
+                return "player=(error) isYourPlayer=n/a";
+            }
+        }
+
+        internal static void DumpAllOpticUpdaters()
+        {
+            try
+            {
+                var all = Resources.FindObjectsOfTypeAll<OpticComponentUpdater>();
+                ScopeHousingMeshSurgeryPlugin.LogInfo($"[Diagnostics] ---- OpticComponentUpdater snapshot: count={all.Length} frame={Time.frameCount} ----");
+
+                var field = GetOpticSightField();
+                var active = ScopeLifecycle.ActiveOptic;
+
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var up = all[i];
+                    if (up == null) continue;
+
+                    OpticSight os = null;
+                    try { if (field != null) os = field.GetValue(up) as OpticSight; } catch { }
+
+                    var cam = up.GetComponent<Camera>();
+                    string opticName = os != null ? os.name : "(null)";
+                    string isActive = (os != null && active != null && os == active) ? "yes" : "no";
+                    string ownerInfo = DescribeOwnerPlayer(up);
+                    string camState = cam != null
+                        ? $"enabled={cam.enabled} mask={cam.cullingMask} rt={(cam.targetTexture != null ? cam.targetTexture.name : "null")}" 
+                        : "camera=(none)";
+
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[Diagnostics]   [{i}] updater='{up.name}' id={up.GetInstanceID()} optic='{opticName}' activeOpticMatch={isActive} {ownerInfo} {camState}");
+                }
+            }
+            catch (Exception ex)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogError($"[Diagnostics] DumpAllOpticUpdaters failed: {ex.Message}");
+            }
+        }
 
         private static void TryFindBaseOpticCameras()
         {
@@ -264,6 +346,7 @@ _ignoreOnDisableFrame.Clear();
             _loggedBase = false;
             _nextBaseScanFrame = -1;
             OpticCameraTransform = null;
+            _lastOpticTransformSourceId = int.MinValue;
         }
 
         private static void ForceDisable(Camera cam)
@@ -308,8 +391,24 @@ _ignoreOnDisableFrame.Clear();
                 if (__instance == null) return;
                 if (ShouldSkipPiPDisableForHighMagnification(__instance)) return;
 
+                var field = GetOpticSightField();
+                OpticSight os = null;
+                try { if (field != null) os = field.GetValue(__instance) as OpticSight; } catch { }
+
                 // Cache the optic camera transform for ReticleRenderer camera alignment
                 OpticCameraTransform = __instance.transform;
+
+                int srcId = __instance.GetInstanceID();
+                if (srcId != _lastOpticTransformSourceId)
+                {
+                    _lastOpticTransformSourceId = srcId;
+                    string opticName = os != null ? os.name : "(null)";
+                    string activeMatch = (os != null && ScopeLifecycle.ActiveOptic != null && os == ScopeLifecycle.ActiveOptic) ? "yes" : "no";
+                    string ownerInfo = DescribeOwnerPlayer(__instance);
+
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[PiPDisabler] OpticCameraTransform source changed: optic='{opticName}' updaterId={srcId} activeOpticMatch={activeMatch} {ownerInfo}");
+                }
 
                 var cam = __instance.GetComponent<Camera>();
                 ForceDisable(cam);

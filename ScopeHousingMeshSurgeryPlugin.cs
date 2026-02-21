@@ -103,6 +103,7 @@ namespace ScopeHousingMeshSurgery
 
         // --- Diagnostics ---
         internal static ConfigEntry<KeyCode> DiagnosticsKey;
+        internal static ConfigEntry<KeyCode> DumpAllOpticUpdatersKey;
         internal static ConfigEntry<string>  ScopeBlacklist;
 
         // --- Zoom / FOV ---
@@ -415,6 +416,9 @@ namespace ScopeHousingMeshSurgery
             DiagnosticsKey = Config.Bind("5. Diagnostics", "DiagnosticsKey", KeyCode.F8,
                 "Press to log full diagnostics for the currently active scope: name, hierarchy,\n" +
                 "magnification, cut-plane config, target mesh list, blacklist hint.");
+            DumpAllOpticUpdatersKey = Config.Bind("5. Diagnostics", "DumpAllOpticUpdatersKey", KeyCode.F7,
+                "Press to snapshot all OpticComponentUpdater instances with optic name, owner player,\n" +
+                "IsYourPlayer, camera state, and active-optic match.");
             ScopeBlacklist = Config.Bind("5. Diagnostics", "ScopeBlacklist", "",
                 "Comma-separated list of scope root names to exclude from mesh surgery and reticle.\n" +
                 "Use the diagnostics key (F8) to find the root name and copy the hint at the bottom\n" +
@@ -504,6 +508,9 @@ namespace ScopeHousingMeshSurgery
             // --- Diagnostics dump ---
             if (DiagnosticsKey.Value != KeyCode.None && InputProxy.GetKeyDown(DiagnosticsKey.Value))
                 ScopeDiagnostics.Dump(ScopeLifecycle.ActiveOptic);
+
+            if (DumpAllOpticUpdatersKey.Value != KeyCode.None && InputProxy.GetKeyDown(DumpAllOpticUpdatersKey.Value))
+                PiPDisabler.DumpAllOpticUpdaters();
 
             // --- Scroll wheel zoom (only while scoped + modifier held) ---
             if (ScopeLifecycle.IsScoped && EnableScrollZoom.Value)
