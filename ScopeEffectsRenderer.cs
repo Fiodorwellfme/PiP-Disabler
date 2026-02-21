@@ -12,7 +12,7 @@ namespace ScopeHousingMeshSurgery
     /// eliminating edge flickering from TAA's jittered projection.
     ///
     /// ── VIGNETTE ───────────────────────────────────────────────────────────────
-    /// World-space quad at the lens position, sized by ReticleBaseSize / magnification.
+    /// Screen-space quad centred in view, scaled by FOV and magnification.
     /// Circular gradient: transparent centre → black ring at edge → transparent outside.
     ///
     /// ── SHADOW ─────────────────────────────────────────────────────────────────
@@ -51,9 +51,8 @@ namespace ScopeHousingMeshSurgery
         private static bool          _preCullRegistered;
 
         // ── Cached state ────────────────────────────────────────────────────
-        private static Transform _lensTransform;
-        private static float     _baseSize;
-        private static float     _magnification = 1f;
+        private static float _baseSize;
+        private static float _magnification = 1f;
 
         // ─────────────────────────────────────────────────────────────────────
         // Public API
@@ -61,7 +60,6 @@ namespace ScopeHousingMeshSurgery
 
         public static void Show(Transform lensTransform, float baseSize, float magnification)
         {
-            _lensTransform = lensTransform;
             _baseSize = baseSize;
             _magnification = magnification;
 
@@ -117,7 +115,6 @@ namespace ScopeHousingMeshSurgery
         public static void Cleanup()
         {
             Hide();
-            _lensTransform = null;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -184,7 +181,7 @@ namespace ScopeHousingMeshSurgery
             if (_cmdBuffer == null) return;
             if (!_vigActive && !_shadowActive) return;
 
-            // Rebuild matrices with final-pose lens position
+            // Rebuild matrices in pure screen-space
             if (_vigActive)
                 RebuildVignetteMatrix(cam);
             if (_shadowActive)
@@ -207,8 +204,8 @@ namespace ScopeHousingMeshSurgery
 
             Vector3 pos = cam.transform.position + cam.transform.forward * dist;
             Quaternion rot = cam.transform.rotation;
-            float fovScale = GetFovScale(cam);
-            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
+            float screenScale = GetScreenSpaceScale(cam);
+            Vector3 scale = new Vector3(halfW * 6f * screenScale, halfH * 6f * screenScale, 1f);
 
             _vigMatrix = Matrix4x4.TRS(pos, rot, scale);
         }
@@ -227,8 +224,8 @@ namespace ScopeHousingMeshSurgery
 
             Vector3 pos = cam.transform.position + cam.transform.forward * dist;
             Quaternion rot = cam.transform.rotation;
-            float fovScale = GetFovScale(cam);
-            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
+            float screenScale = GetScreenSpaceScale(cam);
+            Vector3 scale = new Vector3(halfW * 6f * screenScale, halfH * 6f * screenScale, 1f);
 
             _shadowMatrix = Matrix4x4.TRS(pos, rot, scale);
         }
@@ -419,13 +416,16 @@ namespace ScopeHousingMeshSurgery
                 $"[ScopeEffects] Shadow texture rebuilt: aspect={aspect:F2} radius={radius} soft={soft}");
         }
 
-        private static float GetFovScale(Camera cam)
+        private static float GetScreenSpaceScale(Camera cam)
         {
             float currentFov = cam != null ? cam.fieldOfView : 35f;
             float referenceFov = Mathf.Max(1f, ScopeHousingMeshSurgeryPlugin.ScopedFov.Value);
+            float fovScale = Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
 
-            // Lower FOV = larger on-screen effects, higher FOV = smaller.
-            return Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
+            float mag = Mathf.Max(1f, _magnification);
+            float magScale = 1f / mag;
+
+            return fovScale * magScale;
         }
 
         // ─────────────────────────────────────────────────────────────────────

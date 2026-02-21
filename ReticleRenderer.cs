@@ -50,11 +50,8 @@ namespace ScopeHousingMeshSurgery
         // World-space TRS for the reticle quad (rebuilt in onPreCull)
         private static Matrix4x4 _reticleMatrix = Matrix4x4.identity;
 
-        // ADS-in settled detection (position-based, proven in v4.5.4)
-        private static Vector3 _prevLensPos;
-        private static bool    _settled;
-        private static int     _settledFrameCount;
-        private const  int     SETTLED_FRAMES_REQUIRED = 3;
+        // Rendering state
+        private static bool _settled;
 
         // Fixed render distance for the centered quad
         private const float RENDER_DISTANCE = 0.3f;
@@ -149,14 +146,7 @@ namespace ScopeHousingMeshSurgery
                 // Attach CommandBuffer + onPreCull
                 AttachToCamera();
 
-                // Only reset settled detection on fresh ADS-in (not already settled).
-                // Magnification switches and reticle mode changes call Show() again
-                // while already scoped — resetting would cause a 3-frame flicker.
-                if (!_settled)
-                {
-                    _settledFrameCount = 0;
-                    _prevLensPos = _lensTransform != null ? _lensTransform.position : Vector3.zero;
-                }
+                _settled = true;
                 _alignmentActive = true;
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
@@ -193,7 +183,6 @@ namespace ScopeHousingMeshSurgery
         {
             _alignmentActive = false;
             _settled = false;
-            _settledFrameCount = 0;
             DetachFromCamera();
         }
 
@@ -207,11 +196,10 @@ namespace ScopeHousingMeshSurgery
             _lastMag           = 1f;
             _baseScale         = 0f;
             _settled           = false;
-            _settledFrameCount = 0;
         }
 
         /// <summary>
-        /// Returns true if camera alignment is currently active (scoped + settled).
+        /// Returns true if camera alignment is currently active while scoped.
         /// Used by ScopeEffectsRenderer to know that vignette/shadow can also
         /// render centered rather than tracking lens position.
         /// </summary>
@@ -280,39 +268,7 @@ namespace ScopeHousingMeshSurgery
         private static void OnPreCullCallback(Camera cam)
         {
             if (cam != _attachedCamera) return;
-            if (_cmdBuffer == null || _lensTransform == null || _reticleMat == null) return;
-
-            // ── Settled detection (position-based) ────────────────────────
-            if (!_settled)
-            {
-                Vector3 pos = _lensTransform.position;
-                float delta = (pos - _prevLensPos).sqrMagnitude;
-                _prevLensPos = pos;
-
-                float thresh = ScopeHousingMeshSurgeryPlugin.AdsSettledThreshold.Value;
-                float threshSq = thresh * thresh;
-
-                if (delta < threshSq)
-                {
-                    _settledFrameCount++;
-                    if (_settledFrameCount >= SETTLED_FRAMES_REQUIRED)
-                    {
-                        _settled = true;
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            "[Reticle] Lens settled — starting render");
-                    }
-                }
-                else
-                {
-                    _settledFrameCount = 0;
-                }
-
-                if (!_settled)
-                {
-                    _cmdBuffer.Clear();
-                    return;
-                }
-            }
+            if (_cmdBuffer == null || _reticleMat == null || !_settled) return;
 
             // ── Camera alignment ─────────────────────────────────────────
             // Override the camera's rotation to look exactly where the scope
@@ -360,15 +316,11 @@ namespace ScopeHousingMeshSurgery
             // Billboard: face the camera
             Quaternion rot = Quaternion.LookRotation(camTf.forward, camTf.up);
 
-            // Size: match visual angle of (baseScale/mag) at real lens distance,
-            // but drawn at RENDER_DISTANCE.
-            float realDist = _lensTransform != null
-                ? Vector3.Distance(camTf.position, _lensTransform.position)
-                : RENDER_DISTANCE;
-            if (realDist < 0.01f) realDist = RENDER_DISTANCE;
-
+            // Pure screen-space sizing: center-aligned and independent of
+            // lens position jitter. Keep apparent size stable across FOV and
+            // magnification changes.
             float mag = Mathf.Max(1f, _lastMag);
-            float worldSize = (_baseScale / mag) / realDist * RENDER_DISTANCE;
+            float worldSize = (_baseScale / mag) * GetFovScale(cam);
 
             Vector3 scale = new Vector3(worldSize, worldSize, worldSize);
 
@@ -400,6 +352,13 @@ namespace ScopeHousingMeshSurgery
         }
 
         // ── Private helpers ─────────────────────────────────────────────────
+
+        private static float GetFovScale(Camera cam)
+        {
+            float currentFov = cam != null ? cam.fieldOfView : 35f;
+            float referenceFov = Mathf.Max(1f, ScopeHousingMeshSurgeryPlugin.ScopedFov.Value);
+            return Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
+        }
 
         private static void ApplyHorizontalFlip()
         {
