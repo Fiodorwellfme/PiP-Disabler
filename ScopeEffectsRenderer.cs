@@ -216,7 +216,7 @@ namespace ScopeHousingMeshSurgery
             _cmdBuffer.Clear();
 
             _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            _cmdBuffer.SetViewport(GetCameraViewport(cam));
+            _cmdBuffer.SetViewport(GetDisplayViewport(cam));
 
             // Pure screen-space draw (clip-space matrices).
             _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
@@ -267,7 +267,7 @@ namespace ScopeHousingMeshSurgery
             float mult = ScopeHousingMeshSurgeryPlugin.VignetteSizeMult.Value;
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
-            float aspect = GetCameraAspect(cam);
+            float aspect = GetDisplayAspect(cam);
 
             if (Mathf.Abs(soft - _lastVigSoftness) < 0.001f &&
                 Mathf.Abs(opac - _lastVigOpacity)  < 0.005f &&
@@ -354,7 +354,7 @@ namespace ScopeHousingMeshSurgery
             float opac   = ScopeHousingMeshSurgeryPlugin.ScopeShadowOpacity.Value;
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
-            Rect viewport = GetCameraViewport(cam);
+            Rect viewport = GetDisplayViewport(cam);
             int texW = Mathf.Clamp(Mathf.RoundToInt(viewport.width), 64, 4096);
             int texH = Mathf.Clamp(Mathf.RoundToInt(viewport.height), 64, 4096);
             float aspect = texW / Mathf.Max(1f, (float)texH);
@@ -404,20 +404,25 @@ namespace ScopeHousingMeshSurgery
                 $"[ScopeEffects] Shadow texture rebuilt: {texW}x{texH} aspect={aspect:F2} radius={radius} soft={soft}");
         }
 
-        private static Rect GetCameraViewport(Camera cam)
+        private static Rect GetDisplayViewport(Camera cam)
         {
+            float w = Mathf.Max(1f, Screen.width);
+            float h = Mathf.Max(1f, Screen.height);
+
+            // DLSS/FSR may shrink camera pixelRect to internal resolution.
+            // Use display-space dimensions so overlays stay centered full-frame.
             if (cam != null)
             {
-                Rect r = cam.pixelRect;
-                if (r.width > 1f && r.height > 1f)
-                    return r;
+                w = Mathf.Max(w, cam.pixelWidth);
+                h = Mathf.Max(h, cam.pixelHeight);
             }
-            return new Rect(0f, 0f, Screen.width, Screen.height);
+
+            return new Rect(0f, 0f, w, h);
         }
 
-        private static float GetCameraAspect(Camera cam)
+        private static float GetDisplayAspect(Camera cam)
         {
-            Rect r = GetCameraViewport(cam);
+            Rect r = GetDisplayViewport(cam);
             return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
         }
 
