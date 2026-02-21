@@ -39,7 +39,6 @@ namespace ScopeHousingMeshSurgery
         private static float _lastMag = 1f;
 
         // Cached transforms
-        private static Transform _lensTransform;    // LensRenderer — for position / distance
         private static Transform _opticTransform;   // OpticSight   — for forward (downrange)
 
         // CommandBuffer state
@@ -50,14 +49,9 @@ namespace ScopeHousingMeshSurgery
         // World-space TRS for the reticle quad (rebuilt in onPreCull)
         private static Matrix4x4 _reticleMatrix = Matrix4x4.identity;
 
-        // ADS-in settled detection (position-based, proven in v4.5.4)
-        private static Vector3 _prevLensPos;
-        private static bool    _settled;
-        private static int     _settledFrameCount;
-        private const  int     SETTLED_FRAMES_REQUIRED = 3;
+        // Rendering state
+        private static bool _settled;
 
-        // Fixed render distance for the centered quad
-        private const float RENDER_DISTANCE = 0.3f;
 
         // Camera alignment state
         private static bool _alignmentActive;
@@ -126,9 +120,6 @@ namespace ScopeHousingMeshSurgery
 
             try
             {
-                _lensTransform = os.LensRenderer != null
-                    ? os.LensRenderer.transform
-                    : os.transform;
                 _opticTransform = os.transform;
 
                 EnsureMeshAndMaterial();
@@ -149,14 +140,7 @@ namespace ScopeHousingMeshSurgery
                 // Attach CommandBuffer + onPreCull
                 AttachToCamera();
 
-                // Only reset settled detection on fresh ADS-in (not already settled).
-                // Magnification switches and reticle mode changes call Show() again
-                // while already scoped — resetting would cause a 3-frame flicker.
-                if (!_settled)
-                {
-                    _settledFrameCount = 0;
-                    _prevLensPos = _lensTransform != null ? _lensTransform.position : Vector3.zero;
-                }
+                _settled = true;
                 _alignmentActive = true;
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
@@ -175,7 +159,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void UpdateTransform(float magnification)
         {
-            if (_cmdBuffer == null || _lensTransform == null) return;
+            if (_cmdBuffer == null) return;
 
             if (magnification < 1f) magnification = 1f;
             if (Mathf.Abs(magnification - _lastMag) >= 0.01f)
@@ -193,7 +177,6 @@ namespace ScopeHousingMeshSurgery
         {
             _alignmentActive = false;
             _settled = false;
-            _settledFrameCount = 0;
             DetachFromCamera();
         }
 
@@ -202,16 +185,14 @@ namespace ScopeHousingMeshSurgery
             Hide();
             _savedMarkTex      = null;
             _savedMaskTex      = null;
-            _lensTransform     = null;
             _opticTransform    = null;
             _lastMag           = 1f;
             _baseScale         = 0f;
             _settled           = false;
-            _settledFrameCount = 0;
         }
 
         /// <summary>
-        /// Returns true if camera alignment is currently active (scoped + settled).
+        /// Returns true if camera alignment is currently active while scoped.
         /// Used by ScopeEffectsRenderer to know that vignette/shadow can also
         /// render centered rather than tracking lens position.
         /// </summary>
@@ -280,39 +261,7 @@ namespace ScopeHousingMeshSurgery
         private static void OnPreCullCallback(Camera cam)
         {
             if (cam != _attachedCamera) return;
-            if (_cmdBuffer == null || _lensTransform == null || _reticleMat == null) return;
-
-            // ── Settled detection (position-based) ────────────────────────
-            if (!_settled)
-            {
-                Vector3 pos = _lensTransform.position;
-                float delta = (pos - _prevLensPos).sqrMagnitude;
-                _prevLensPos = pos;
-
-                float thresh = ScopeHousingMeshSurgeryPlugin.AdsSettledThreshold.Value;
-                float threshSq = thresh * thresh;
-
-                if (delta < threshSq)
-                {
-                    _settledFrameCount++;
-                    if (_settledFrameCount >= SETTLED_FRAMES_REQUIRED)
-                    {
-                        _settled = true;
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            "[Reticle] Lens settled — starting render");
-                    }
-                }
-                else
-                {
-                    _settledFrameCount = 0;
-                }
-
-                if (!_settled)
-                {
-                    _cmdBuffer.Clear();
-                    return;
-                }
-            }
+            if (_cmdBuffer == null || _reticleMat == null || !_settled) return;
 
             // ── Camera alignment ─────────────────────────────────────────
             // Override the camera's rotation to look exactly where the scope
@@ -327,10 +276,13 @@ namespace ScopeHousingMeshSurgery
             // the optic camera itself can't render.
             if (_alignmentActive)
             {
-                Transform opticCamTf = PiPDisabler.OpticCameraTransform;
-                if (opticCamTf != null)
+                // Primary source: optic camera transform kept in sync by EFT updater.
+                // Fallback: optic transform itself, so sway-follow remains active even
+                // if optic camera cache is temporarily unavailable.
+                Transform swaySource = PiPDisabler.OpticCameraTransform ?? _opticTransform;
+                if (swaySource != null)
                 {
-                    cam.transform.rotation = opticCamTf.rotation;
+                    cam.transform.rotation = swaySource.rotation;
                 }
             }
 
@@ -345,34 +297,28 @@ namespace ScopeHousingMeshSurgery
         /// the camera's (now scope-aligned) forward.  Since the camera is
         /// aligned with the scope, this is always dead center.
         ///
-        /// Size is computed to match the visual angle the reticle would
-        /// subtend at the real lens distance.
+        /// Size is computed directly in screen-space from FOV and magnification.
         /// </summary>
         private static void RebuildMatrix(Camera cam)
         {
             if (cam == null) return;
 
-            Transform camTf = cam.transform;
-
-            // Position: fixed distance along camera forward (= screen center)
-            Vector3 worldPos = camTf.position + camTf.forward * RENDER_DISTANCE;
-
-            // Billboard: face the camera
-            Quaternion rot = Quaternion.LookRotation(camTf.forward, camTf.up);
-
-            // Size: match visual angle of (baseScale/mag) at real lens distance,
-            // but drawn at RENDER_DISTANCE.
-            float realDist = _lensTransform != null
-                ? Vector3.Distance(camTf.position, _lensTransform.position)
-                : RENDER_DISTANCE;
-            if (realDist < 0.01f) realDist = RENDER_DISTANCE;
-
+            // Clip-space centered quad: independent of world/lens transforms.
+            // Convert physical reticle size into an angular screen size using a
+            // reference eye-relief distance, then project to NDC by camera FOV.
             float mag = Mathf.Max(1f, _lastMag);
-            float worldSize = (_baseScale / mag) / realDist * RENDER_DISTANCE;
+            float fovRad = (cam != null ? cam.fieldOfView : 35f) * Mathf.Deg2Rad;
+            float tanHalfFov = Mathf.Max(0.01f, Mathf.Tan(fovRad * 0.5f));
+            const float referenceLensDistance = 0.075f;
 
-            Vector3 scale = new Vector3(worldSize, worldSize, worldSize);
+            float angularSize = (_baseScale / mag) / referenceLensDistance;
+            float ndcSize = angularSize / tanHalfFov;
+            ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
-            _reticleMatrix = Matrix4x4.TRS(worldPos, rot, scale);
+            Vector3 pos = new Vector3(0f, 0f, 0.5f);
+            float aspect = GetDisplayAspect(cam);
+            Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
+            _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
         }
 
         /// <summary>
@@ -385,21 +331,38 @@ namespace ScopeHousingMeshSurgery
 
             // ── DLSS/FSR viewport fix ─────────────────────────────────────
             _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            _cmdBuffer.SetViewport(new Rect(0, 0, Screen.width, Screen.height));
+            _cmdBuffer.SetViewport(GetDisplayViewport(cam));
 
-            // ── Non-jittered projection ───────────────────────────────────
-            Matrix4x4 viewMatrix = cam.worldToCameraMatrix;
-            Matrix4x4 projMatrix = cam.nonJitteredProjectionMatrix;
-
-            _cmdBuffer.SetViewProjectionMatrices(viewMatrix, projMatrix);
-
+            // Pure screen-space draw (clip-space matrices).
+            _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
             _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
-
-            // Restore original matrices
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
         }
 
         // ── Private helpers ─────────────────────────────────────────────────
+
+        private static Rect GetDisplayViewport(Camera cam)
+        {
+            float w = Mathf.Max(1f, Screen.width);
+            float h = Mathf.Max(1f, Screen.height);
+
+            // Under DLSS/FSR, camera pixelRect can reflect the lower-resolution
+            // internal render size, which would pin overlays to lower-left when
+            // used as the viewport. Prefer display-space dimensions instead.
+            if (cam != null)
+            {
+                w = Mathf.Max(w, cam.pixelWidth);
+                h = Mathf.Max(h, cam.pixelHeight);
+            }
+
+            return new Rect(0f, 0f, w, h);
+        }
+
+        private static float GetDisplayAspect(Camera cam)
+        {
+            Rect r = GetDisplayViewport(cam);
+            return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
+        }
 
         private static void ApplyHorizontalFlip()
         {
@@ -459,6 +422,8 @@ namespace ScopeHousingMeshSurgery
                     color       = Color.white,
                     renderQueue = 3100
                 };
+                _reticleMat.SetInt("_ZTest", (int)CompareFunction.Always);
+                _reticleMat.SetInt("_ZWrite", 0);
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[Reticle] Created material (shader='{(alphaShader != null ? alphaShader.name : "null")}')");

@@ -12,7 +12,7 @@ namespace ScopeHousingMeshSurgery
     /// eliminating edge flickering from TAA's jittered projection.
     ///
     /// ── VIGNETTE ───────────────────────────────────────────────────────────────
-    /// World-space quad at the lens position, sized by ReticleBaseSize / magnification.
+    /// Screen-space quad centred in view, scaled by FOV.
     /// Circular gradient: transparent centre → black ring at edge → transparent outside.
     ///
     /// ── SHADOW ─────────────────────────────────────────────────────────────────
@@ -42,6 +42,8 @@ namespace ScopeHousingMeshSurgery
         private static float      _lastShadowSoftness = -1f;
         private static float      _lastShadowOpacity  = -1f;
         private static float      _lastShadowAspect   = -1f;
+        private static int        _lastShadowTexWidth = -1;
+        private static int        _lastShadowTexHeight = -1;
         private static Matrix4x4  _shadowMatrix = Matrix4x4.identity;
         private static bool       _shadowActive;
 
@@ -50,20 +52,15 @@ namespace ScopeHousingMeshSurgery
         private static Camera        _attachedCamera;
         private static bool          _preCullRegistered;
 
-        // ── Cached state ────────────────────────────────────────────────────
-        private static Transform _lensTransform;
-        private static float     _baseSize;
-        private static float     _magnification = 1f;
-
         // ─────────────────────────────────────────────────────────────────────
         // Public API
         // ─────────────────────────────────────────────────────────────────────
 
         public static void Show(Transform lensTransform, float baseSize, float magnification)
         {
-            _lensTransform = lensTransform;
-            _baseSize = baseSize;
-            _magnification = magnification;
+            _ = lensTransform;
+            _ = baseSize;
+            _ = magnification;
 
             if (ScopeHousingMeshSurgeryPlugin.VignetteEnabled.Value)
             {
@@ -88,14 +85,8 @@ namespace ScopeHousingMeshSurgery
         /// <summary>Per-frame update — call from ScopeLifecycle.Tick().</summary>
         public static void UpdateTransform(float baseSize, float magnification)
         {
-            if (baseSize < 0.001f)
-            {
-                baseSize = ScopeHousingMeshSurgeryPlugin.ReticleBaseSize.Value;
-                if (baseSize < 0.001f) baseSize = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value * 2f;
-                if (baseSize < 0.001f) baseSize = 0.030f;
-            }
-            _baseSize = baseSize;
-            _magnification = magnification;
+            _ = baseSize;
+            _ = magnification;
 
             // Refresh textures if config changed
             if (_vigActive)  RefreshVignetteTexture();
@@ -117,7 +108,6 @@ namespace ScopeHousingMeshSurgery
         public static void Cleanup()
         {
             Hide();
-            _lensTransform = null;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -184,7 +174,7 @@ namespace ScopeHousingMeshSurgery
             if (_cmdBuffer == null) return;
             if (!_vigActive && !_shadowActive) return;
 
-            // Rebuild matrices with final-pose lens position
+            // Rebuild matrices in pure screen-space
             if (_vigActive)
                 RebuildVignetteMatrix(cam);
             if (_shadowActive)
@@ -197,40 +187,30 @@ namespace ScopeHousingMeshSurgery
         {
             if (cam == null) return;
 
-            // Screen-filling quad (same approach as shadow).
-            // The vignette texture is a circular gradient — it covers the
-            // same screen area regardless of magnification or FOV.
-            // Oversized by 3x to prevent edge artifacts.
-            float dist = cam.nearClipPlane + 0.04f;  // slightly closer than shadow
-            float halfH = dist * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            float halfW = halfH * cam.aspect;
+            // Clip-space centered overlay, independent of world/lens transforms.
+            float screenScale = GetScreenSpaceScale(cam);
+            float ndcScale = Mathf.Clamp(3.2f * screenScale, 0.8f, 6f);
 
-            Vector3 pos = cam.transform.position + cam.transform.forward * dist;
-            Quaternion rot = cam.transform.rotation;
-            float fovScale = GetFovScale(cam);
-            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
-
-            _vigMatrix = Matrix4x4.TRS(pos, rot, scale);
+            _vigMatrix = Matrix4x4.TRS(
+                new Vector3(0f, 0f, 0.6f),
+                Quaternion.identity,
+                new Vector3(ndcScale, ndcScale, 1f));
         }
 
         private static void RebuildShadowMatrix(Camera cam)
         {
             if (cam == null) return;
 
-            // Screen-filling quad placed just beyond near clip plane.
-            // Oversized by 3x so the quad edges are always outside the
-            // viewport — only the circular-hole texture is visible.
-            // This eliminates edge flickering from near-plane/FOV jitter.
-            float dist = cam.nearClipPlane + 0.05f;
-            float halfH = dist * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            float halfW = halfH * cam.aspect;
+            // Clip-space centered overlay, independent of world/lens transforms.
+            // A quad scale of 2 fills the entire viewport in clip-space; keep a
+            // floor above that so FOV scaling can never leave uncovered edges.
+            float screenScale = GetScreenSpaceScale(cam);
+            float ndcScale = Mathf.Max(2.25f, Mathf.Clamp(3.2f * screenScale, 0.8f, 6f));
 
-            Vector3 pos = cam.transform.position + cam.transform.forward * dist;
-            Quaternion rot = cam.transform.rotation;
-            float fovScale = GetFovScale(cam);
-            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
-
-            _shadowMatrix = Matrix4x4.TRS(pos, rot, scale);
+            _shadowMatrix = Matrix4x4.TRS(
+                new Vector3(0f, 0f, 0.7f),
+                Quaternion.identity,
+                new Vector3(ndcScale, ndcScale, 1f));
         }
 
         private static void RebuildCommandBuffer(Camera cam)
@@ -238,13 +218,10 @@ namespace ScopeHousingMeshSurgery
             _cmdBuffer.Clear();
 
             _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            _cmdBuffer.SetViewport(new Rect(0, 0, Screen.width, Screen.height));
+            _cmdBuffer.SetViewport(GetDisplayViewport(cam));
 
-            // TAA jitter is applied to the projection matrix, not the view matrix.
-            Matrix4x4 viewMatrix = cam.worldToCameraMatrix;
-            Matrix4x4 projMatrix = cam.nonJitteredProjectionMatrix;
-
-            _cmdBuffer.SetViewProjectionMatrices(viewMatrix, projMatrix);
+            // Pure screen-space draw (clip-space matrices).
+            _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
 
             // Draw shadow first (behind vignette in render order)
             if (_shadowActive && _shadowMat != null && _shadowMesh != null)
@@ -274,6 +251,8 @@ namespace ScopeHousingMeshSurgery
                     color       = Color.white,
                     renderQueue = 3099
                 };
+                _vigMat.SetInt("_ZTest", (int)CompareFunction.Always);
+                _vigMat.SetInt("_ZWrite", 0);
             }
         }
 
@@ -290,7 +269,7 @@ namespace ScopeHousingMeshSurgery
             float mult = ScopeHousingMeshSurgeryPlugin.VignetteSizeMult.Value;
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
-            float aspect = cam != null ? cam.aspect : (16f / 9f);
+            float aspect = GetDisplayAspect(cam);
 
             if (Mathf.Abs(soft - _lastVigSoftness) < 0.001f &&
                 Mathf.Abs(opac - _lastVigOpacity)  < 0.005f &&
@@ -361,6 +340,8 @@ namespace ScopeHousingMeshSurgery
                     color       = Color.white,
                     renderQueue = 3050
                 };
+                _shadowMat.SetInt("_ZTest", (int)CompareFunction.Always);
+                _shadowMat.SetInt("_ZWrite", 0);
             }
         }
 
@@ -375,21 +356,27 @@ namespace ScopeHousingMeshSurgery
             float opac   = ScopeHousingMeshSurgeryPlugin.ScopeShadowOpacity.Value;
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
-            float aspect = cam != null ? cam.aspect : (16f / 9f);
+            Rect viewport = GetDisplayViewport(cam);
+            int texW = Mathf.Clamp(Mathf.RoundToInt(viewport.width), 64, 4096);
+            int texH = Mathf.Clamp(Mathf.RoundToInt(viewport.height), 64, 4096);
+            float aspect = texW / Mathf.Max(1f, (float)texH);
 
-            if (Mathf.Abs(radius - _lastShadowRadius)   < 0.001f &&
+            bool sizeChanged = texW != _lastShadowTexWidth || texH != _lastShadowTexHeight;
+            if (!sizeChanged &&
+                Mathf.Abs(radius - _lastShadowRadius)   < 0.001f &&
                 Mathf.Abs(soft   - _lastShadowSoftness) < 0.001f &&
                 Mathf.Abs(opac   - _lastShadowOpacity)  < 0.005f &&
                 Mathf.Abs(aspect - _lastShadowAspect)   < 0.01f) return;
-            _lastShadowRadius   = radius;
-            _lastShadowSoftness = soft;
-            _lastShadowOpacity  = opac;
-            _lastShadowAspect   = aspect;
+            _lastShadowRadius    = radius;
+            _lastShadowSoftness  = soft;
+            _lastShadowOpacity   = opac;
+            _lastShadowAspect    = aspect;
+            _lastShadowTexWidth  = texW;
+            _lastShadowTexHeight = texH;
 
-            const int S = 512;
-            if (_shadowTex == null)
+            if (_shadowTex == null || _shadowTex.width != texW || _shadowTex.height != texH)
             {
-                _shadowTex            = new Texture2D(S, S, TextureFormat.RGBA32, false);
+                _shadowTex            = new Texture2D(texW, texH, TextureFormat.RGBA32, false);
                 _shadowTex.name       = "ScopeShadowTex";
                 _shadowTex.wrapMode   = TextureWrapMode.Clamp;
                 _shadowTex.filterMode = FilterMode.Bilinear;
@@ -398,17 +385,17 @@ namespace ScopeHousingMeshSurgery
             float innerR = radius * 2f;
             float softR  = soft * 2f;
             float outerR = innerR + softR;
-            var   pixels = new Color32[S * S];
+            var   pixels = new Color32[texW * texH];
 
-            for (int y = 0; y < S; y++)
-            for (int x = 0; x < S; x++)
+            for (int y = 0; y < texH; y++)
+            for (int x = 0; x < texW; x++)
             {
-                float nx   = ((float)x / S - 0.5f) * 2f * aspect;
-                float ny   = ((float)y / S - 0.5f) * 2f;
+                float nx   = ((float)x / texW - 0.5f) * 2f * aspect;
+                float ny   = ((float)y / texH - 0.5f) * 2f;
                 float dist = Mathf.Sqrt(nx * nx + ny * ny);
                 float t    = Mathf.Clamp01((dist - innerR) / Mathf.Max(0.01f, outerR - innerR));
                 byte  a    = (byte)(Mathf.SmoothStep(0f, 1f, t) * opac * 255f);
-                pixels[y * S + x] = new Color32(0, 0, 0, a);
+                pixels[y * texW + x] = new Color32(0, 0, 0, a);
             }
 
             _shadowTex.SetPixels32(pixels);
@@ -416,16 +403,40 @@ namespace ScopeHousingMeshSurgery
             if (_shadowMat != null) _shadowMat.mainTexture = _shadowTex;
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                $"[ScopeEffects] Shadow texture rebuilt: aspect={aspect:F2} radius={radius} soft={soft}");
+                $"[ScopeEffects] Shadow texture rebuilt: {texW}x{texH} aspect={aspect:F2} radius={radius} soft={soft}");
         }
 
-        private static float GetFovScale(Camera cam)
+        private static Rect GetDisplayViewport(Camera cam)
+        {
+            float w = Mathf.Max(1f, Screen.width);
+            float h = Mathf.Max(1f, Screen.height);
+
+            // DLSS/FSR may shrink camera pixelRect to internal resolution.
+            // Use display-space dimensions so overlays stay centered full-frame.
+            if (cam != null)
+            {
+                w = Mathf.Max(w, cam.pixelWidth);
+                h = Mathf.Max(h, cam.pixelHeight);
+            }
+
+            return new Rect(0f, 0f, w, h);
+        }
+
+        private static float GetDisplayAspect(Camera cam)
+        {
+            Rect r = GetDisplayViewport(cam);
+            return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
+        }
+
+        private static float GetScreenSpaceScale(Camera cam)
         {
             float currentFov = cam != null ? cam.fieldOfView : 35f;
             float referenceFov = Mathf.Max(1f, ScopeHousingMeshSurgeryPlugin.ScopedFov.Value);
+            float fovScale = Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
 
-            // Lower FOV = larger on-screen effects, higher FOV = smaller.
-            return Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
+            // Keep lens effects large enough to match scope housing aperture.
+            // Magnification scaling made them collapse too much at higher zoom.
+            return fovScale;
         }
 
         // ─────────────────────────────────────────────────────────────────────
