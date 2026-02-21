@@ -86,6 +86,8 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> ReticleFlipHorizontal;
         internal static ConfigEntry<float> ReticleMipBias;
         internal static ConfigEntry<float> AdsSettledThreshold;
+        internal static ConfigEntry<float> CameraAlignmentSmoothing;
+        internal static ConfigEntry<float> CameraAlignmentDeadzoneDegrees;
         internal static ConfigEntry<bool> ReticleOverlayCamera;
         internal static ConfigEntry<bool> RemoveCameraSide;
         internal static ConfigEntry<bool> ForceManualKeepSide;
@@ -379,6 +381,17 @@ namespace ScopeHousingMeshSurgery
                     "hidden until the lens stops moving to avoid jitter during the ADS\n" +
                     "transition animation.  Lower = stricter (waits longer).  0 = disabled.",
                     new AcceptableValueRange<float>(0f, 0.01f)));
+            CameraAlignmentSmoothing = Config.Bind("3. Mesh Surgery", "CameraAlignmentSmoothing", 0.35f,
+                new ConfigDescription(
+                    "Smoothing factor for scope camera alignment in onPreCull.\n" +
+                    "0 = disabled (raw optic camera rotation each frame).\n" +
+                    "Higher values damp map-dependent micro-jitter from optic transform noise.",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            CameraAlignmentDeadzoneDegrees = Config.Bind("3. Mesh Surgery", "CameraAlignmentDeadzoneDegrees", 0.01f,
+                new ConfigDescription(
+                    "Ignore tiny optic-camera angular deltas below this threshold.\n" +
+                    "Helps suppress sub-pixel rotation chatter on heavy maps.",
+                    new AcceptableValueRange<float>(0f, 0.2f)));
             ReticleOverlayCamera = Config.Bind("3. Mesh Surgery", "ReticleOverlayCamera", true,
                 "[DEPRECATED — reticle now uses a CommandBuffer with nonJitteredProjectionMatrix.\n" +
                 "The overlay camera has been removed. This setting has no effect.]");

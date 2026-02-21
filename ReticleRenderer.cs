@@ -65,6 +65,8 @@ namespace ScopeHousingMeshSurgery
 
         // Camera alignment state
         private static bool _alignmentActive;
+        private static Quaternion _smoothedCameraRotation = Quaternion.identity;
+        private static bool _hasSmoothedRotation;
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -198,6 +200,7 @@ namespace ScopeHousingMeshSurgery
             _alignmentActive = false;
             _settled = false;
             _settledFrameCount = 0;
+            _hasSmoothedRotation = false;
             DetachFromCamera();
         }
 
@@ -212,6 +215,7 @@ namespace ScopeHousingMeshSurgery
             _baseScale         = 0f;
             _settled           = false;
             _settledFrameCount = 0;
+            _hasSmoothedRotation = false;
         }
 
         /// <summary>
@@ -336,12 +340,36 @@ namespace ScopeHousingMeshSurgery
             // scope's look direction every frame.  We let LateUpdate run
             // (v4.5.2 fix), so the transform is always up to date even though
             // the optic camera itself can't render.
+            float alignmentAngle = -1f;
             if (_alignmentActive)
             {
                 Transform opticCamTf = PiPDisabler.OpticCameraTransform;
                 if (opticCamTf != null)
                 {
-                    cam.transform.rotation = opticCamTf.rotation;
+                    Quaternion targetRotation = opticCamTf.rotation;
+                    if (!_hasSmoothedRotation)
+                    {
+                        _smoothedCameraRotation = targetRotation;
+                        _hasSmoothedRotation = true;
+                    }
+
+                    alignmentAngle = Quaternion.Angle(_smoothedCameraRotation, targetRotation);
+                    float deadzone = ScopeHousingMeshSurgeryPlugin.CameraAlignmentDeadzoneDegrees != null
+                        ? Mathf.Max(0f, ScopeHousingMeshSurgeryPlugin.CameraAlignmentDeadzoneDegrees.Value)
+                        : 0f;
+
+                    if (alignmentAngle > deadzone)
+                    {
+                        float smooth = ScopeHousingMeshSurgeryPlugin.CameraAlignmentSmoothing != null
+                            ? Mathf.Clamp01(ScopeHousingMeshSurgeryPlugin.CameraAlignmentSmoothing.Value)
+                            : 0f;
+                        if (smooth <= 0f)
+                            _smoothedCameraRotation = targetRotation;
+                        else
+                            _smoothedCameraRotation = Quaternion.Slerp(_smoothedCameraRotation, targetRotation, smooth);
+                    }
+
+                    cam.transform.rotation = _smoothedCameraRotation;
                 }
             }
 
@@ -353,13 +381,20 @@ namespace ScopeHousingMeshSurgery
                 float camOpticAngle = opticCamTf != null
                     ? Vector3.Angle(cam.transform.forward, opticCamTf.forward)
                     : -1f;
+                float deadzone = ScopeHousingMeshSurgeryPlugin.CameraAlignmentDeadzoneDegrees != null
+                    ? Mathf.Max(0f, ScopeHousingMeshSurgeryPlugin.CameraAlignmentDeadzoneDegrees.Value)
+                    : 0f;
+                float smoothing = ScopeHousingMeshSurgeryPlugin.CameraAlignmentSmoothing != null
+                    ? Mathf.Clamp01(ScopeHousingMeshSurgeryPlugin.CameraAlignmentSmoothing.Value)
+                    : 0f;
 
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[JitterDiag][Reticle] scene={ScopeHousingMeshSurgeryPlugin.GetActiveSceneNameSafe()} " +
                     $"frame={Time.frameCount} cam='{cam.name}' fov={cam.fieldOfView:F2} settled={_settled} " +
                     $"settledCount={_settledFrameCount}/{SETTLED_FRAMES_REQUIRED} thresh={ScopeHousingMeshSurgeryPlugin.AdsSettledThreshold.Value:F6} " +
                     $"lensDelta={lensDelta:F6} mag={_lastMag:F2} base={_baseScale:F4} " +
-                    $"opticCam={(opticCamTf != null ? opticCamTf.name : "null")} camOpticAngle={camOpticAngle:F4}");
+                    $"opticCam={(opticCamTf != null ? opticCamTf.name : "null")} camOpticAngle={camOpticAngle:F4} " +
+                    $"alignDelta={alignmentAngle:F4} deadzone={deadzone:F4} smooth={smoothing:F2}");
 
                 _lastDiagLogFrame = Time.frameCount;
             }
