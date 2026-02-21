@@ -1,3 +1,4 @@
+using System;
 using BepInEx;
 using BepInEx.Configuration;
 using EFT.CameraControl;
@@ -34,7 +35,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             if (string.IsNullOrEmpty(pluginDir))
-                pluginDir = Path.Combine(Paths.BepInExRootPath, "plugins");
+                pluginDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "plugins");
 
             string cacheDir = Path.Combine(pluginDir, "mesh_cut_cache");
             if (!Directory.Exists(cacheDir))
