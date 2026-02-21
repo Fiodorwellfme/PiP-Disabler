@@ -304,10 +304,16 @@ namespace ScopeHousingMeshSurgery
             if (cam == null) return;
 
             // Clip-space centered quad: independent of world/lens transforms.
-            // Mesh vertices are in [-0.5..0.5], so scale=2 fills the full screen.
+            // Convert physical reticle size into an angular screen size using a
+            // reference eye-relief distance, then project to NDC by camera FOV.
             float mag = Mathf.Max(1f, _lastMag);
-            float ndcSize = (_baseScale / mag) * GetFovScale(cam);
-            ndcSize = Mathf.Clamp(ndcSize, 0.001f, 2f);
+            float fovRad = (cam != null ? cam.fieldOfView : 35f) * Mathf.Deg2Rad;
+            float tanHalfFov = Mathf.Max(0.01f, Mathf.Tan(fovRad * 0.5f));
+            const float referenceLensDistance = 0.075f;
+
+            float angularSize = (_baseScale / mag) / referenceLensDistance;
+            float ndcSize = angularSize / tanHalfFov;
+            ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
             Vector3 pos = new Vector3(0f, 0f, 0.5f);
             Vector3 scale = new Vector3(ndcSize, ndcSize, 1f);
@@ -333,13 +339,6 @@ namespace ScopeHousingMeshSurgery
         }
 
         // ── Private helpers ─────────────────────────────────────────────────
-
-        private static float GetFovScale(Camera cam)
-        {
-            float currentFov = cam != null ? cam.fieldOfView : 35f;
-            float referenceFov = Mathf.Max(1f, ScopeHousingMeshSurgeryPlugin.ScopedFov.Value);
-            return Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
-        }
 
         private static void ApplyHorizontalFlip()
         {
