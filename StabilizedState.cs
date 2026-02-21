@@ -24,10 +24,8 @@ namespace ScopeHousingMeshSurgery
             Vector3 lensCam = fpsCam.transform.InverseTransformPoint(lensTf.position);
 
             const float tauPos = 0.05f;
-            const float tauRot = 0.03f;
             float dt = Mathf.Max(0.000001f, Time.unscaledDeltaTime);
             float aPos = 1f - Mathf.Exp(-dt / tauPos);
-            float aRot = 1f - Mathf.Exp(-dt / tauRot);
 
             if (!_stabilizeInit)
             {
@@ -45,7 +43,9 @@ namespace ScopeHousingMeshSurgery
             if (d.sqrMagnitude > deadzone * deadzone)
                 _lensCamSmoothed = Vector3.Lerp(_lensCamSmoothed, lensCam, aPos);
 
-            _opticRotSmoothed = Quaternion.Slerp(_opticRotSmoothed, opticTf.rotation, aRot);
+            // Keep optic rotation frame-accurate (no smoothing) to avoid visible reticle follow-lag.
+            // The stabilization win comes from LateUpdate timing + camera-space lens smoothing.
+            _opticRotSmoothed = opticTf.rotation;
         }
 
         public static bool IsInitialized => _stabilizeInit;
