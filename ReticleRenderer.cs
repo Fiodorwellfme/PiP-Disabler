@@ -46,6 +46,9 @@ namespace ScopeHousingMeshSurgery
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
         private static bool          _preCullRegistered;
+        private static bool          _postRenderHooked;
+        private static bool          _didOverride;
+        private static Quaternion    _savedRot;
 
         // World-space TRS for the reticle quad (rebuilt in onPreCull)
         private static Matrix4x4 _reticleMatrix = Matrix4x4.identity;
@@ -259,6 +262,14 @@ namespace ScopeHousingMeshSurgery
                 _preCullRegistered = false;
             }
 
+            RemovePostRenderHook();
+
+            if (_attachedCamera != null && _didOverride)
+            {
+                _attachedCamera.transform.rotation = _savedRot;
+                _didOverride = false;
+            }
+
             if (_attachedCamera != null && _cmdBuffer != null)
             {
                 try { _attachedCamera.RemoveCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer); }
@@ -275,12 +286,29 @@ namespace ScopeHousingMeshSurgery
             _attachedCamera = null;
         }
 
+        private static void EnsurePostRenderHook()
+        {
+            if (_postRenderHooked) return;
+            Camera.onPostRender += OnPostRenderCallback;
+            _postRenderHooked = true;
+        }
+
+        private static void RemovePostRenderHook()
+        {
+            if (!_postRenderHooked) return;
+            Camera.onPostRender -= OnPostRenderCallback;
+            _postRenderHooked = false;
+        }
+
         // ── onPreCull — camera alignment + rebuild CommandBuffer ─────────────
 
         private static void OnPreCullCallback(Camera cam)
         {
             if (cam != _attachedCamera) return;
             if (_cmdBuffer == null || _lensTransform == null || _reticleMat == null) return;
+
+            EnsurePostRenderHook();
+            _didOverride = false;
 
             // ── Settled detection (position-based) ────────────────────────
             if (!_settled)
@@ -330,12 +358,23 @@ namespace ScopeHousingMeshSurgery
                 Transform opticCamTf = PiPDisabler.OpticCameraTransform;
                 if (opticCamTf != null)
                 {
+                    _savedRot = cam.transform.rotation;
+                    _didOverride = true;
                     cam.transform.rotation = opticCamTf.rotation;
                 }
             }
 
             RebuildMatrix(cam);
             RebuildCommandBuffer(cam);
+        }
+
+        private static void OnPostRenderCallback(Camera cam)
+        {
+            if (cam != _attachedCamera) return;
+            if (!_didOverride) return;
+
+            cam.transform.rotation = _savedRot;
+            _didOverride = false;
         }
 
         // ── Centered quad matrix ─────────────────────────────────────────────
