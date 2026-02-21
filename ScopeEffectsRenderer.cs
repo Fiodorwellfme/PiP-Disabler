@@ -206,7 +206,7 @@ namespace ScopeHousingMeshSurgery
                     ? Vector3.Distance(cam.transform.position, lensPos)
                     : -1f;
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[JitterDiag][Effects] scene={ScopeHousingMeshSurgeryPlugin.GetActiveSceneNameSafe()} " +
                     $"frame={Time.frameCount} cam='{cam.name}' fov={cam.fieldOfView:F2} aspect={cam.aspect:F3} " +
                     $"vigActive={_vigActive} shadowActive={_shadowActive} mag={_magnification:F2} base={_baseSize:F4} " +

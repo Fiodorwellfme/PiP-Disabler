@@ -442,8 +442,8 @@ namespace ScopeHousingMeshSurgery
                 "Enable detailed logging. Turn on to diagnose lens/zoom issues.");
             JitterDiagnostics = Config.Bind("6. Debug", "JitterDiagnostics", false,
                 "Emit periodic per-frame telemetry for reticle/vignette/shadow camera state\n" +
-                "(scene, camera, FOV, lens delta, settled counters). Use only while diagnosing\n" +
-                "map-specific jitter; this can spam logs.");
+                "(scene, camera, FOV, lens delta, settled counters). Emitted through VerboseLogging\n" +
+                "so enable both this and VerboseLogging while diagnosing map-specific jitter.");
             JitterDiagnosticsIntervalFrames = Config.Bind("6. Debug", "JitterDiagnosticsIntervalFrames", 30,
                 new ConfigDescription(
                     "How often jitter telemetry is printed (in frames). Lower = more detail.",

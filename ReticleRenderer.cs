@@ -354,7 +354,7 @@ namespace ScopeHousingMeshSurgery
                     ? Vector3.Angle(cam.transform.forward, opticCamTf.forward)
                     : -1f;
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[JitterDiag][Reticle] scene={ScopeHousingMeshSurgeryPlugin.GetActiveSceneNameSafe()} " +
                     $"frame={Time.frameCount} cam='{cam.name}' fov={cam.fieldOfView:F2} settled={_settled} " +
                     $"settledCount={_settledFrameCount}/{SETTLED_FRAMES_REQUIRED} thresh={ScopeHousingMeshSurgeryPlugin.AdsSettledThreshold.Value:F6} " +
