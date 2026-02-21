@@ -51,7 +51,6 @@ namespace ScopeHousingMeshSurgery
         private static bool          _preCullRegistered;
 
         // ── Cached state ────────────────────────────────────────────────────
-        private static float _baseSize;
         private static float _magnification = 1f;
 
         // ─────────────────────────────────────────────────────────────────────
@@ -60,7 +59,8 @@ namespace ScopeHousingMeshSurgery
 
         public static void Show(Transform lensTransform, float baseSize, float magnification)
         {
-            _baseSize = baseSize;
+            _ = lensTransform;
+            _ = baseSize;
             _magnification = magnification;
 
             if (ScopeHousingMeshSurgeryPlugin.VignetteEnabled.Value)
@@ -86,13 +86,7 @@ namespace ScopeHousingMeshSurgery
         /// <summary>Per-frame update — call from ScopeLifecycle.Tick().</summary>
         public static void UpdateTransform(float baseSize, float magnification)
         {
-            if (baseSize < 0.001f)
-            {
-                baseSize = ScopeHousingMeshSurgeryPlugin.ReticleBaseSize.Value;
-                if (baseSize < 0.001f) baseSize = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value * 2f;
-                if (baseSize < 0.001f) baseSize = 0.030f;
-            }
-            _baseSize = baseSize;
+            _ = baseSize;
             _magnification = magnification;
 
             // Refresh textures if config changed
@@ -194,40 +188,28 @@ namespace ScopeHousingMeshSurgery
         {
             if (cam == null) return;
 
-            // Screen-filling quad (same approach as shadow).
-            // The vignette texture is a circular gradient — it covers the
-            // same screen area regardless of magnification or FOV.
-            // Oversized by 3x to prevent edge artifacts.
-            float dist = cam.nearClipPlane + 0.04f;  // slightly closer than shadow
-            float halfH = dist * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            float halfW = halfH * cam.aspect;
-
-            Vector3 pos = cam.transform.position + cam.transform.forward * dist;
-            Quaternion rot = cam.transform.rotation;
+            // Clip-space centered overlay, independent of world/lens transforms.
             float screenScale = GetScreenSpaceScale(cam);
-            Vector3 scale = new Vector3(halfW * 6f * screenScale, halfH * 6f * screenScale, 1f);
+            float ndcScale = Mathf.Clamp(2.2f * screenScale, 0.1f, 4f);
 
-            _vigMatrix = Matrix4x4.TRS(pos, rot, scale);
+            _vigMatrix = Matrix4x4.TRS(
+                new Vector3(0f, 0f, 0.6f),
+                Quaternion.identity,
+                new Vector3(ndcScale, ndcScale, 1f));
         }
 
         private static void RebuildShadowMatrix(Camera cam)
         {
             if (cam == null) return;
 
-            // Screen-filling quad placed just beyond near clip plane.
-            // Oversized by 3x so the quad edges are always outside the
-            // viewport — only the circular-hole texture is visible.
-            // This eliminates edge flickering from near-plane/FOV jitter.
-            float dist = cam.nearClipPlane + 0.05f;
-            float halfH = dist * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            float halfW = halfH * cam.aspect;
-
-            Vector3 pos = cam.transform.position + cam.transform.forward * dist;
-            Quaternion rot = cam.transform.rotation;
+            // Clip-space centered overlay, independent of world/lens transforms.
             float screenScale = GetScreenSpaceScale(cam);
-            Vector3 scale = new Vector3(halfW * 6f * screenScale, halfH * 6f * screenScale, 1f);
+            float ndcScale = Mathf.Clamp(2.2f * screenScale, 0.1f, 4f);
 
-            _shadowMatrix = Matrix4x4.TRS(pos, rot, scale);
+            _shadowMatrix = Matrix4x4.TRS(
+                new Vector3(0f, 0f, 0.7f),
+                Quaternion.identity,
+                new Vector3(ndcScale, ndcScale, 1f));
         }
 
         private static void RebuildCommandBuffer(Camera cam)
@@ -237,11 +219,8 @@ namespace ScopeHousingMeshSurgery
             _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
             _cmdBuffer.SetViewport(new Rect(0, 0, Screen.width, Screen.height));
 
-            // TAA jitter is applied to the projection matrix, not the view matrix.
-            Matrix4x4 viewMatrix = cam.worldToCameraMatrix;
-            Matrix4x4 projMatrix = cam.nonJitteredProjectionMatrix;
-
-            _cmdBuffer.SetViewProjectionMatrices(viewMatrix, projMatrix);
+            // Pure screen-space draw (clip-space matrices).
+            _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
 
             // Draw shadow first (behind vignette in render order)
             if (_shadowActive && _shadowMat != null && _shadowMesh != null)
@@ -271,6 +250,8 @@ namespace ScopeHousingMeshSurgery
                     color       = Color.white,
                     renderQueue = 3099
                 };
+                _vigMat.SetInt("_ZTest", (int)CompareFunction.Always);
+                _vigMat.SetInt("_ZWrite", 0);
             }
         }
 
@@ -358,6 +339,8 @@ namespace ScopeHousingMeshSurgery
                     color       = Color.white,
                     renderQueue = 3050
                 };
+                _shadowMat.SetInt("_ZTest", (int)CompareFunction.Always);
+                _shadowMat.SetInt("_ZWrite", 0);
             }
         }
 

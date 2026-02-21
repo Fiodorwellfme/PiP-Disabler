@@ -39,7 +39,6 @@ namespace ScopeHousingMeshSurgery
         private static float _lastMag = 1f;
 
         // Cached transforms
-        private static Transform _lensTransform;    // LensRenderer — for position / distance
         private static Transform _opticTransform;   // OpticSight   — for forward (downrange)
 
         // CommandBuffer state
@@ -53,8 +52,6 @@ namespace ScopeHousingMeshSurgery
         // Rendering state
         private static bool _settled;
 
-        // Fixed render distance for the centered quad
-        private const float RENDER_DISTANCE = 0.3f;
 
         // Camera alignment state
         private static bool _alignmentActive;
@@ -123,9 +120,6 @@ namespace ScopeHousingMeshSurgery
 
             try
             {
-                _lensTransform = os.LensRenderer != null
-                    ? os.LensRenderer.transform
-                    : os.transform;
                 _opticTransform = os.transform;
 
                 EnsureMeshAndMaterial();
@@ -147,7 +141,7 @@ namespace ScopeHousingMeshSurgery
                 AttachToCamera();
 
                 _settled = true;
-                _alignmentActive = true;
+                _alignmentActive = ScopeHousingMeshSurgeryPlugin.ReticleOverlayCamera.Value;
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[Reticle] Showing: base={_baseScale:F4} mag={magnification:F1}x " +
@@ -165,7 +159,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void UpdateTransform(float magnification)
         {
-            if (_cmdBuffer == null || _lensTransform == null) return;
+            if (_cmdBuffer == null) return;
 
             if (magnification < 1f) magnification = 1f;
             if (Mathf.Abs(magnification - _lastMag) >= 0.01f)
@@ -191,7 +185,6 @@ namespace ScopeHousingMeshSurgery
             Hide();
             _savedMarkTex      = null;
             _savedMaskTex      = null;
-            _lensTransform     = null;
             _opticTransform    = null;
             _lastMag           = 1f;
             _baseScale         = 0f;
@@ -301,30 +294,21 @@ namespace ScopeHousingMeshSurgery
         /// the camera's (now scope-aligned) forward.  Since the camera is
         /// aligned with the scope, this is always dead center.
         ///
-        /// Size is computed to match the visual angle the reticle would
-        /// subtend at the real lens distance.
+        /// Size is computed directly in screen-space from FOV and magnification.
         /// </summary>
         private static void RebuildMatrix(Camera cam)
         {
             if (cam == null) return;
 
-            Transform camTf = cam.transform;
-
-            // Position: fixed distance along camera forward (= screen center)
-            Vector3 worldPos = camTf.position + camTf.forward * RENDER_DISTANCE;
-
-            // Billboard: face the camera
-            Quaternion rot = Quaternion.LookRotation(camTf.forward, camTf.up);
-
-            // Pure screen-space sizing: center-aligned and independent of
-            // lens position jitter. Keep apparent size stable across FOV and
-            // magnification changes.
+            // Clip-space centered quad: independent of world/lens transforms.
+            // Mesh vertices are in [-0.5..0.5], so scale=2 fills the full screen.
             float mag = Mathf.Max(1f, _lastMag);
-            float worldSize = (_baseScale / mag) * GetFovScale(cam);
+            float ndcSize = (_baseScale / mag) * GetFovScale(cam);
+            ndcSize = Mathf.Clamp(ndcSize, 0.001f, 2f);
 
-            Vector3 scale = new Vector3(worldSize, worldSize, worldSize);
-
-            _reticleMatrix = Matrix4x4.TRS(worldPos, rot, scale);
+            Vector3 pos = new Vector3(0f, 0f, 0.5f);
+            Vector3 scale = new Vector3(ndcSize, ndcSize, 1f);
+            _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
         }
 
         /// <summary>
@@ -339,15 +323,9 @@ namespace ScopeHousingMeshSurgery
             _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
             _cmdBuffer.SetViewport(new Rect(0, 0, Screen.width, Screen.height));
 
-            // ── Non-jittered projection ───────────────────────────────────
-            Matrix4x4 viewMatrix = cam.worldToCameraMatrix;
-            Matrix4x4 projMatrix = cam.nonJitteredProjectionMatrix;
-
-            _cmdBuffer.SetViewProjectionMatrices(viewMatrix, projMatrix);
-
+            // Pure screen-space draw (clip-space matrices).
+            _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
             _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
-
-            // Restore original matrices
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
         }
 
@@ -418,6 +396,8 @@ namespace ScopeHousingMeshSurgery
                     color       = Color.white,
                     renderQueue = 3100
                 };
+                _reticleMat.SetInt("_ZTest", (int)CompareFunction.Always);
+                _reticleMat.SetInt("_ZWrite", 0);
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[Reticle] Created material (shader='{(alphaShader != null ? alphaShader.name : "null")}')");
