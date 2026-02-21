@@ -13,8 +13,8 @@ namespace ScopeHousingMeshSurgery
     ///
     /// ── VIGNETTE ───────────────────────────────────────────────────────────────
     /// Screen-space quad centred in view, scaled by FOV.
-    /// Circular feather: transparent centre → smooth darkening toward edge,
-    /// then holds darkness outside the aperture to blend with scope housing.
+    /// Circular feather: transparent centre → smooth darkening at aperture,
+    /// then softly fades back out so the overlay never reads as a rectangle.
     ///
     /// ── SHADOW ─────────────────────────────────────────────────────────────────
     /// Screen-filling quad in front of the camera.  Circular hole in the centre
@@ -258,8 +258,8 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Circular feather with aspect-ratio correction: transparent centre →
-        /// smooth darkening toward edge, then keeps darkness outside.
+        /// Circular dual-feather with aspect-ratio correction: transparent centre →
+        /// darkened aperture edge → soft fade-out before texture borders.
         /// Now screen-filling (like shadow), so X distances are stretched by
         /// the aspect ratio to keep the circle round.
         /// </summary>
@@ -290,13 +290,17 @@ namespace ScopeHousingMeshSurgery
                 _vigTex.filterMode = FilterMode.Bilinear;
             }
 
-            // VignetteSizeMult controls where the soft edge begins.
-            // mult=1 → feather starts near edge of a circle inscribed in height.
-            // mult<1 → feather starts inward (more visible darkening).
-            // mult>1 → feather starts outward (less darkening).
-            float baseR = mult;
-            float innerR = baseR * Mathf.Clamp01(1f - soft);
-            float outerR = baseR;
+            // VignetteSizeMult controls where the aperture edge sits.
+            // mult=1 → edge near a circle inscribed in height.
+            // mult<1 → edge moves inward (more visible darkening).
+            // mult>1 → edge moves outward (less visible darkening).
+            float edgeR = mult;
+
+            // Use an inward feather (clear center -> dark edge) and an outward
+            // feather (dark edge -> clear corners) so blending feels natural
+            // without leaving a full-screen dark rectangle.
+            float innerR = edgeR * Mathf.Clamp01(1f - soft);
+            float outerR = edgeR + Mathf.Max(0.02f, soft * 0.65f);
 
             var pixels = new Color32[S * S];
             for (int y = 0; y < S; y++)
@@ -307,22 +311,14 @@ namespace ScopeHousingMeshSurgery
                 float ny   = ((float)y / S - 0.5f) * 2f;
                 float dist = Mathf.Sqrt(nx * nx + ny * ny);
 
-                byte a;
-                if (dist <= innerR)
-                {
-                    a = 0;
-                }
-                else
-                {
-                    float t = Mathf.Clamp01((dist - innerR) / Mathf.Max(0.001f, outerR - innerR));
+                float inward = Mathf.Clamp01((dist - innerR) / Mathf.Max(0.001f, edgeR - innerR));
+                float outward = 1f - Mathf.Clamp01((dist - edgeR) / Mathf.Max(0.001f, outerR - edgeR));
 
-                    // Smoother response at edge so vignette blends into the housing/shadow
-                    // instead of reading as a hard dark ring.
-                    float feather = Mathf.SmoothStep(0f, 1f, t);
-                    feather = Mathf.Pow(feather, 1.35f);
+                // Bell-shaped alpha profile that peaks at the aperture edge.
+                float feather = Mathf.SmoothStep(0f, 1f, inward) * Mathf.SmoothStep(0f, 1f, outward);
+                feather = Mathf.Pow(feather, 1.2f);
 
-                    a = (byte)(feather * opac * 255f);
-                }
+                byte a = (byte)(feather * opac * 255f);
                 pixels[y * S + x] = new Color32(0, 0, 0, a);
             }
 
