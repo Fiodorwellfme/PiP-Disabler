@@ -141,7 +141,7 @@ namespace ScopeHousingMeshSurgery
                 AttachToCamera();
 
                 _settled = true;
-                _alignmentActive = ScopeHousingMeshSurgeryPlugin.ReticleOverlayCamera.Value;
+                _alignmentActive = true;
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[Reticle] Showing: base={_baseScale:F4} mag={magnification:F1}x " +
@@ -276,10 +276,13 @@ namespace ScopeHousingMeshSurgery
             // the optic camera itself can't render.
             if (_alignmentActive)
             {
-                Transform opticCamTf = PiPDisabler.OpticCameraTransform;
-                if (opticCamTf != null)
+                // Primary source: optic camera transform kept in sync by EFT updater.
+                // Fallback: optic transform itself, so sway-follow remains active even
+                // if optic camera cache is temporarily unavailable.
+                Transform swaySource = PiPDisabler.OpticCameraTransform ?? _opticTransform;
+                if (swaySource != null)
                 {
-                    cam.transform.rotation = opticCamTf.rotation;
+                    cam.transform.rotation = swaySource.rotation;
                 }
             }
 
