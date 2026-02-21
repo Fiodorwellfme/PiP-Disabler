@@ -67,6 +67,8 @@ namespace ScopeHousingMeshSurgery
         private static bool _alignmentActive;
         private static Quaternion _smoothedCameraRotation = Quaternion.identity;
         private static bool _hasSmoothedRotation;
+        private static Quaternion _lastOpticRotation = Quaternion.identity;
+        private static bool _hasLastOpticRotation;
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -201,6 +203,7 @@ namespace ScopeHousingMeshSurgery
             _settled = false;
             _settledFrameCount = 0;
             _hasSmoothedRotation = false;
+            _hasLastOpticRotation = false;
             DetachFromCamera();
         }
 
@@ -216,6 +219,7 @@ namespace ScopeHousingMeshSurgery
             _settled           = false;
             _settledFrameCount = 0;
             _hasSmoothedRotation = false;
+            _hasLastOpticRotation = false;
         }
 
         /// <summary>
@@ -341,6 +345,7 @@ namespace ScopeHousingMeshSurgery
             // (v4.5.2 fix), so the transform is always up to date even though
             // the optic camera itself can't render.
             float alignmentAngle = -1f;
+            float opticDeltaAngle = -1f;
             if (_alignmentActive)
             {
                 Transform opticCamTf = PiPDisabler.OpticCameraTransform;
@@ -352,6 +357,11 @@ namespace ScopeHousingMeshSurgery
                         _smoothedCameraRotation = targetRotation;
                         _hasSmoothedRotation = true;
                     }
+
+                    if (_hasLastOpticRotation)
+                        opticDeltaAngle = Quaternion.Angle(_lastOpticRotation, targetRotation);
+                    _lastOpticRotation = targetRotation;
+                    _hasLastOpticRotation = true;
 
                     alignmentAngle = Quaternion.Angle(_smoothedCameraRotation, targetRotation);
                     float deadzone = ScopeHousingMeshSurgeryPlugin.CameraAlignmentDeadzoneDegrees != null
@@ -393,8 +403,8 @@ namespace ScopeHousingMeshSurgery
                     $"frame={Time.frameCount} cam='{cam.name}' fov={cam.fieldOfView:F2} settled={_settled} " +
                     $"settledCount={_settledFrameCount}/{SETTLED_FRAMES_REQUIRED} thresh={ScopeHousingMeshSurgeryPlugin.AdsSettledThreshold.Value:F6} " +
                     $"lensDelta={lensDelta:F6} mag={_lastMag:F2} base={_baseScale:F4} " +
-                    $"opticCam={(opticCamTf != null ? opticCamTf.name : "null")} camOpticAngle={camOpticAngle:F4} " +
-                    $"alignDelta={alignmentAngle:F4} deadzone={deadzone:F4} smooth={smoothing:F2}");
+                    $"opticCam={(opticCamTf != null ? opticCamTf.name : "null")} camOpticAngle={camOpticAngle:F6} " +
+                    $"alignDelta={alignmentAngle:F6} opticDelta={opticDeltaAngle:F6} deadzone={deadzone:F6} smooth={smoothing:F2}");
 
                 _lastDiagLogFrame = Time.frameCount;
             }

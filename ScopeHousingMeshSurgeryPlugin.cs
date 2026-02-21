@@ -387,10 +387,10 @@ namespace ScopeHousingMeshSurgery
                     "0 = disabled (raw optic camera rotation each frame).\n" +
                     "Higher values damp map-dependent micro-jitter from optic transform noise.",
                     new AcceptableValueRange<float>(0f, 1f)));
-            CameraAlignmentDeadzoneDegrees = Config.Bind("3. Mesh Surgery", "CameraAlignmentDeadzoneDegrees", 0.01f,
+            CameraAlignmentDeadzoneDegrees = Config.Bind("3. Mesh Surgery", "CameraAlignmentDeadzoneDegrees", 0.002f,
                 new ConfigDescription(
                     "Ignore tiny optic-camera angular deltas below this threshold.\n" +
-                    "Helps suppress sub-pixel rotation chatter on heavy maps.",
+                    "Keep this very small (e.g. 0.0005-0.005) to avoid sticky feel while still suppressing micro-chatter.",
                     new AcceptableValueRange<float>(0f, 0.2f)));
             ReticleOverlayCamera = Config.Bind("3. Mesh Surgery", "ReticleOverlayCamera", true,
                 "[DEPRECATED — reticle now uses a CommandBuffer with nonJitteredProjectionMatrix.\n" +
