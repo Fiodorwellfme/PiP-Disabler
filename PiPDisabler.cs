@@ -44,6 +44,9 @@ namespace ScopeHousingMeshSurgery
         /// Used by ReticleRenderer for camera alignment.
         /// </summary>
         internal static Transform OpticCameraTransform { get; private set; }
+        internal static Transform Debug_LastOpticCameraTransform;
+        internal static string Debug_LastOpticCameraSetBy;
+        internal static int Debug_LastOpticCameraSetFrame;
 
         
         // Track OpticSight.enabled state so we can disable it while scoped and restore on un-scope.
@@ -202,7 +205,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
             }
         }
 
-        private static FieldInfo GetOpticSightField()
+        internal static FieldInfo GetOpticSightField()
         {
             if (!_opticSightFieldSearched)
             {
@@ -264,6 +267,9 @@ _ignoreOnDisableFrame.Clear();
             _loggedBase = false;
             _nextBaseScanFrame = -1;
             OpticCameraTransform = null;
+            Debug_LastOpticCameraTransform = null;
+            Debug_LastOpticCameraSetBy = null;
+            Debug_LastOpticCameraSetFrame = 0;
         }
 
         private static void ForceDisable(Camera cam)
@@ -310,6 +316,9 @@ _ignoreOnDisableFrame.Clear();
 
                 // Cache the optic camera transform for ReticleRenderer camera alignment
                 OpticCameraTransform = __instance.transform;
+                Debug_LastOpticCameraTransform = OpticCameraTransform;
+                Debug_LastOpticCameraSetBy = __instance.name;
+                Debug_LastOpticCameraSetFrame = Time.frameCount;
 
                 var cam = __instance.GetComponent<Camera>();
                 ForceDisable(cam);
@@ -345,6 +354,15 @@ _ignoreOnDisableFrame.Clear();
 
                 // Ensure the camera can't render, but let LateUpdate run for transforms.
                 var cam = __instance != null ? __instance.GetComponent<Camera>() : null;
+
+                if (__instance != null)
+                {
+                    OpticCameraTransform = __instance.transform;
+                    Debug_LastOpticCameraTransform = OpticCameraTransform;
+                    Debug_LastOpticCameraSetBy = __instance.name;
+                    Debug_LastOpticCameraSetFrame = Time.frameCount;
+                }
+
                 ForceDisable(cam);
 
                 // Return TRUE — let the original LateUpdate execute.

@@ -1,6 +1,9 @@
 using System.Text;
+using System.Linq;
 using EFT.CameraControl;
+using EFT;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace ScopeHousingMeshSurgery
 {
@@ -54,6 +57,54 @@ namespace ScopeHousingMeshSurgery
         {
             var sb = new StringBuilder();
             sb.AppendLine("[Diagnostics] ============= SCOPE DUMP =============");
+
+            sb.AppendLine("[Diagnostics] --- Scene / Cameras ---");
+            sb.AppendLine($"[Diagnostics]   Scene            : {SceneManager.GetActiveScene().name}");
+            sb.AppendLine($"[Diagnostics]   isBatchMode      : {Application.isBatchMode}");
+            sb.AppendLine($"[Diagnostics]   gfxDevice        : {SystemInfo.graphicsDeviceType}");
+
+            var cams = Resources.FindObjectsOfTypeAll<Camera>();
+            sb.AppendLine($"[Diagnostics]   Camera count     : {cams.Length}");
+            foreach (var c in cams.OrderBy(x => x.depth))
+            {
+                if (c == null) continue;
+
+                var rt = c.targetTexture;
+                bool looksOptic = (c.name?.ToLowerInvariant().Contains("optic") ?? false) ||
+                                  (c.gameObject.name?.ToLowerInvariant().Contains("optic") ?? false);
+                if (!looksOptic && c.name != "FPS Camera") continue;
+
+                sb.AppendLine($"[Diagnostics]   Cam '{c.name}' enabled={c.enabled} active={c.gameObject.activeInHierarchy} " +
+                              $"depth={c.depth} cullMask=0x{c.cullingMask:X} " +
+                              $"RT={(rt ? rt.name : "null")} {(rt ? $"{rt.width}x{rt.height}" : "")}");
+            }
+
+            sb.AppendLine("[Diagnostics] --- OpticComponentUpdaters ---");
+            var updaters = Resources.FindObjectsOfTypeAll<MonoBehaviour>()
+                .Where(mb => mb != null && mb.GetType().Name == "OpticComponentUpdater")
+                .ToArray();
+
+            sb.AppendLine($"[Diagnostics]   Updater count    : {updaters.Length}");
+
+            var opticField = PiPDisabler.GetOpticSightField();
+            foreach (var u in updaters)
+            {
+                var go = u.gameObject;
+                var p = u.GetComponentInParent<Player>();
+                string playerName = p ? p.name : "null";
+                bool isYour = p && p.IsYourPlayer;
+
+                OpticSight uOptic = null;
+                try { uOptic = opticField?.GetValue(u) as OpticSight; } catch { }
+
+                sb.AppendLine($"[Diagnostics]   Updater '{go.name}' optic='{(uOptic ? uOptic.name : "null")}' " +
+                              $"isYour={isYour} player='{playerName}'");
+            }
+
+            sb.AppendLine("[Diagnostics] --- Mod Binding ---");
+            var t = PiPDisabler.Debug_LastOpticCameraTransform;
+            sb.AppendLine($"[Diagnostics]   Last OpticTf     : {(t ? t.name : "null")} path={(t ? GetPath(t) : "null")}");
+            sb.AppendLine($"[Diagnostics]   Set by / frame   : {PiPDisabler.Debug_LastOpticCameraSetBy} / {PiPDisabler.Debug_LastOpticCameraSetFrame}");
 
             if (os == null)
             {
