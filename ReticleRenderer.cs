@@ -8,24 +8,11 @@ namespace ScopeHousingMeshSurgery
     /// Renders the scope reticle via a CommandBuffer injected at
     /// CameraEvent.AfterEverything on the main FPS camera.
     ///
-    /// ── CAMERA ALIGNMENT APPROACH ───────────────────────────────────────
-    /// The root cause of reticle jitter is the mismatch between where the
-    /// camera looks and where the scope tube points.  In vanilla PiP, this
-    /// doesn't matter — the optic camera is aligned to the scope by design.
-    /// In no-PiP mode, the main camera and scope have slightly different
-    /// orientations, and any reticle placement (world-space, angular, etc.)
-    /// amplifies that difference at high magnification.
+    /// The reticle is rendered as a fixed center-screen quad in onPreCull,
+    /// then composited after the frame using a non-jittered projection matrix.
     ///
-    /// The fix: in onPreCull (after all game systems have run), override the
-    /// main camera's rotation to match the scope's forward direction.  This
-    /// makes the rendered frame look exactly where the scope points.  The
-    /// reticle becomes a simple fixed quad at screen center — zero jitter
-    /// by definition.
-    ///
-    /// Weapon sway is preserved: the scope transform sways each frame from
-    /// ProceduralWeaponAnimation, and the camera follows.  The player sees
-    /// the world shift (exactly like looking through a real scope), not a
-    /// dancing crosshair.
+    /// This keeps the reticle independent from lens/world transform deltas,
+    /// eliminating jitter from animation, timing differences, and TAA jitter.
     /// </summary>
     internal static class ReticleRenderer
     {
@@ -38,10 +25,6 @@ namespace ScopeHousingMeshSurgery
         private static float _baseScale;
         private static float _lastMag = 1f;
 
-        // Cached transforms
-        private static Transform _lensTransform;    // LensRenderer — for position / distance
-        private static Transform _opticTransform;   // OpticSight   — for forward (downrange)
-
         // CommandBuffer state
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
@@ -50,17 +33,8 @@ namespace ScopeHousingMeshSurgery
         // World-space TRS for the reticle quad (rebuilt in onPreCull)
         private static Matrix4x4 _reticleMatrix = Matrix4x4.identity;
 
-        // ADS-in settled detection (position-based, proven in v4.5.4)
-        private static Vector3 _prevLensPos;
-        private static bool    _settled;
-        private static int     _settledFrameCount;
-        private const  int     SETTLED_FRAMES_REQUIRED = 3;
-
         // Fixed render distance for the centered quad
         private const float RENDER_DISTANCE = 0.3f;
-
-        // Camera alignment state
-        private static bool _alignmentActive;
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -126,11 +100,6 @@ namespace ScopeHousingMeshSurgery
 
             try
             {
-                _lensTransform = os.LensRenderer != null
-                    ? os.LensRenderer.transform
-                    : os.transform;
-                _opticTransform = os.transform;
-
                 EnsureMeshAndMaterial();
 
                 _reticleMat.mainTexture = _savedMarkTex;
@@ -149,19 +118,9 @@ namespace ScopeHousingMeshSurgery
                 // Attach CommandBuffer + onPreCull
                 AttachToCamera();
 
-                // Only reset settled detection on fresh ADS-in (not already settled).
-                // Magnification switches and reticle mode changes call Show() again
-                // while already scoped — resetting would cause a 3-frame flicker.
-                if (!_settled)
-                {
-                    _settledFrameCount = 0;
-                    _prevLensPos = _lensTransform != null ? _lensTransform.position : Vector3.zero;
-                }
-                _alignmentActive = true;
-
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[Reticle] Showing: base={_baseScale:F4} mag={magnification:F1}x " +
-                    $"(camera-aligned centered rendering)");
+                    $"(fixed centered rendering)");
             }
             catch (System.Exception e)
             {
@@ -175,7 +134,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void UpdateTransform(float magnification)
         {
-            if (_cmdBuffer == null || _lensTransform == null) return;
+            if (_cmdBuffer == null) return;
 
             if (magnification < 1f) magnification = 1f;
             if (Mathf.Abs(magnification - _lastMag) >= 0.01f)
@@ -191,9 +150,6 @@ namespace ScopeHousingMeshSurgery
 
         public static void Hide()
         {
-            _alignmentActive = false;
-            _settled = false;
-            _settledFrameCount = 0;
             DetachFromCamera();
         }
 
@@ -202,26 +158,9 @@ namespace ScopeHousingMeshSurgery
             Hide();
             _savedMarkTex      = null;
             _savedMaskTex      = null;
-            _lensTransform     = null;
-            _opticTransform    = null;
             _lastMag           = 1f;
             _baseScale         = 0f;
-            _settled           = false;
-            _settledFrameCount = 0;
         }
-
-        /// <summary>
-        /// Returns true if camera alignment is currently active (scoped + settled).
-        /// Used by ScopeEffectsRenderer to know that vignette/shadow can also
-        /// render centered rather than tracking lens position.
-        /// </summary>
-        public static bool IsAlignmentActive => _alignmentActive && _settled;
-
-        /// <summary>
-        /// Returns the current optic transform (for ScopeEffectsRenderer to
-        /// share camera alignment).
-        /// </summary>
-        public static Transform OpticTransform => _opticTransform;
 
         // ── CommandBuffer management ────────────────────────────────────────
 
@@ -275,64 +214,12 @@ namespace ScopeHousingMeshSurgery
             _attachedCamera = null;
         }
 
-        // ── onPreCull — camera alignment + rebuild CommandBuffer ─────────────
+        // ── onPreCull — rebuild centered reticle CommandBuffer ───────────────
 
         private static void OnPreCullCallback(Camera cam)
         {
             if (cam != _attachedCamera) return;
-            if (_cmdBuffer == null || _lensTransform == null || _reticleMat == null) return;
-
-            // ── Settled detection (position-based) ────────────────────────
-            if (!_settled)
-            {
-                Vector3 pos = _lensTransform.position;
-                float delta = (pos - _prevLensPos).sqrMagnitude;
-                _prevLensPos = pos;
-
-                float thresh = ScopeHousingMeshSurgeryPlugin.AdsSettledThreshold.Value;
-                float threshSq = thresh * thresh;
-
-                if (delta < threshSq)
-                {
-                    _settledFrameCount++;
-                    if (_settledFrameCount >= SETTLED_FRAMES_REQUIRED)
-                    {
-                        _settled = true;
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            "[Reticle] Lens settled — starting render");
-                    }
-                }
-                else
-                {
-                    _settledFrameCount = 0;
-                }
-
-                if (!_settled)
-                {
-                    _cmdBuffer.Clear();
-                    return;
-                }
-            }
-
-            // ── Camera alignment ─────────────────────────────────────────
-            // Override the camera's rotation to look exactly where the scope
-            // points.  This happens in onPreCull — after all game systems
-            // (PWA, animation, IK) and OpticComponentUpdater.LateUpdate()
-            // have updated transforms, but before Unity starts rendering.
-            //
-            // We use the optic camera's transform cached by PiPDisabler.
-            // OpticComponentUpdater.LateUpdate() syncs this transform to the
-            // scope's look direction every frame.  We let LateUpdate run
-            // (v4.5.2 fix), so the transform is always up to date even though
-            // the optic camera itself can't render.
-            if (_alignmentActive)
-            {
-                Transform opticCamTf = PiPDisabler.OpticCameraTransform;
-                if (opticCamTf != null)
-                {
-                    cam.transform.rotation = opticCamTf.rotation;
-                }
-            }
+            if (_cmdBuffer == null || _reticleMat == null) return;
 
             RebuildMatrix(cam);
             RebuildCommandBuffer(cam);
@@ -342,11 +229,8 @@ namespace ScopeHousingMeshSurgery
 
         /// <summary>
         /// Place the reticle quad at screen center: a fixed distance along
-        /// the camera's (now scope-aligned) forward.  Since the camera is
-        /// aligned with the scope, this is always dead center.
-        ///
-        /// Size is computed to match the visual angle the reticle would
-        /// subtend at the real lens distance.
+        /// camera forward. This keeps placement independent from optic/lens
+        /// transforms so it remains stable frame-to-frame.
         /// </summary>
         private static void RebuildMatrix(Camera cam)
         {
@@ -360,15 +244,8 @@ namespace ScopeHousingMeshSurgery
             // Billboard: face the camera
             Quaternion rot = Quaternion.LookRotation(camTf.forward, camTf.up);
 
-            // Size: match visual angle of (baseScale/mag) at real lens distance,
-            // but drawn at RENDER_DISTANCE.
-            float realDist = _lensTransform != null
-                ? Vector3.Distance(camTf.position, _lensTransform.position)
-                : RENDER_DISTANCE;
-            if (realDist < 0.01f) realDist = RENDER_DISTANCE;
-
             float mag = Mathf.Max(1f, _lastMag);
-            float worldSize = (_baseScale / mag) / realDist * RENDER_DISTANCE;
+            float worldSize = _baseScale / mag;
 
             Vector3 scale = new Vector3(worldSize, worldSize, worldSize);
 

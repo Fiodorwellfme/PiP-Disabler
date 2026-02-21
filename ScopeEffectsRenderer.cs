@@ -50,21 +50,12 @@ namespace ScopeHousingMeshSurgery
         private static Camera        _attachedCamera;
         private static bool          _preCullRegistered;
 
-        // ── Cached state ────────────────────────────────────────────────────
-        private static Transform _lensTransform;
-        private static float     _baseSize;
-        private static float     _magnification = 1f;
-
         // ─────────────────────────────────────────────────────────────────────
         // Public API
         // ─────────────────────────────────────────────────────────────────────
 
         public static void Show(Transform lensTransform, float baseSize, float magnification)
         {
-            _lensTransform = lensTransform;
-            _baseSize = baseSize;
-            _magnification = magnification;
-
             if (ScopeHousingMeshSurgeryPlugin.VignetteEnabled.Value)
             {
                 EnsureVignetteMeshAndMat();
@@ -88,15 +79,6 @@ namespace ScopeHousingMeshSurgery
         /// <summary>Per-frame update — call from ScopeLifecycle.Tick().</summary>
         public static void UpdateTransform(float baseSize, float magnification)
         {
-            if (baseSize < 0.001f)
-            {
-                baseSize = ScopeHousingMeshSurgeryPlugin.ReticleBaseSize.Value;
-                if (baseSize < 0.001f) baseSize = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value * 2f;
-                if (baseSize < 0.001f) baseSize = 0.030f;
-            }
-            _baseSize = baseSize;
-            _magnification = magnification;
-
             // Refresh textures if config changed
             if (_vigActive)  RefreshVignetteTexture();
             if (_shadowActive) RefreshShadowTexture();
@@ -117,7 +99,6 @@ namespace ScopeHousingMeshSurgery
         public static void Cleanup()
         {
             Hide();
-            _lensTransform = null;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -184,7 +165,7 @@ namespace ScopeHousingMeshSurgery
             if (_cmdBuffer == null) return;
             if (!_vigActive && !_shadowActive) return;
 
-            // Rebuild matrices with final-pose lens position
+            // Rebuild matrices in pure screen-space (no lens/world dependency)
             if (_vigActive)
                 RebuildVignetteMatrix(cam);
             if (_shadowActive)
@@ -207,8 +188,7 @@ namespace ScopeHousingMeshSurgery
 
             Vector3 pos = cam.transform.position + cam.transform.forward * dist;
             Quaternion rot = cam.transform.rotation;
-            float fovScale = GetFovScale(cam);
-            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
+            Vector3 scale = new Vector3(halfW * 6f, halfH * 6f, 1f);
 
             _vigMatrix = Matrix4x4.TRS(pos, rot, scale);
         }
@@ -227,8 +207,7 @@ namespace ScopeHousingMeshSurgery
 
             Vector3 pos = cam.transform.position + cam.transform.forward * dist;
             Quaternion rot = cam.transform.rotation;
-            float fovScale = GetFovScale(cam);
-            Vector3 scale = new Vector3(halfW * 6f * fovScale, halfH * 6f * fovScale, 1f);
+            Vector3 scale = new Vector3(halfW * 6f, halfH * 6f, 1f);
 
             _shadowMatrix = Matrix4x4.TRS(pos, rot, scale);
         }
@@ -417,15 +396,6 @@ namespace ScopeHousingMeshSurgery
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[ScopeEffects] Shadow texture rebuilt: aspect={aspect:F2} radius={radius} soft={soft}");
-        }
-
-        private static float GetFovScale(Camera cam)
-        {
-            float currentFov = cam != null ? cam.fieldOfView : 35f;
-            float referenceFov = Mathf.Max(1f, ScopeHousingMeshSurgeryPlugin.ScopedFov.Value);
-
-            // Lower FOV = larger on-screen effects, higher FOV = smaller.
-            return Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
         }
 
         // ─────────────────────────────────────────────────────────────────────
