@@ -56,6 +56,10 @@ namespace ScopeHousingMeshSurgery
         private static int     _settledFrameCount;
         private const  int     SETTLED_FRAMES_REQUIRED = 3;
 
+        // Debug telemetry throttling
+        private static int _lastDiagLogFrame = -1;
+        private static float _lastLensDelta;
+
         // Fixed render distance for the centered quad
         private const float RENDER_DISTANCE = 0.3f;
 
@@ -282,11 +286,18 @@ namespace ScopeHousingMeshSurgery
             if (cam != _attachedCamera) return;
             if (_cmdBuffer == null || _lensTransform == null || _reticleMat == null) return;
 
+            bool diagEnabled = ScopeHousingMeshSurgeryPlugin.JitterDiagnostics != null
+                && ScopeHousingMeshSurgeryPlugin.JitterDiagnostics.Value;
+            int diagInterval = ScopeHousingMeshSurgeryPlugin.JitterDiagnosticsIntervalFrames != null
+                ? Mathf.Max(1, ScopeHousingMeshSurgeryPlugin.JitterDiagnosticsIntervalFrames.Value)
+                : 30;
+
             // ── Settled detection (position-based) ────────────────────────
             if (!_settled)
             {
                 Vector3 pos = _lensTransform.position;
                 float delta = (pos - _prevLensPos).sqrMagnitude;
+                _lastLensDelta = Mathf.Sqrt(delta);
                 _prevLensPos = pos;
 
                 float thresh = ScopeHousingMeshSurgeryPlugin.AdsSettledThreshold.Value;
@@ -332,6 +343,25 @@ namespace ScopeHousingMeshSurgery
                 {
                     cam.transform.rotation = opticCamTf.rotation;
                 }
+            }
+
+            if (diagEnabled && Time.frameCount - _lastDiagLogFrame >= diagInterval)
+            {
+                Vector3 lensPos = _lensTransform != null ? _lensTransform.position : Vector3.zero;
+                float lensDelta = _lastLensDelta;
+                Transform opticCamTf = PiPDisabler.OpticCameraTransform;
+                float camOpticAngle = opticCamTf != null
+                    ? Vector3.Angle(cam.transform.forward, opticCamTf.forward)
+                    : -1f;
+
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[JitterDiag][Reticle] scene={ScopeHousingMeshSurgeryPlugin.GetActiveSceneNameSafe()} " +
+                    $"frame={Time.frameCount} cam='{cam.name}' fov={cam.fieldOfView:F2} settled={_settled} " +
+                    $"settledCount={_settledFrameCount}/{SETTLED_FRAMES_REQUIRED} thresh={ScopeHousingMeshSurgeryPlugin.AdsSettledThreshold.Value:F6} " +
+                    $"lensDelta={lensDelta:F6} mag={_lastMag:F2} base={_baseScale:F4} " +
+                    $"opticCam={(opticCamTf != null ? opticCamTf.name : "null")} camOpticAngle={camOpticAngle:F4}");
+
+                _lastDiagLogFrame = Time.frameCount;
             }
 
             RebuildMatrix(cam);

@@ -55,6 +55,9 @@ namespace ScopeHousingMeshSurgery
         private static float     _baseSize;
         private static float     _magnification = 1f;
 
+        // Debug telemetry throttling
+        private static int _lastDiagLogFrame = -1;
+
         // ─────────────────────────────────────────────────────────────────────
         // Public API
         // ─────────────────────────────────────────────────────────────────────
@@ -184,11 +187,34 @@ namespace ScopeHousingMeshSurgery
             if (_cmdBuffer == null) return;
             if (!_vigActive && !_shadowActive) return;
 
+            bool diagEnabled = ScopeHousingMeshSurgeryPlugin.JitterDiagnostics != null
+                && ScopeHousingMeshSurgeryPlugin.JitterDiagnostics.Value;
+            int diagInterval = ScopeHousingMeshSurgeryPlugin.JitterDiagnosticsIntervalFrames != null
+                ? Mathf.Max(1, ScopeHousingMeshSurgeryPlugin.JitterDiagnosticsIntervalFrames.Value)
+                : 30;
+
             // Rebuild matrices with final-pose lens position
             if (_vigActive)
                 RebuildVignetteMatrix(cam);
             if (_shadowActive)
                 RebuildShadowMatrix(cam);
+
+            if (diagEnabled && Time.frameCount - _lastDiagLogFrame >= diagInterval)
+            {
+                Vector3 lensPos = _lensTransform != null ? _lensTransform.position : Vector3.zero;
+                float lensDist = _lensTransform != null
+                    ? Vector3.Distance(cam.transform.position, lensPos)
+                    : -1f;
+
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[JitterDiag][Effects] scene={ScopeHousingMeshSurgeryPlugin.GetActiveSceneNameSafe()} " +
+                    $"frame={Time.frameCount} cam='{cam.name}' fov={cam.fieldOfView:F2} aspect={cam.aspect:F3} " +
+                    $"vigActive={_vigActive} shadowActive={_shadowActive} mag={_magnification:F2} base={_baseSize:F4} " +
+                    $"lensDist={lensDist:F4} lensPos=({lensPos.x:F3},{lensPos.y:F3},{lensPos.z:F3}) " +
+                    $"screen={Screen.width}x{Screen.height}");
+
+                _lastDiagLogFrame = Time.frameCount;
+            }
 
             RebuildCommandBuffer(cam);
         }

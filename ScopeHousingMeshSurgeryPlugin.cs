@@ -2,6 +2,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using EFT.CameraControl;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace ScopeHousingMeshSurgery
 {
@@ -126,6 +127,21 @@ namespace ScopeHousingMeshSurgery
 
         // --- Debug ---
         internal static ConfigEntry<bool> VerboseLogging;
+        internal static ConfigEntry<bool> JitterDiagnostics;
+        internal static ConfigEntry<int> JitterDiagnosticsIntervalFrames;
+
+        internal static string GetActiveSceneNameSafe()
+        {
+            try
+            {
+                var scene = SceneManager.GetActiveScene();
+                return string.IsNullOrEmpty(scene.name) ? "<unknown>" : scene.name;
+            }
+            catch
+            {
+                return "<error>";
+            }
+        }
 
         private void Awake()
         {
@@ -424,6 +440,14 @@ namespace ScopeHousingMeshSurgery
             // --- Debug ---
             VerboseLogging = Config.Bind("6. Debug", "VerboseLogging", false,
                 "Enable detailed logging. Turn on to diagnose lens/zoom issues.");
+            JitterDiagnostics = Config.Bind("6. Debug", "JitterDiagnostics", false,
+                "Emit periodic per-frame telemetry for reticle/vignette/shadow camera state\n" +
+                "(scene, camera, FOV, lens delta, settled counters). Use only while diagnosing\n" +
+                "map-specific jitter; this can spam logs.");
+            JitterDiagnosticsIntervalFrames = Config.Bind("6. Debug", "JitterDiagnosticsIntervalFrames", 30,
+                new ConfigDescription(
+                    "How often jitter telemetry is printed (in frames). Lower = more detail.",
+                    new AcceptableValueRange<int>(1, 300)));
 
             Patches.Patcher.Enable();
 
