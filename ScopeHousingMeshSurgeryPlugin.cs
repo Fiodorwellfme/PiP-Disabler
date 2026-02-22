@@ -1,6 +1,8 @@
+using System;
 using BepInEx;
 using BepInEx.Configuration;
 using EFT.CameraControl;
+using System.IO;
 using UnityEngine;
 
 namespace ScopeHousingMeshSurgery
@@ -18,6 +20,28 @@ namespace ScopeHousingMeshSurgery
         {
             if (Instance != null && VerboseLogging != null && VerboseLogging.Value)
                 Instance.Logger.LogInfo("[V] " + msg);
+        }
+
+        internal static string GetMeshCutCacheDirectory()
+        {
+            string pluginDir;
+            try
+            {
+                pluginDir = Path.GetDirectoryName(Instance != null ? Instance.Info.Location : null);
+            }
+            catch
+            {
+                pluginDir = null;
+            }
+
+            if (string.IsNullOrEmpty(pluginDir))
+                pluginDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "plugins");
+
+            string cacheDir = Path.Combine(pluginDir, "mesh_cut_cache");
+            if (!Directory.Exists(cacheDir))
+                Directory.CreateDirectory(cacheDir);
+
+            return cacheDir;
         }
 
         /// <summary>

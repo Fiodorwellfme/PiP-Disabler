@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using EFT.CameraControl;
 using UnityEngine;
 
@@ -27,6 +30,235 @@ namespace ScopeHousingMeshSurgery
         private static readonly Dictionary<MeshFilter, MeshState> _tracked =
             new Dictionary<MeshFilter, MeshState>(64);
         private static bool _loggedGpuCopy;
+
+        private static class MeshCutCache
+        {
+            private const int Version = 1;
+
+            public static bool TryLoad(string key, out Mesh mesh)
+            {
+                mesh = null;
+                string path = GetPath(key);
+                if (!File.Exists(path)) return false;
+
+                try
+                {
+                    using (var fs = File.OpenRead(path))
+                    using (var br = new BinaryReader(fs))
+                    {
+                        if (br.ReadInt32() != Version) return false;
+
+                        int vertexCount = br.ReadInt32();
+                        if (vertexCount < 0) return false;
+
+                        var vertices = new Vector3[vertexCount];
+                        for (int i = 0; i < vertexCount; i++)
+                            vertices[i] = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+
+                        var normals = new Vector3[vertexCount];
+                        for (int i = 0; i < vertexCount; i++)
+                            normals[i] = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+
+                        var tangents = new Vector4[vertexCount];
+                        for (int i = 0; i < vertexCount; i++)
+                            tangents[i] = new Vector4(br.ReadSingle(), br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+
+                        var uv = new Vector2[vertexCount];
+                        for (int i = 0; i < vertexCount; i++)
+                            uv[i] = new Vector2(br.ReadSingle(), br.ReadSingle());
+
+                        var indexFormat = (UnityEngine.Rendering.IndexFormat)br.ReadInt32();
+                        int subMeshCount = br.ReadInt32();
+                        if (subMeshCount <= 0) return false;
+
+                        var cachedMesh = new Mesh();
+                        cachedMesh.name = "mesh_cut_cached";
+                        cachedMesh.indexFormat = indexFormat;
+                        cachedMesh.vertices = vertices;
+                        cachedMesh.normals = normals;
+                        cachedMesh.tangents = tangents;
+                        cachedMesh.uv = uv;
+                        cachedMesh.subMeshCount = subMeshCount;
+
+                        for (int s = 0; s < subMeshCount; s++)
+                        {
+                            int triCount = br.ReadInt32();
+                            if (triCount < 0) return false;
+
+                            var tris = new int[triCount];
+                            for (int t = 0; t < triCount; t++)
+                                tris[t] = br.ReadInt32();
+                            cachedMesh.SetTriangles(tris, s, true);
+                        }
+
+                        cachedMesh.RecalculateBounds();
+                        mesh = cachedMesh;
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogVerbose($"[MeshSurgery] Cache load failed '{path}': {ex.Message}");
+                    return false;
+                }
+            }
+
+            public static void Save(string key, Mesh mesh)
+            {
+                if (mesh == null) return;
+
+                string path = GetPath(key);
+                string tmpPath = path + ".tmp";
+
+                try
+                {
+                    var vertices = mesh.vertices ?? Array.Empty<Vector3>();
+                    var normals = mesh.normals;
+                    var tangents = mesh.tangents;
+                    var uv = mesh.uv;
+
+                    if (normals == null || normals.Length != vertices.Length)
+                    {
+                        mesh.RecalculateNormals();
+                        normals = mesh.normals;
+                    }
+                    if (tangents == null || tangents.Length != vertices.Length)
+                        tangents = new Vector4[vertices.Length];
+                    if (uv == null || uv.Length != vertices.Length)
+                        uv = new Vector2[vertices.Length];
+
+                    using (var fs = File.Create(tmpPath))
+                    using (var bw = new BinaryWriter(fs))
+                    {
+                        bw.Write(Version);
+                        bw.Write(vertices.Length);
+
+                        for (int i = 0; i < vertices.Length; i++)
+                        {
+                            bw.Write(vertices[i].x); bw.Write(vertices[i].y); bw.Write(vertices[i].z);
+                        }
+                        for (int i = 0; i < normals.Length; i++)
+                        {
+                            bw.Write(normals[i].x); bw.Write(normals[i].y); bw.Write(normals[i].z);
+                        }
+                        for (int i = 0; i < tangents.Length; i++)
+                        {
+                            bw.Write(tangents[i].x); bw.Write(tangents[i].y); bw.Write(tangents[i].z); bw.Write(tangents[i].w);
+                        }
+                        for (int i = 0; i < uv.Length; i++)
+                        {
+                            bw.Write(uv[i].x); bw.Write(uv[i].y);
+                        }
+
+                        bw.Write((int)mesh.indexFormat);
+                        bw.Write(mesh.subMeshCount);
+                        for (int s = 0; s < mesh.subMeshCount; s++)
+                        {
+                            var tris = mesh.GetTriangles(s);
+                            bw.Write(tris.Length);
+                            for (int t = 0; t < tris.Length; t++) bw.Write(tris[t]);
+                        }
+                    }
+
+                    if (File.Exists(path)) File.Delete(path);
+                    File.Move(tmpPath, path);
+                }
+                catch (Exception ex)
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogVerbose($"[MeshSurgery] Cache save failed '{path}': {ex.Message}");
+                    try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
+                }
+            }
+
+            public static string BuildKey(Transform scopeRoot, Transform activeMode, MeshFilter mf, Mesh originalAsset, MeshPlaneCutter.KeepSide keepSide, bool isCylinder)
+            {
+                var sb = new StringBuilder(512);
+                sb.Append("v2|");
+                sb.Append(scopeRoot != null ? scopeRoot.name : "scope").Append('|');
+                sb.Append(activeMode != null ? activeMode.name : "mode").Append('|');
+                sb.Append(GetRelativePath(scopeRoot, mf != null ? mf.transform : null)).Append('|');
+                sb.Append(originalAsset != null ? originalAsset.name : "null").Append('|');
+                sb.Append(originalAsset != null ? originalAsset.vertexCount : 0).Append('|');
+                sb.Append(originalAsset != null ? originalAsset.subMeshCount : 0).Append('|');
+                sb.Append((int)keepSide).Append('|');
+                sb.Append(isCylinder ? "cyl" : "plane").Append('|');
+
+                if (isCylinder)
+                {
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.CutLength.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane2Position.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane3Position.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane4Position.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value);
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane1OffsetMeters.Value);
+                }
+                else
+                {
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value);
+                }
+
+                using (var sha = SHA256.Create())
+                {
+                    var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+                    var hash = sha.ComputeHash(bytes);
+                    var hex = new StringBuilder(hash.Length * 2);
+                    for (int i = 0; i < hash.Length; i++)
+                        hex.Append(hash[i].ToString("x2"));
+                    string scopeName = Sanitize(scopeRoot != null ? scopeRoot.name : "scope");
+                    string meshName = Sanitize(originalAsset != null ? originalAsset.name : "mesh");
+                    return scopeName + "__" + meshName + "__" + hex;
+                }
+            }
+
+            private static string GetPath(string key)
+            {
+                return Path.Combine(ScopeHousingMeshSurgeryPlugin.GetMeshCutCacheDirectory(), key + ".bin");
+            }
+
+            private static string GetRelativePath(Transform root, Transform child)
+            {
+                if (child == null) return "none";
+                if (root == null) return child.name ?? "unnamed";
+
+                var nodes = new List<string>();
+                for (var t = child; t != null; t = t.parent)
+                {
+                    nodes.Add(t.name ?? "unnamed");
+                    if (t == root) break;
+                }
+                nodes.Reverse();
+                return string.Join("/", nodes.ToArray());
+            }
+
+            private static string Sanitize(string value)
+            {
+                if (string.IsNullOrEmpty(value)) return "unknown";
+                var invalid = Path.GetInvalidFileNameChars();
+                var sb = new StringBuilder(value.Length);
+                for (int i = 0; i < value.Length; i++)
+                {
+                    char c = value[i];
+                    bool bad = false;
+                    for (int j = 0; j < invalid.Length; j++)
+                    {
+                        if (c == invalid[j]) { bad = true; break; }
+                    }
+                    if (bad || char.IsWhiteSpace(c)) sb.Append('_');
+                    else sb.Append(c);
+                }
+                return sb.ToString();
+            }
+
+            private static void AppendFloat(StringBuilder sb, float v)
+            {
+                sb.Append(Mathf.Round(v * 1000f) / 1000f).Append('|');
+            }
+        }
 
         public static void ApplyForOptic(OpticSight os)
         {
@@ -98,74 +330,90 @@ namespace ScopeHousingMeshSurgery
 
                 try
                 {
-                    // Step 1: GPU copy to create a readable mesh
-                    Mesh readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
-                    if (readable == null)
-                    {
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[MeshSurgery] GPU copy returned null for '{originalAsset.name}' — skipping.");
-                        continue;
-                    }
-
-                    readable.name = originalAsset.name + "_readable";
-
-                    if (!_loggedGpuCopy)
-                    {
-                        _loggedGpuCopy = true;
-                        ScopeHousingMeshSurgeryPlugin.LogInfo(
-                            "[MeshSurgery] Created readable mesh copies via GPU buffer. Plane cutting enabled.");
-                    }
-
-                    int vertsBefore = readable.vertexCount;
-
-                    // Step 2: Cut the readable mesh in-place
-                    bool ok;
                     bool isCylinder = ScopeHousingMeshSurgeryPlugin.CutMode.Value == "Cylinder";
+                    string cacheKey = MeshCutCache.BuildKey(scopeRoot, activeMode, mf, originalAsset, keepSide, isCylinder);
 
-                    if (isCylinder)
+                    Mesh readable;
+                    if (MeshCutCache.TryLoad(cacheKey, out var cachedMesh))
                     {
-                        float nearR = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
-                        float startOff = ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value;
-                        float cutLen = ScopeHousingMeshSurgeryPlugin.CutLength.Value;
-                        float preserve = ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value;
-                        float p2 = ScopeHousingMeshSurgeryPlugin.Plane2Position.Value;
-                        float r2 = ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value;
-                        float p3 = ScopeHousingMeshSurgeryPlugin.Plane3Position.Value;
-                        float r3 = ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value;
-                        float p4 = ScopeHousingMeshSurgeryPlugin.Plane4Position.Value;
-                        float r4 = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
-
-                        ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
-                            planePoint, planeNormal, nearR, r4, startOff, cutLen,
-                            keepInside: false, midRadius: r2, midPosition: p2,
-                            nearPreserveDepth: preserve,
-                            plane3Radius: r3, plane3Position: p3, plane4Position: p4);
+                        readable = cachedMesh;
+                        readable.name = originalAsset.name + "_CUT_CACHED";
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[MeshSurgery] Frustum cut '{originalAsset.name}': p1R={nearR:F4}@0.00 " +
-                            $"p2R={r2:F4}@{p2:F2} p3R={r3:F4}@{p3:F2} p4R={r4:F4}@{p4:F2} " +
-                            $"start={startOff:F4} len={cutLen:F4} offset={plane1Offset:F4}" +
-                            (preserve > 0f ? $" preserve={preserve:F4}" : ""));
+                            $"[MeshSurgery] Loaded cached cut mesh for '{originalAsset.name}'.");
                     }
                     else
                     {
-                        ok = MeshPlaneCutter.CutMeshDirect(readable, mf.transform,
-                            planePoint, planeNormal, keepSide);
-                    }
+                        // Step 1: GPU copy to create a readable mesh
+                        readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
+                        if (readable == null)
+                        {
+                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                                $"[MeshSurgery] GPU copy returned null for '{originalAsset.name}' — skipping.");
+                            continue;
+                        }
 
-                    if (!ok)
-                    {
-                        // Cut removed everything — clear the mesh to make it empty
-                        readable.Clear();
-                        readable.name = originalAsset.name + "_CUT_EMPTY";
+                        readable.name = originalAsset.name + "_readable";
+
+                        if (!_loggedGpuCopy)
+                        {
+                            _loggedGpuCopy = true;
+                            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                                "[MeshSurgery] Created readable mesh copies via GPU buffer. Plane cutting enabled.");
+                        }
+
+                        int vertsBefore = readable.vertexCount;
+
+                        // Step 2: Cut the readable mesh in-place
+                        bool ok;
+
+                        if (isCylinder)
+                        {
+                            float nearR = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
+                            float startOff = ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value;
+                            float cutLen = ScopeHousingMeshSurgeryPlugin.CutLength.Value;
+                            float preserve = ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value;
+                            float p2 = ScopeHousingMeshSurgeryPlugin.Plane2Position.Value;
+                            float r2 = ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value;
+                            float p3 = ScopeHousingMeshSurgeryPlugin.Plane3Position.Value;
+                            float r3 = ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value;
+                            float p4 = ScopeHousingMeshSurgeryPlugin.Plane4Position.Value;
+                            float r4 = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
+
+                            ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
+                                planePoint, planeNormal, nearR, r4, startOff, cutLen,
+                                keepInside: false, midRadius: r2, midPosition: p2,
+                                nearPreserveDepth: preserve,
+                                plane3Radius: r3, plane3Position: p3, plane4Position: p4);
+                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                                $"[MeshSurgery] Frustum cut '{originalAsset.name}': p1R={nearR:F4}@0.00 " +
+                                $"p2R={r2:F4}@{p2:F2} p3R={r3:F4}@{p3:F2} p4R={r4:F4}@{p4:F2} " +
+                                $"start={startOff:F4} len={cutLen:F4} offset={plane1Offset:F4}" +
+                                (preserve > 0f ? $" preserve={preserve:F4}" : ""));
+                        }
+                        else
+                        {
+                            ok = MeshPlaneCutter.CutMeshDirect(readable, mf.transform,
+                                planePoint, planeNormal, keepSide);
+                        }
+
+                        if (!ok)
+                        {
+                            // Cut removed everything — clear the mesh to make it empty
+                            readable.Clear();
+                            readable.name = originalAsset.name + "_CUT_EMPTY";
+                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                                $"[MeshSurgery] Cut removed all geometry from '{originalAsset.name}' — applying empty mesh.");
+                        }
+                        else
+                        {
+                            readable.name = originalAsset.name + "_CUT";
+                        }
+
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[MeshSurgery] Cut removed all geometry from '{originalAsset.name}' — applying empty mesh.");
+                            $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
+
+                        MeshCutCache.Save(cacheKey, readable);
                     }
-                    else
-                    {
-                        readable.name = originalAsset.name + "_CUT";
-                    }
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
 
                     // Step 3: Swap onto the MeshFilter
                     mf.sharedMesh = readable;
