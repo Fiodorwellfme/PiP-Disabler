@@ -132,6 +132,7 @@ namespace ScopeHousingMeshSurgery
         // --- Weapon Scaling ---
         internal static ConfigEntry<bool> EnableWeaponScaling;
         internal static ConfigEntry<float> WeaponScaleBaseline;
+        internal static ConfigEntry<bool> WeaponScalingDebugLogging;
 
         // --- Zoom / FOV ---
         internal static ConfigEntry<bool> EnableZoom;
@@ -193,6 +194,9 @@ namespace ScopeHousingMeshSurgery
                     "1.0 = full weapon model size. 0.5 = half size at min zoom.\n" +
                     "For a 2x-6x scope, the weapon is this size at 2x and scales down at 6x.",
                     new AcceptableValueRange<float>(0.1f, 2f)));
+            WeaponScalingDebugLogging = Config.Bind("6. Debug", "WeaponScalingDebugLogging", false,
+                "Enable EXTENSIVE weapon scaling diagnostics (very spammy).\n" +
+                "Logs all scaling decisions, guard exits, FOV math, and patch behavior.");
 
             // --- Zoom ---
             EnableZoom = Config.Bind("2. Zoom", "EnableZoom", true,

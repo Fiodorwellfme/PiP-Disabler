@@ -43,6 +43,16 @@ namespace ScopeHousingMeshSurgery.Patches
         private const float ZoomBaseline = 50f;
         private const float BaseOpticFov = 35f;
 
+        private static bool DebugLogsEnabled =>
+            ScopeHousingMeshSurgeryPlugin.WeaponScalingDebugLogging != null &&
+            ScopeHousingMeshSurgeryPlugin.WeaponScalingDebugLogging.Value;
+
+        private static void LogDebug(string message)
+        {
+            if (!DebugLogsEnabled) return;
+            ScopeHousingMeshSurgeryPlugin.LogInfo("[WeaponScaling:Debug] " + message);
+        }
+
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(typeof(Player), nameof(Player.CalculateScaleValueByFov));
@@ -56,22 +66,41 @@ namespace ScopeHousingMeshSurgery.Patches
         {
             try
             {
-                if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value) return;
+                LogDebug($"CaptureBaseState invoked. enabled={ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value} " +
+                         $"scoped={ScopeLifecycle.IsScoped} bypassed={ScopeLifecycle.IsModBypassedForCurrentScope} active={_isActive}");
+
+                if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value)
+                {
+                    LogDebug("CaptureBaseState aborted: EnableWeaponScaling=false.");
+                    return;
+                }
 
                 var os = ScopeLifecycle.ActiveOptic;
-                if (os == null) { _isActive = false; return; }
+                if (os == null)
+                {
+                    _isActive = false;
+                    LogDebug("CaptureBaseState aborted: ActiveOptic=null. Marking _isActive=false.");
+                    return;
+                }
 
                 // Get the scope's minimum magnification (highest scope FOV = widest view)
                 float minMag = ZoomController.GetMinMagnification(os);
+                LogDebug($"CaptureBaseState raw min magnification from optic '{os.name}': {minMag:F4}x");
                 if (minMag < 0.5f) minMag = 1f;
+                LogDebug($"CaptureBaseState clamped min magnification: {minMag:F4}x");
 
                 // Compute what the main camera FOV would be at this minimum magnification,
                 // using the same formula as FovController.ComputeZoomedFov:
                 //   resultFov = 2 * atan(tan(baseFov/2) / magnification)
                 float halfBaseRad = ZoomBaseline * 0.5f * Mathf.Deg2Rad;
+                float tanHalfBase = Mathf.Tan(halfBaseRad);
                 _referenceFov = 2f * Mathf.Atan(Mathf.Tan(halfBaseRad) / minMag) * Mathf.Rad2Deg;
 
                 _isActive = true;
+
+                LogDebug("CaptureBaseState math details: " +
+                         $"zoomBaseline={ZoomBaseline:F2}° halfBaseRad={halfBaseRad:F6} tanHalfBase={tanHalfBase:F6} " +
+                         $"referenceFov={_referenceFov:F6}° baselineScale={ScopeHousingMeshSurgeryPlugin.WeaponScaleBaseline.Value:F6}");
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[WeaponScaling] Captured base state: minMag={minMag:F2}x → " +
@@ -82,6 +111,7 @@ namespace ScopeHousingMeshSurgery.Patches
                 _isActive = false;
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[WeaponScaling] CaptureBaseState error: {ex.Message}");
+                LogDebug($"CaptureBaseState exception: {ex}");
             }
         }
 
@@ -93,21 +123,45 @@ namespace ScopeHousingMeshSurgery.Patches
         /// </summary>
         public static void UpdateScale()
         {
-            if (!_isActive) return;
-            if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value) return;
+            if (!_isActive)
+            {
+                LogDebug("UpdateScale early exit: _isActive=false.");
+                return;
+            }
+
+            if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value)
+            {
+                LogDebug("UpdateScale early exit: EnableWeaponScaling=false.");
+                return;
+            }
 
             try
             {
                 var player = GetMainPlayer();
-                if (player == null) return;
-                if (!CameraClass.Exist) return;
+                if (player == null)
+                {
+                    LogDebug("UpdateScale early exit: main player is null.");
+                    return;
+                }
+
+                if (!CameraClass.Exist)
+                {
+                    LogDebug("UpdateScale early exit: CameraClass does not exist.");
+                    return;
+                }
 
                 float currentFov = CameraClass.Instance.Fov;
                 float compensated = ComputeCompensatedScale(currentFov);
+                float prevTarget = player.RibcageScaleCurrentTarget;
 
                 player.RibcageScaleCurrentTarget = compensated;
+                LogDebug($"UpdateScale applied. currentFov={currentFov:F6} referenceFov={_referenceFov:F6} " +
+                         $"prevTarget={prevTarget:F6} newTarget={compensated:F6} baseline={ScopeHousingMeshSurgeryPlugin.WeaponScaleBaseline.Value:F6}");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogDebug($"UpdateScale exception: {ex}");
+            }
         }
 
         /// <summary>
@@ -117,19 +171,30 @@ namespace ScopeHousingMeshSurgery.Patches
         /// </summary>
         public static void RestoreScale()
         {
+            LogDebug($"RestoreScale invoked. Previous _isActive={_isActive}.");
             _isActive = false;
 
             try
             {
                 var player = GetMainPlayer();
-                if (player == null) return;
+                if (player == null)
+                {
+                    LogDebug("RestoreScale early exit: main player is null.");
+                    return;
+                }
 
-                if (!CameraClass.Exist) return;
+                if (!CameraClass.Exist)
+                {
+                    LogDebug("RestoreScale early exit: CameraClass does not exist.");
+                    return;
+                }
                 float currentFov = CameraClass.Instance.Fov;
 
                 // Let EFT recalculate the ribcage scale for the restored base FOV
                 player.CalculateScaleValueByFov(currentFov);
                 player.SetCompensationScale(true);
+
+                LogDebug($"RestoreScale applied. currentFov={currentFov:F6} ribcageTarget={player.RibcageScaleCurrentTarget:F6}");
 
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[WeaponScaling] Restored normal scaling at FOV={currentFov:F1}");
@@ -138,6 +203,7 @@ namespace ScopeHousingMeshSurgery.Patches
             {
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[WeaponScaling] RestoreScale error: {ex.Message}");
+                LogDebug($"RestoreScale exception: {ex}");
             }
         }
 
@@ -153,17 +219,33 @@ namespace ScopeHousingMeshSurgery.Patches
         {
             float baseline = ScopeHousingMeshSurgeryPlugin.WeaponScaleBaseline.Value;
 
-            if (_referenceFov <= 0.1f) return baseline;
+            if (_referenceFov <= 0.1f)
+            {
+                LogDebug($"ComputeCompensatedScale fallback: invalid referenceFov={_referenceFov:F6}. Returning baseline={baseline:F6}.");
+                return baseline;
+            }
 
             float halfRefRad = _referenceFov * 0.5f * Mathf.Deg2Rad;
             float halfCurRad = currentFov * 0.5f * Mathf.Deg2Rad;
 
             float tanRef = Mathf.Tan(halfRefRad);
-            if (Mathf.Abs(tanRef) < 0.0001f) return baseline;
+            float tanCur = Mathf.Tan(halfCurRad);
 
-            float ratio = Mathf.Tan(halfCurRad) / tanRef;
+            if (Mathf.Abs(tanRef) < 0.0001f)
+            {
+                LogDebug($"ComputeCompensatedScale fallback: tanRef too small ({tanRef:F8}). Returning baseline={baseline:F6}.");
+                return baseline;
+            }
 
-            return baseline * ratio;
+            float ratio = tanCur / tanRef;
+            float compensated = baseline * ratio;
+
+            LogDebug("ComputeCompensatedScale math: " +
+                     $"currentFov={currentFov:F6} referenceFov={_referenceFov:F6} baseline={baseline:F6} " +
+                     $"halfCurRad={halfCurRad:F6} halfRefRad={halfRefRad:F6} tanCur={tanCur:F6} tanRef={tanRef:F6} " +
+                     $"ratio={ratio:F6} compensated={compensated:F6}");
+
+            return compensated;
         }
 
         /// <summary>
@@ -177,21 +259,48 @@ namespace ScopeHousingMeshSurgery.Patches
         {
             try
             {
-                if (!__instance.IsYourPlayer) return true;
-                if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value) return true;
-                if (!ScopeLifecycle.IsScoped) return true;
-                if (ScopeLifecycle.IsModBypassedForCurrentScope) return true;
-                if (!_isActive) return true;
+                if (!__instance.IsYourPlayer)
+                {
+                    LogDebug("Prefix passthrough: __instance is not local player.");
+                    return true;
+                }
+                if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value)
+                {
+                    LogDebug("Prefix passthrough: EnableWeaponScaling=false.");
+                    return true;
+                }
+                if (!ScopeLifecycle.IsScoped)
+                {
+                    LogDebug($"Prefix passthrough: not scoped. fov={fov:F6} active={_isActive}");
+                    return true;
+                }
+                if (ScopeLifecycle.IsModBypassedForCurrentScope)
+                {
+                    LogDebug("Prefix passthrough: current scope bypassed by mod policy.");
+                    return true;
+                }
+                if (!_isActive)
+                {
+                    LogDebug($"Prefix passthrough: compensation inactive. fov={fov:F6}");
+                    return true;
+                }
 
                 float compensated = ComputeCompensatedScale(fov);
+                float prevComp = ____ribcageScaleCompensated;
+                float prevTarget = __instance.RibcageScaleCurrentTarget;
 
                 ____ribcageScaleCompensated = compensated;
                 __instance.RibcageScaleCurrentTarget = compensated;
 
+                LogDebug($"Prefix override applied. fov={fov:F6} prevComp={prevComp:F6} newComp={compensated:F6} " +
+                         $"prevTarget={prevTarget:F6} newTarget={__instance.RibcageScaleCurrentTarget:F6} " +
+                         $"referenceFov={_referenceFov:F6}");
+
                 return false; // Skip original method
             }
-            catch
+            catch (Exception ex)
             {
+                LogDebug($"Prefix exception. Falling back to original method. ex={ex}");
                 return true;
             }
         }
@@ -201,9 +310,18 @@ namespace ScopeHousingMeshSurgery.Patches
             try
             {
                 var gw = Singleton<GameWorld>.Instance;
-                return gw?.MainPlayer;
+                var player = gw?.MainPlayer;
+                if (DebugLogsEnabled)
+                {
+                    LogDebug($"GetMainPlayer resolved. gameWorldNull={gw == null} playerNull={player == null}");
+                }
+                return player;
             }
-            catch { return null; }
+            catch (Exception ex)
+            {
+                LogDebug($"GetMainPlayer exception: {ex}");
+                return null;
+            }
         }
     }
 }
