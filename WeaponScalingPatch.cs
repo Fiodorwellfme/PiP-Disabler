@@ -36,6 +36,8 @@ namespace ScopeHousingMeshSurgery.Patches
         // Reference main camera FOV at the scope's lowest magnification.
         // This is the FOV where weapon scale = configurable baseline.
         private static float _referenceFov;
+        // Single authoritative scale value for this frame (used by patch + update loop).
+        private static float _currentScale;
         // Whether compensation is active (set on scope enter, cleared on exit).
         private static bool _isActive;
 
@@ -70,6 +72,7 @@ namespace ScopeHousingMeshSurgery.Patches
                 //   resultFov = 2 * atan(tan(baseFov/2) / magnification)
                 float halfBaseRad = ZoomBaseline * 0.5f * Mathf.Deg2Rad;
                 _referenceFov = 2f * Mathf.Atan(Mathf.Tan(halfBaseRad) / minMag) * Mathf.Rad2Deg;
+                _currentScale = ScopeHousingMeshSurgeryPlugin.WeaponScaleBaseline.Value;
 
                 _isActive = true;
 
@@ -104,7 +107,10 @@ namespace ScopeHousingMeshSurgery.Patches
 
                 float currentFov = CameraClass.Instance.Fov;
                 float compensated = ComputeCompensatedScale(currentFov);
+                _currentScale = compensated;
 
+                // Keep one consistent value for all consumers in this frame.
+                player.SetCompensationScale(true);
                 player.RibcageScaleCurrentTarget = compensated;
             }
             catch { }
@@ -118,6 +124,7 @@ namespace ScopeHousingMeshSurgery.Patches
         public static void RestoreScale()
         {
             _isActive = false;
+            _currentScale = ScopeHousingMeshSurgeryPlugin.WeaponScaleBaseline.Value;
 
             try
             {
@@ -183,10 +190,19 @@ namespace ScopeHousingMeshSurgery.Patches
                 if (ScopeLifecycle.IsModBypassedForCurrentScope) return true;
                 if (!_isActive) return true;
 
-                float compensated = ComputeCompensatedScale(fov);
+                // Use the scale computed from the real camera FOV so all paths
+                // (rig, compensation state, and internal EFT math) read the same value.
+                float compensated = _currentScale;
+                if (compensated <= 0.0001f)
+                {
+                    float sourceFov = CameraClass.Exist ? CameraClass.Instance.Fov : fov;
+                    compensated = ComputeCompensatedScale(sourceFov);
+                    _currentScale = compensated;
+                }
 
                 ____ribcageScaleCompensated = compensated;
                 __instance.RibcageScaleCurrentTarget = compensated;
+                __instance.SetCompensationScale(true);
 
                 return false; // Skip original method
             }
