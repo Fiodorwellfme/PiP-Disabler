@@ -32,6 +32,11 @@ namespace ScopeHousingMeshSurgery.Patches
         // Whether compensation is active (set on scope enter, cleared on exit).
         private static bool _isActive;
 
+        // Debug log throttling cache to avoid per-frame spam.
+        private static float _lastLoggedScopeFov = -1f;
+        private static float _lastLoggedMultiplier = -1f;
+        private static int _lastLoggedFrame = -1000;
+
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(typeof(Player), nameof(Player.CalculateScaleValueByFov));
@@ -95,9 +100,11 @@ namespace ScopeHousingMeshSurgery.Patches
                 if (!CameraClass.Exist) return;
 
                 float currentFov = CameraClass.Instance.Fov;
-                float compensated = ComputeCompensatedScale(currentFov);
+                float multiplier;
+                float compensated = ComputeCompensatedScale(currentFov, out multiplier);
 
                 player.RibcageScaleCurrentTarget = compensated;
+                LogScaleDebug("Tick", currentFov, multiplier, compensated);
             }
             catch { }
         }
@@ -141,21 +148,29 @@ namespace ScopeHousingMeshSurgery.Patches
         /// At hipfireFov: ratio = 1.0, scale = baseline.
         /// In ADS (lower scopeFov): ratio &lt; 1.0, weapon shrinks proportionally.
         /// </summary>
-        private static float ComputeCompensatedScale(float scopeFov)
+        private static float ComputeCompensatedScale(float scopeFov, out float multiplier)
         {
             float baseline = ScopeHousingMeshSurgeryPlugin.WeaponScaleBaseline.Value;
 
-            if (_hipfireFov <= 0.1f) return baseline;
+            if (_hipfireFov <= 0.1f)
+            {
+                multiplier = 1f;
+                return baseline;
+            }
 
             float halfHipfireRad = _hipfireFov * 0.5f * Mathf.Deg2Rad;
             float halfScopeRad = scopeFov * 0.5f * Mathf.Deg2Rad;
 
             float tanHipfire = Mathf.Tan(halfHipfireRad);
-            if (Mathf.Abs(tanHipfire) < 0.0001f) return baseline;
+            if (Mathf.Abs(tanHipfire) < 0.0001f)
+            {
+                multiplier = 1f;
+                return baseline;
+            }
 
-            float ratio = Mathf.Tan(halfScopeRad) / tanHipfire;
+            multiplier = Mathf.Tan(halfScopeRad) / tanHipfire;
 
-            return baseline * ratio;
+            return baseline * multiplier;
         }
 
         /// <summary>
@@ -175,10 +190,12 @@ namespace ScopeHousingMeshSurgery.Patches
                 if (ScopeLifecycle.IsModBypassedForCurrentScope) return true;
                 if (!_isActive) return true;
 
-                float compensated = ComputeCompensatedScale(fov);
+                float multiplier;
+                float compensated = ComputeCompensatedScale(fov, out multiplier);
 
                 ____ribcageScaleCompensated = compensated;
                 __instance.RibcageScaleCurrentTarget = compensated;
+                LogScaleDebug("Patch", fov, multiplier, compensated);
 
                 return false; // Skip original method
             }
@@ -186,6 +203,26 @@ namespace ScopeHousingMeshSurgery.Patches
             {
                 return true;
             }
+        }
+
+
+        private static void LogScaleDebug(string source, float scopeFov, float multiplier, float compensated)
+        {
+            if (!ScopeHousingMeshSurgeryPlugin.VerboseLogging.Value) return;
+
+            bool shouldLog = Time.frameCount - _lastLoggedFrame >= 10
+                || Mathf.Abs(scopeFov - _lastLoggedScopeFov) > 0.05f
+                || Mathf.Abs(multiplier - _lastLoggedMultiplier) > 0.005f;
+
+            if (!shouldLog) return;
+
+            _lastLoggedFrame = Time.frameCount;
+            _lastLoggedScopeFov = scopeFov;
+            _lastLoggedMultiplier = multiplier;
+
+            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                $"[WeaponScaling] [{source}] baseFov={_hipfireFov:F2} currentFov={scopeFov:F2} " +
+                $"multiplier={multiplier:F4} finalScale={compensated:F4}");
         }
 
         private static Player GetMainPlayer()
