@@ -103,6 +103,7 @@ namespace ScopeHousingMeshSurgery
                     LensTransparency.RestoreAll();
                     CameraSettingsManager.Restore();
                     PiPDisabler.RestoreAllCameras();
+                    Patches.WeaponScalingPatch.RestoreScale();
                     if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
                         MeshSurgeryManager.RestoreForScope(os.transform);
                     PlaneVisualizer.Hide();
@@ -135,6 +136,9 @@ namespace ScopeHousingMeshSurgery
 
                 // Re-apply camera settings for the new mode's FOV
                 CameraSettingsManager.ApplyForOptic(os);
+
+                // Capture weapon base scale/FOV before FOV changes
+                Patches.WeaponScalingPatch.CaptureBaseState();
 
                 // Animated FOV change for mode switch (uses configured duration)
                 ApplyFov(true);
@@ -279,6 +283,9 @@ namespace ScopeHousingMeshSurgery
 
             // PiP stays disabled via Harmony patches — no per-frame action needed.
 
+            // Per-frame weapon scale compensation (tracks animated FOV transitions + scroll zoom)
+            Patches.WeaponScalingPatch.UpdateScale();
+
             // Zeroing input polling
             ZeroingController.Tick();
         }
@@ -394,10 +401,13 @@ namespace ScopeHousingMeshSurgery
             // 7. Swap main camera LOD/culling settings with scope camera settings
             CameraSettingsManager.ApplyForOptic(os);
 
-            // 8. Apply animated FOV zoom (uses FovAnimationDuration)
+            // 8. Capture weapon base scale/FOV BEFORE changing FOV (for weapon scaling compensation)
+            Patches.WeaponScalingPatch.CaptureBaseState();
+
+            // 9. Apply animated FOV zoom (uses FovAnimationDuration)
             ApplyFov(true);
 
-            // 9. Read initial zeroing distance
+            // 10. Read initial zeroing distance
             ZeroingController.ReadCurrentZeroing();
         }
 
@@ -421,6 +431,9 @@ namespace ScopeHousingMeshSurgery
 
             // 1. Restore FOV INSTANTLY (duration=0, no sluggish exit feel)
             RestoreFov();
+
+            // 1b. Restore normal weapon model scaling (after FOV is back to normal)
+            Patches.WeaponScalingPatch.RestoreScale();
 
             // 2. Restore zoom controller
             ZoomController.Restore();

@@ -129,6 +129,10 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<KeyCode> DiagnosticsKey;
         internal static ConfigEntry<string>  ScopeBlacklist;
 
+        // --- Weapon Scaling ---
+        internal static ConfigEntry<bool> EnableWeaponScaling;
+        internal static ConfigEntry<float> WeaponScaleBaseline;
+
         // --- Zoom / FOV ---
         internal static ConfigEntry<bool> EnableZoom;
         internal static ConfigEntry<bool> EnableShaderZoom;
@@ -175,6 +179,20 @@ namespace ScopeHousingMeshSurgery
                 "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.");
             LensesTransparentToggleKey = Config.Bind("1. General", "LensesTransparentToggleKey", KeyCode.F11,
                 "Toggle key for lens transparency.");
+
+            // --- Weapon Scaling ---
+            EnableWeaponScaling = Config.Bind("2. Zoom", "EnableWeaponScaling", true,
+                "Compensate weapon/arms model scale across magnification levels.\n" +
+                "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
+                "With this enabled, the weapon shrinks proportionally as you zoom in so it\n" +
+                "always occupies the same screen space at every magnification level.");
+            WeaponScaleBaseline = Config.Bind("2. Zoom", "WeaponScaleBaseline", 1f,
+                new ConfigDescription(
+                    "Weapon model scale at the scope's LOWEST magnification (widest view).\n" +
+                    "This is the reference size — higher zoom levels shrink from here.\n" +
+                    "1.0 = full weapon model size. 0.5 = half size at min zoom.\n" +
+                    "For a 2x-6x scope, the weapon is this size at 2x and scales down at 6x.",
+                    new AcceptableValueRange<float>(0.1f, 2f)));
 
             // --- Zoom ---
             EnableZoom = Config.Bind("2. Zoom", "EnableZoom", true,

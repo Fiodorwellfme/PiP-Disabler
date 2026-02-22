@@ -24,6 +24,9 @@ namespace ScopeHousingMeshSurgery.Patches
 
             // FOV zoom
             SafeEnable<PWAMethod23Patch>();
+
+            // Weapon scaling (freeze ribcage scale while scoped)
+            SafeEnable<WeaponScalingPatch>();
         }
 
         private static void SafeEnable<T>() where T : ModulePatch, new()
