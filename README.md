@@ -9,7 +9,7 @@ Non-PiP scope mod for SPT. Disables the PiP optic camera for massive FPS gains, 
 - **FOV Zoom Fallback** — If shader AssetBundle is missing, falls back to camera FOV override. Weapon appears zoomed too (less ideal but works without shader).
 - **Lens Transparency** — Hides the PiP render texture surface.
 - **Mesh Surgery** (experimental) — Runtime mesh cutting at lens plane.
-- **Persistent mesh cut cache** — Stores cut meshes on disk next to the DLL (`mesh_cut_cache`) to avoid re-cutting on future runs.
+- **Persistent mesh cut cache** — Stores cut meshes on disk next to the DLL (`mesh_cut_cache`) with scope-aware filenames to avoid re-cutting on future runs.
 
 ## Installation
 

@@ -170,20 +170,18 @@ namespace ScopeHousingMeshSurgery
                 }
             }
 
-            public static string BuildKey(MeshFilter mf, Mesh originalAsset, Vector3 planePointWorld, Vector3 planeNormalWorld, MeshPlaneCutter.KeepSide keepSide, bool isCylinder)
+            public static string BuildKey(Transform scopeRoot, Transform activeMode, MeshFilter mf, Mesh originalAsset, MeshPlaneCutter.KeepSide keepSide, bool isCylinder)
             {
-                Vector3 pL = mf.transform.InverseTransformPoint(planePointWorld);
-                Vector3 nL = mf.transform.InverseTransformDirection(planeNormalWorld).normalized;
-
                 var sb = new StringBuilder(512);
-                sb.Append("v1|");
+                sb.Append("v2|");
+                sb.Append(scopeRoot != null ? scopeRoot.name : "scope").Append('|');
+                sb.Append(activeMode != null ? activeMode.name : "mode").Append('|');
+                sb.Append(GetRelativePath(scopeRoot, mf != null ? mf.transform : null)).Append('|');
                 sb.Append(originalAsset != null ? originalAsset.name : "null").Append('|');
                 sb.Append(originalAsset != null ? originalAsset.vertexCount : 0).Append('|');
                 sb.Append(originalAsset != null ? originalAsset.subMeshCount : 0).Append('|');
                 sb.Append((int)keepSide).Append('|');
                 sb.Append(isCylinder ? "cyl" : "plane").Append('|');
-                AppendVec3(sb, pL);
-                AppendVec3(sb, nL);
 
                 if (isCylinder)
                 {
@@ -211,7 +209,9 @@ namespace ScopeHousingMeshSurgery
                     var hex = new StringBuilder(hash.Length * 2);
                     for (int i = 0; i < hash.Length; i++)
                         hex.Append(hash[i].ToString("x2"));
-                    return hex.ToString();
+                    string scopeName = Sanitize(scopeRoot != null ? scopeRoot.name : "scope");
+                    string meshName = Sanitize(originalAsset != null ? originalAsset.name : "mesh");
+                    return scopeName + "__" + meshName + "__" + hex;
                 }
             }
 
@@ -220,16 +220,43 @@ namespace ScopeHousingMeshSurgery
                 return Path.Combine(ScopeHousingMeshSurgeryPlugin.GetMeshCutCacheDirectory(), key + ".bin");
             }
 
-            private static void AppendVec3(StringBuilder sb, Vector3 v)
+            private static string GetRelativePath(Transform root, Transform child)
             {
-                AppendFloat(sb, v.x);
-                AppendFloat(sb, v.y);
-                AppendFloat(sb, v.z);
+                if (child == null) return "none";
+                if (root == null) return child.name ?? "unnamed";
+
+                var nodes = new List<string>();
+                for (var t = child; t != null; t = t.parent)
+                {
+                    nodes.Add(t.name ?? "unnamed");
+                    if (t == root) break;
+                }
+                nodes.Reverse();
+                return string.Join("/", nodes.ToArray());
+            }
+
+            private static string Sanitize(string value)
+            {
+                if (string.IsNullOrEmpty(value)) return "unknown";
+                var invalid = Path.GetInvalidFileNameChars();
+                var sb = new StringBuilder(value.Length);
+                for (int i = 0; i < value.Length; i++)
+                {
+                    char c = value[i];
+                    bool bad = false;
+                    for (int j = 0; j < invalid.Length; j++)
+                    {
+                        if (c == invalid[j]) { bad = true; break; }
+                    }
+                    if (bad || char.IsWhiteSpace(c)) sb.Append('_');
+                    else sb.Append(c);
+                }
+                return sb.ToString();
             }
 
             private static void AppendFloat(StringBuilder sb, float v)
             {
-                sb.Append(Mathf.Round(v * 100000f) / 100000f).Append('|');
+                sb.Append(Mathf.Round(v * 1000f) / 1000f).Append('|');
             }
         }
 
@@ -304,7 +331,7 @@ namespace ScopeHousingMeshSurgery
                 try
                 {
                     bool isCylinder = ScopeHousingMeshSurgeryPlugin.CutMode.Value == "Cylinder";
-                    string cacheKey = MeshCutCache.BuildKey(mf, originalAsset, planePoint, planeNormal, keepSide, isCylinder);
+                    string cacheKey = MeshCutCache.BuildKey(scopeRoot, activeMode, mf, originalAsset, keepSide, isCylinder);
 
                     Mesh readable;
                     if (MeshCutCache.TryLoad(cacheKey, out var cachedMesh))
