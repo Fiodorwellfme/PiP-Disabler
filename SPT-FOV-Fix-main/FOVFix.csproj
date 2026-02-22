@@ -45,10 +45,7 @@
 	<Reference Include="Sirenix.Serialization">
 	  <Private>false</Private>
 	</Reference>
-	<Reference Include="RealismMod">
-	  <Private>false</Private>
-	</Reference>
-	<Reference Include="Unity.Postprocessing.Runtime">
+<Reference Include="Unity.Postprocessing.Runtime">
 	  <Private>false</Private>
 	</Reference>
     <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />

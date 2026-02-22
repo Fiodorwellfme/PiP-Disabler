@@ -9,6 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Keep bundled reference source out of this mod assembly -->
+    <Compile Remove="SPT-FOV-Fix-main/**/*.cs" />
+    <EmbeddedResource Remove="SPT-FOV-Fix-main/**/*" />
+    <None Include="SPT-FOV-Fix-main/**/*" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="BepInEx">
       <HintPath>..\..\BepInEx\core\BepInEx.dll</HintPath>
       <Private>False</Private>

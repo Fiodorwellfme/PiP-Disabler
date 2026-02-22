@@ -9,7 +9,6 @@ namespace FOVFix
     [BepInPlugin("com.fontaine.fovfix", "Fontaine-FOVFix", "4.0.1")]
     public class Plugin : BaseUnityPlugin
     {
-        private bool _detectedMods = false;
         public static bool RealismIsPresent = false;
 
         public static ConfigEntry<float> test1 { get; set; }
@@ -213,6 +212,7 @@ namespace FOVFix
             };
             
             Utils.Logger = Logger;  
+            RealCompat = new RealismCompat();
             FovController = new FovController();
 
             new PwaWeaponParamsPatch().Enable();
@@ -227,24 +227,8 @@ namespace FOVFix
             new CalculateScaleValueByFovPatch().Enable();
         }
 
-        private void CheckForMods()
-        {
-            if (!_detectedMods && (int)Time.time % 5 == 0)
-            {
-                _detectedMods = true;
-                if (Chainloader.PluginInfos.ContainsKey("RealismMod"))
-                {
-                    Logger.LogWarning("=============================== Fov Fix: Realism Mod is loaded ===============================");
-                    RealismIsPresent = true;
-                    Plugin.RealCompat = new RealismCompat();
-                }
-            }
-        }
-
         void Update()
         {
-            if (RealismIsPresent) Plugin.RealCompat.Update();
-            CheckForMods();
             FovController.ControllerUpdate();
         }
     }

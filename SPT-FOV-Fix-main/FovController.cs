@@ -4,7 +4,6 @@ using EFT;
 using EFT.Animations;
 using EFT.InventoryLogic;
 using EFT.UI;
-using RealismMod;
 using System;
 using System.Collections.Generic;
 using System.Linq;

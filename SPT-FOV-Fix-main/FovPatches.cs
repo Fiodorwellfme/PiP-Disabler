@@ -6,7 +6,6 @@ using EFT.InventoryLogic;
 using EFT.UI;
 using EFT.UI.Settings;
 using HarmonyLib;
-using RealismMod;
 using SPT.Reflection.Patching;
 using System;
 using System.Reflection;
