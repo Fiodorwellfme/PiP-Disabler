@@ -136,6 +136,8 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> AutoFovFromScope;
         internal static ConfigEntry<float> ScopedFov;
         internal static ConfigEntry<float> FovAnimationDuration;
+        internal static ConfigEntry<bool> EnableWeaponFovScale;
+        internal static ConfigEntry<float> WeaponFovScale;
         internal static ConfigEntry<KeyCode> ZoomToggleKey;
         internal static ConfigEntry<bool> EnableScrollZoom;
         internal static ConfigEntry<float> ScrollZoomSensitivity;
@@ -200,6 +202,28 @@ namespace ScopeHousingMeshSurgery
                     "0 = instant snap. 0.25 = smooth quarter-second transition.\n" +
                     "Scope exit always restores FOV instantly to avoid sluggish feel.",
                     new AcceptableValueRange<float>(0f, 2f)));
+            EnableWeaponFovScale = Config.Bind("2. Zoom", "EnableWeaponFovScale", false,
+                "Scales the first-person weapon model independently from camera FOV by patching EFT's " +
+                "Player.CalculateScaleValueByFov. Useful when ADS weapon size feels off at your chosen FOV.");
+            WeaponFovScale = Config.Bind("2. Zoom", "WeaponFovScale", 1f,
+                new ConfigDescription(
+                    "Target weapon scale used when EnableWeaponFovScale is ON.\n" +
+                    "1.0 = vanilla-like size, lower = smaller weapon, higher = larger weapon.",
+                    new AcceptableValueRange<float>(0.1f, 3f)));
+
+            EnableWeaponFovScale.SettingChanged += (_, __) =>
+            {
+                if (EnableWeaponFovScale.Value)
+                    Patches.CalculateScaleValueByFovPatch.UpdateRibcageScale(WeaponFovScale.Value);
+                else
+                    Patches.CalculateScaleValueByFovPatch.RestoreScale();
+            };
+
+            WeaponFovScale.SettingChanged += (_, __) =>
+            {
+                if (EnableWeaponFovScale.Value)
+                    Patches.CalculateScaleValueByFovPatch.UpdateRibcageScale(WeaponFovScale.Value);
+            };
 
             // --- Scroll Zoom ---
             EnableScrollZoom = Config.Bind("2. Zoom", "EnableScrollZoom", true,
@@ -461,6 +485,7 @@ namespace ScopeHousingMeshSurgery
             Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
             Logger.LogInfo($"  EnableZoom={EnableZoom.Value}  ShaderZoom={EnableShaderZoom.Value} (available={ZoomController.ShaderAvailable})");
             Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
+            Logger.LogInfo($"  WeaponFovScaleFix={EnableWeaponFovScale.Value}  WeaponFovScale={WeaponFovScale.Value:F2}");
             Logger.LogInfo($"  ScrollZoom={EnableScrollZoom.Value}  ScrollSens={ScrollZoomSensitivity.Value}  ModifierKey={ScrollZoomModifierKey.Value}  Min={ScrollZoomMin.Value}  Max={ScrollZoomMax.Value}");
             Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
         }

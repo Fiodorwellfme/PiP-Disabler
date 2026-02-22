@@ -24,6 +24,9 @@ namespace ScopeHousingMeshSurgery.Patches
 
             // FOV zoom
             SafeEnable<PWAMethod23Patch>();
+
+            // Optional first-person weapon FOV scale override
+            SafeEnable<CalculateScaleValueByFovPatch>();
         }
 
         private static void SafeEnable<T>() where T : ModulePatch, new()
