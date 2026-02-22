@@ -500,6 +500,8 @@ namespace ScopeHousingMeshSurgery
                         : 0.1f; // Short duration for variable zoom updates
 
                     CameraClass.Instance.SetFov(zoomedFov, duration, false);
+                    if (ScopeHousingMeshSurgeryPlugin.EnableWeaponFovScale.Value)
+                        Patches.CalculateScaleValueByFovPatch.UpdateRibcageScale(ScopeHousingMeshSurgeryPlugin.WeaponFovScale.Value);
                     ScopeHousingMeshSurgeryPlugin.LogInfo(
                         $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
                 }
@@ -532,6 +534,8 @@ namespace ScopeHousingMeshSurgery
                 if (baseFov > 30f)
                 {
                     cc.SetFov(baseFov, 0f, true); // duration=0 = instant
+                    if (ScopeHousingMeshSurgeryPlugin.EnableWeaponFovScale.Value)
+                        Patches.CalculateScaleValueByFovPatch.UpdateRibcageScale(ScopeHousingMeshSurgeryPlugin.WeaponFovScale.Value);
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
                         $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° (instant)");
                 }
