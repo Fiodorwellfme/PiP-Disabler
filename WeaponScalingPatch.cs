@@ -103,9 +103,10 @@ namespace ScopeHousingMeshSurgery.Patches
                 if (!CameraClass.Exist) return;
 
                 float currentFov = CameraClass.Instance.Fov;
-                float compensated = ComputeCompensatedScale(currentFov);
-
-                player.RibcageScaleCurrentTarget = compensated;
+                // Drive EFT's own compensation pipeline so PWA receives the same
+                // ribcage/FOV scale value used for viewmodel math.
+                player.CalculateScaleValueByFov(currentFov);
+                player.SetCompensationScale(false);
             }
             catch { }
         }
@@ -186,6 +187,7 @@ namespace ScopeHousingMeshSurgery.Patches
                 float compensated = ComputeCompensatedScale(fov);
 
                 ____ribcageScaleCompensated = compensated;
+                __instance.RibcageScaleCurrent = compensated;
                 __instance.RibcageScaleCurrentTarget = compensated;
 
                 return false; // Skip original method
