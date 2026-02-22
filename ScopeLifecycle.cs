@@ -499,11 +499,13 @@ namespace ScopeHousingMeshSurgery
                         ? ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value
                         : 0.1f; // Short duration for variable zoom updates
 
+                    float camBefore = CameraClass.Instance.Fov;
                     CameraClass.Instance.SetFov(zoomedFov, duration, false);
+                    float camAfterSet = CameraClass.Instance.Fov;
                     if (ScopeHousingMeshSurgeryPlugin.EnableWeaponFovScale.Value)
-                        Patches.CalculateScaleValueByFovPatch.UpdateRibcageScale(ScopeHousingMeshSurgeryPlugin.WeaponFovScale.Value);
+                        Patches.CalculateScaleValueByFovPatch.UpdateRibcageScale(ScopeHousingMeshSurgeryPlugin.WeaponFovScale.Value, "ScopeLifecycle.ApplyFov", zoomedFov);
                     ScopeHousingMeshSurgeryPlugin.LogInfo(
-                        $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
+                        $"[ScopeLifecycle] ApplyFov: target={zoomedFov:F1}° dur={duration:F2}s camBefore={camBefore:F2} camAfterSet={camAfterSet:F2}");
                 }
             }
             catch (Exception ex)
@@ -533,11 +535,13 @@ namespace ScopeHousingMeshSurgery
                 float baseFov = pwa.Single_2;
                 if (baseFov > 30f)
                 {
+                    float camBefore = cc.Fov;
                     cc.SetFov(baseFov, 0f, true); // duration=0 = instant
+                    float camAfterSet = cc.Fov;
                     if (ScopeHousingMeshSurgeryPlugin.EnableWeaponFovScale.Value)
-                        Patches.CalculateScaleValueByFovPatch.UpdateRibcageScale(ScopeHousingMeshSurgeryPlugin.WeaponFovScale.Value);
+                        Patches.CalculateScaleValueByFovPatch.UpdateRibcageScale(ScopeHousingMeshSurgeryPlugin.WeaponFovScale.Value, "ScopeLifecycle.RestoreFov", baseFov);
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° (instant)");
+                        $"[ScopeLifecycle] RestoreFov: target={baseFov:F1}° camBefore={camBefore:F2} camAfterSet={camAfterSet:F2}");
                 }
             }
             catch (Exception ex)
