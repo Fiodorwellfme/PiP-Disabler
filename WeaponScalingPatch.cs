@@ -16,32 +16,21 @@ namespace ScopeHousingMeshSurgery.Patches
     /// Problem:  When the mod lowers camera FOV for zoom, perspective projection
     ///           makes the weapon appear larger.  Higher magnification = bigger weapon.
     ///
-    /// Solution: Scale the weapon proportionally to FOV so it always occupies the
-    ///           same screen space.  The configurable baseline scale applies at the
-    ///           scope's LOWEST magnification (highest FOV).  As magnification
-    ///           increases (FOV drops), the weapon shrinks by:
+    /// Solution: While ADS, scale proportionally to
     ///
-    ///             scale = baseline × tan(currentFov/2) / tan(referenceFov/2)
+    ///             scale = baseline × tan(scopeFov/2) / tan(hipfireFov/2)
     ///
-    ///           where referenceFov is the main camera FOV at the scope's minimum
-    ///           magnification.  This exactly counteracts perspective magnification.
-    ///
-    ///           For a 2x-6x scope with baseline=0.6:
-    ///             • at 2x  → scale = 0.600  (weapon at configured size)
-    ///             • at 4x  → scale = 0.312  (weapon shrinks to match)
-    ///             • at 6x  → scale = 0.210  (same screen coverage as 2x)
+    ///           where hipfireFov is captured right before entering ADS.
+    ///           This counteracts perspective zoom so weapon screen-size remains
+    ///           consistent across player FOV settings.
     /// </summary>
     internal sealed class WeaponScalingPatch : ModulePatch
     {
-        // Reference main camera FOV at the scope's lowest magnification.
-        // This is the FOV where weapon scale = configurable baseline.
-        private static float _referenceFov;
+        // Main camera FOV at hipfire (captured right before entering ADS).
+        // This is the denominator for ADS compensation.
+        private static float _hipfireFov;
         // Whether compensation is active (set on scope enter, cleared on exit).
         private static bool _isActive;
-
-        // Zoom formula baseline (must match FovController.ZoomBaselineFov)
-        private const float ZoomBaseline = 50f;
-        private const float BaseOpticFov = 35f;
 
         protected override MethodBase GetTargetMethod()
         {
@@ -49,8 +38,8 @@ namespace ScopeHousingMeshSurgery.Patches
         }
 
         /// <summary>
-        /// Compute and cache the reference FOV for the current scope's lowest magnification.
-        /// Called from ScopeLifecycle.DoScopeEnter (before ApplyFov changes the camera FOV).
+        /// Cache hipfire FOV before entering ADS. Called from ScopeLifecycle.DoScopeEnter
+        /// (before ApplyFov changes the camera FOV).
         /// </summary>
         public static void CaptureBaseState()
         {
@@ -61,21 +50,24 @@ namespace ScopeHousingMeshSurgery.Patches
                 var os = ScopeLifecycle.ActiveOptic;
                 if (os == null) { _isActive = false; return; }
 
-                // Get the scope's minimum magnification (highest scope FOV = widest view)
-                float minMag = ZoomController.GetMinMagnification(os);
-                if (minMag < 0.5f) minMag = 1f;
+                if (CameraClass.Exist)
+                    _hipfireFov = CameraClass.Instance.Fov;
+                else
+                    _hipfireFov = 0f;
 
-                // Compute what the main camera FOV would be at this minimum magnification,
-                // using the same formula as FovController.ComputeZoomedFov:
-                //   resultFov = 2 * atan(tan(baseFov/2) / magnification)
-                float halfBaseRad = ZoomBaseline * 0.5f * Mathf.Deg2Rad;
-                _referenceFov = 2f * Mathf.Atan(Mathf.Tan(halfBaseRad) / minMag) * Mathf.Rad2Deg;
+                if (_hipfireFov <= 0.1f)
+                {
+                    var player = GetMainPlayer();
+                    var pwa = player?.ProceduralWeaponAnimation;
+                    if (pwa != null)
+                        _hipfireFov = pwa.Single_2;
+                }
 
                 _isActive = true;
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    $"[WeaponScaling] Captured base state: minMag={minMag:F2}x → " +
-                    $"referenceFov={_referenceFov:F1}° baseline={ScopeHousingMeshSurgeryPlugin.WeaponScaleBaseline.Value:F2}");
+                    $"[WeaponScaling] Captured base state: hipfireFov={_hipfireFov:F1}° " +
+                    $"baseline={ScopeHousingMeshSurgeryPlugin.WeaponScaleBaseline.Value:F2}");
             }
             catch (Exception ex)
             {
@@ -144,24 +136,24 @@ namespace ScopeHousingMeshSurgery.Patches
         /// <summary>
         /// Compute the compensated ribcage scale for a given main camera FOV.
         ///
-        ///   scale = baseline × tan(currentFov/2) / tan(referenceFov/2)
+        ///   scale = baseline × tan(scopeFov/2) / tan(hipfireFov/2)
         ///
-        /// At referenceFov (scope's lowest magnification): ratio = 1.0, scale = baseline.
-        /// As FOV decreases (higher zoom): ratio &lt; 1.0, weapon shrinks proportionally.
+        /// At hipfireFov: ratio = 1.0, scale = baseline.
+        /// In ADS (lower scopeFov): ratio &lt; 1.0, weapon shrinks proportionally.
         /// </summary>
-        private static float ComputeCompensatedScale(float currentFov)
+        private static float ComputeCompensatedScale(float scopeFov)
         {
             float baseline = ScopeHousingMeshSurgeryPlugin.WeaponScaleBaseline.Value;
 
-            if (_referenceFov <= 0.1f) return baseline;
+            if (_hipfireFov <= 0.1f) return baseline;
 
-            float halfRefRad = _referenceFov * 0.5f * Mathf.Deg2Rad;
-            float halfCurRad = currentFov * 0.5f * Mathf.Deg2Rad;
+            float halfHipfireRad = _hipfireFov * 0.5f * Mathf.Deg2Rad;
+            float halfScopeRad = scopeFov * 0.5f * Mathf.Deg2Rad;
 
-            float tanRef = Mathf.Tan(halfRefRad);
-            if (Mathf.Abs(tanRef) < 0.0001f) return baseline;
+            float tanHipfire = Mathf.Tan(halfHipfireRad);
+            if (Mathf.Abs(tanHipfire) < 0.0001f) return baseline;
 
-            float ratio = Mathf.Tan(halfCurRad) / tanRef;
+            float ratio = Mathf.Tan(halfScopeRad) / tanHipfire;
 
             return baseline * ratio;
         }
