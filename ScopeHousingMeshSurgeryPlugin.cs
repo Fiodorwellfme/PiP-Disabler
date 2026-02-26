@@ -131,8 +131,8 @@ namespace ScopeHousingMeshSurgery
 
         // --- Weapon Scaling ---
         internal static ConfigEntry<bool> EnableWeaponScaling;
-        internal static ConfigEntry<float> WeaponScaleBaseline;
-
+        internal static ConfigEntry<float> WeaponScaleOffset;
+        internal static ConfigEntry<float> WeaponScaleMultiplier;
         // --- Zoom / FOV ---
         internal static ConfigEntry<bool> EnableZoom;
         internal static ConfigEntry<bool> EnableShaderZoom;
@@ -186,13 +186,14 @@ namespace ScopeHousingMeshSurgery
                 "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
                 "With this enabled, the weapon shrinks proportionally as you zoom in so it\n" +
                 "always occupies the same screen space at every magnification level.");
-            WeaponScaleBaseline = Config.Bind("2. Zoom", "WeaponScaleBaseline", 1f,
+            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 0.00f,
                 new ConfigDescription(
-                    "Weapon model scale at the scope's LOWEST magnification (widest view).\n" +
-                    "This is the reference size — higher zoom levels shrink from here.\n" +
-                    "1.0 = full weapon model size. 0.5 = half size at min zoom.\n" +
-                    "For a 2x-6x scope, the weapon is this size at 2x and scales down at 6x.",
-                    new AcceptableValueRange<float>(0.1f, 2f)));
+                    "Placeholder text\n",
+                    new AcceptableValueRange<float>(0.00f, 20.00f)));
+            WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.00f,
+                new ConfigDescription(
+                    "Placeholder text\n",
+                    new AcceptableValueRange<float>(-0.50f, 0.50f)));
 
             // --- Zoom ---
             EnableZoom = Config.Bind("2. Zoom", "EnableZoom", true,
@@ -475,12 +476,58 @@ namespace ScopeHousingMeshSurgery
             // Load shader zoom AssetBundle (optional — falls back to FOV zoom if missing)
             ZoomController.LoadShader();
 
+            // --- Config change handlers (catches config manager changes, not just hotkeys) ---
+            ModEnabled.SettingChanged += OnModEnabledChanged;
+            EnableWeaponScaling.SettingChanged += OnWeaponScalingToggled;
+
             Logger.LogInfo("ScopeHousingMeshSurgery v4.7.0 loaded.");
             Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
             Logger.LogInfo($"  EnableZoom={EnableZoom.Value}  ShaderZoom={EnableShaderZoom.Value} (available={ZoomController.ShaderAvailable})");
             Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
             Logger.LogInfo($"  ScrollZoom={EnableScrollZoom.Value}  ScrollSens={ScrollZoomSensitivity.Value}  ModifierKey={ScrollZoomModifierKey.Value}  Min={ScrollZoomMin.Value}  Max={ScrollZoomMax.Value}");
             Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
+        }
+
+        private void OnDestroy()
+        {
+            // Plugin unload or game exit — restore everything
+            ScopeLifecycle.ForceExit();
+            PiPDisabler.RestoreAllCameras();
+
+            ModEnabled.SettingChanged -= OnModEnabledChanged;
+            EnableWeaponScaling.SettingChanged -= OnWeaponScalingToggled;
+        }
+
+        /// <summary>
+        /// Handles ModEnabled changes from ANY source (config manager, hotkey, external).
+        /// </summary>
+        private static void OnModEnabledChanged(object sender, EventArgs e)
+        {
+            if (!ModEnabled.Value)
+            {
+                ScopeLifecycle.ForceExit();
+                PiPDisabler.RestoreAllCameras();
+            }
+            else
+            {
+                ScopeLifecycle.SyncState();
+            }
+        }
+
+        /// <summary>
+        /// Handles EnableWeaponScaling toggle mid-session.
+        /// Restore immediately on disable; re-capture on enable while scoped.
+        /// </summary>
+        private static void OnWeaponScalingToggled(object sender, EventArgs e)
+        {
+            if (!EnableWeaponScaling.Value)
+            {
+                Patches.WeaponScalingPatch.RestoreScale();
+            }
+            else if (ScopeLifecycle.IsScoped)
+            {
+                Patches.WeaponScalingPatch.CaptureBaseState();
+            }
         }
 
         private void Update()
@@ -490,21 +537,7 @@ namespace ScopeHousingMeshSurgery
             {
                 ModEnabled.Value = !ModEnabled.Value;
                 Logger.LogInfo($"[Global] Mod {(ModEnabled.Value ? "ENABLED" : "DISABLED")}");
-                if (!ModEnabled.Value)
-                {
-                    // Exit scoped state (restore lenses, meshes, FOV)
-                    ScopeLifecycle.ForceExit();
-                    // CRITICAL: also restore PiP cameras — the LateUpdate/LensFade patches check
-                    // DisablePiP.Value independently, so they keep blocking even when ModEnabled=false.
-                    // We explicitly re-enable the optic cameras here so the scope renders normally.
-                    PiPDisabler.RestoreAllCameras();
-                }
-                else
-                {
-                    // Re-enabled: immediately sync lifecycle state in case player is already scoped.
-                    // Without this, the mod stays dark until the next scope enter/exit event.
-                    ScopeLifecycle.SyncState();
-                }
+                // Cleanup/restore handled by OnModEnabledChanged via SettingChanged
             }
 
             // When mod is disabled, skip ALL per-frame logic

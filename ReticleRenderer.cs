@@ -29,6 +29,7 @@ namespace ScopeHousingMeshSurgery
     /// </summary>
     internal static class ReticleRenderer
     {
+        private static bool _shouldRender;
         private static Material     _reticleMat;
         private static Mesh         _reticleMesh;
         private static Texture      _savedMarkTex;
@@ -117,6 +118,7 @@ namespace ScopeHousingMeshSurgery
         {
             if (!ScopeHousingMeshSurgeryPlugin.ShowReticle.Value) return;
             if (_savedMarkTex == null || os == null) return;
+            _shouldRender = true;
 
             try
             {
@@ -175,6 +177,7 @@ namespace ScopeHousingMeshSurgery
 
         public static void Hide()
         {
+            _shouldRender = false;
             _alignmentActive = false;
             _settled = false;
             DetachFromCamera();
@@ -260,6 +263,7 @@ namespace ScopeHousingMeshSurgery
 
         private static void OnPreCullCallback(Camera cam)
         {
+            if (!_shouldRender) return;
             if (cam != _attachedCamera) return;
             if (_cmdBuffer == null || _reticleMat == null || !_settled) return;
 
