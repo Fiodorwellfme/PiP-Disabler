@@ -186,11 +186,11 @@ namespace ScopeHousingMeshSurgery
                 "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
                 "With this enabled, the weapon shrinks proportionally as you zoom in so it\n" +
                 "always occupies the same screen space at every magnification level.");
-            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 0.00f,
+            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 0.90f,
                 new ConfigDescription(
                     "Placeholder text\n",
                     new AcceptableValueRange<float>(0.00f, 20.00f)));
-            WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.00f,
+            WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.258216f,
                 new ConfigDescription(
                     "Placeholder text\n",
                     new AcceptableValueRange<float>(-0.50f, 0.50f)));
