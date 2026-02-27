@@ -188,29 +188,32 @@ namespace ScopeHousingMeshSurgery
         {
             if (cam == null) return;
 
-            // Constant clip-space centered overlay.
-            // Texture controls the visible aperture size via VignetteSizeMult.
-            // >2 ensures full viewport coverage on all aspect ratios.
-            const float ndcScale = 2.25f;
+            // Clip-space centered overlay, independent of world/lens transforms.
+            float screenScale = GetScreenSpaceScale(cam);
+            float ndcScale = Mathf.Clamp(3.2f * screenScale, 0.8f, 6f);
 
             _vigMatrix = Matrix4x4.TRS(
                 new Vector3(0f, 0f, 0.6f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
         }
+
         private static void RebuildShadowMatrix(Camera cam)
         {
             if (cam == null) return;
 
-            // Constant clip-space centered overlay.
-            // Texture controls hole radius via ScopeShadowRadius.
-            const float ndcScale = 2.25f;
+            // Clip-space centered overlay, independent of world/lens transforms.
+            // A quad scale of 2 fills the entire viewport in clip-space; keep a
+            // floor above that so FOV scaling can never leave uncovered edges.
+            float screenScale = GetScreenSpaceScale(cam);
+            float ndcScale = Mathf.Max(2.25f, Mathf.Clamp(3.2f * screenScale, 0.8f, 6f));
 
             _shadowMatrix = Matrix4x4.TRS(
                 new Vector3(0f, 0f, 0.7f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
         }
+
         private static void RebuildCommandBuffer(Camera cam)
         {
             _cmdBuffer.Clear();
@@ -426,6 +429,17 @@ namespace ScopeHousingMeshSurgery
         {
             Rect r = GetDisplayViewport(cam);
             return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
+        }
+
+        private static float GetScreenSpaceScale(Camera cam)
+        {
+            float currentFov = cam != null ? cam.fieldOfView : 35f;
+            float referenceFov = Mathf.Max(1f, ScopeHousingMeshSurgeryPlugin.ScopedFov.Value);
+            float fovScale = Mathf.Clamp(referenceFov / Mathf.Max(1f, currentFov), 0.5f, 3f);
+
+            // Keep lens effects large enough to match scope housing aperture.
+            // Magnification scaling made them collapse too much at higher zoom.
+            return fovScale;
         }
 
         // ─────────────────────────────────────────────────────────────────────
