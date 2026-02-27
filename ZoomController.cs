@@ -145,14 +145,14 @@ namespace ScopeHousingMeshSurgery
                 if (szh != null)
                 {
                     var szhType = szh.GetType();
-                    float minFov = 0f; // min FOV = highest zoom
+                    float minFOV = 0f; // min FOV = highest zoom
 
                     var s1Prop = szhType.GetProperty("Single_1",
                         System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                     if (s1Prop != null && s1Prop.PropertyType == typeof(float))
-                        minFov = (float)s1Prop.GetValue(szh);
+                        minFOV = (float)s1Prop.GetValue(szh);
 
-                    if (minFov < 0.1f)
+                    if (minFOV < 0.1f)
                     {
                         foreach (var field in szhType.GetFields(
                             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
@@ -168,20 +168,20 @@ namespace ScopeHousingMeshSurgery
                                 if (mmfProp != null && mmfProp.PropertyType == typeof(Vector3))
                                 {
                                     var mmf = (Vector3)mmfProp.GetValue(opticData);
-                                    minFov = mmf.y;
+                                    minFOV = mmf.y;
                                     break;
                                 }
                             }
                         }
                     }
 
-                    if (minFov > 0.1f)
-                        return 35f / minFov;
+                    if (minFOV > 0.1f)
+                        return minFOV;
                 }
             }
             catch { }
 
-            return GetMagnification(os);
+            return GetminFOV(os);
         }
 
         /// <summary>
