@@ -73,6 +73,7 @@ namespace ScopeHousingMeshSurgery
         // --- General ---
         internal static ConfigEntry<bool> DisablePiP;
         internal static ConfigEntry<bool> AutoDisableForHighMagnificationScopes;
+        internal static ConfigEntry<float> PiPDisableFOVFloor;
         internal static ConfigEntry<KeyCode> DisablePiPToggleKey;
         internal static ConfigEntry<bool> MakeLensesTransparent;
         internal static ConfigEntry<KeyCode> LensesTransparentToggleKey;
@@ -172,6 +173,10 @@ namespace ScopeHousingMeshSurgery
                 "Core feature — gives identical perf between hip-fire and ADS.");
             AutoDisableForHighMagnificationScopes = Config.Bind("1. General", "AutoDisableForHighMagnificationScopes", false,
                 "Automatically disable all mod effects while scoped with optics whose maximum magnification exceeds 10x.");
+            PiPDisableFOVFloor = Config.Bind("1. General", "PiPDisableFOVFloor", 5f,
+                new ConfigDescription(
+                    "Scopes with min FOV under this value will auto-deactivate the mod",
+                    new AcceptableValueRange<float>(0.1f, 20f)));
             DisablePiPToggleKey = Config.Bind("1. General", "DisablePiPToggleKey", KeyCode.F10,
                 "Toggle key for PiP disable.");
 
@@ -188,19 +193,18 @@ namespace ScopeHousingMeshSurgery
                 "always occupies the same screen space at every magnification level.");
             WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 0.90f,
                 new ConfigDescription(
-                    "Placeholder text\n",
+                    "This is cooking territory",
                     new AcceptableValueRange<float>(0.00f, 20.00f)));
             WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.258216f,
                 new ConfigDescription(
-                    "Placeholder text\n",
+                    "This is cooking territory too",
                     new AcceptableValueRange<float>(-0.50f, 0.50f)));
 
             // --- Zoom ---
             EnableZoom = Config.Bind("2. Zoom", "EnableZoom", true,
-                "Enable scope magnification (either shader zoom or FOV zoom fallback).");
+                "Enable scope magnification);
             EnableShaderZoom = Config.Bind("2. Zoom", "EnableShaderZoom", true,
-                "Use GrabPass shader zoom on the lens surface (best quality, weapon stays normal size). " +
-                "Requires scopezoom.bundle in assets/ folder. Falls back to FOV zoom if not available.");
+                "Deprecated"; // To remove
             DefaultZoom = Config.Bind("2. Zoom", "DefaultZoom", 4f,
                 new ConfigDescription(
                     "Default magnification when auto-detection fails (e.g. fixed scopes without zoom data).",
@@ -210,8 +214,7 @@ namespace ScopeHousingMeshSurgery
                 "Works for variable-zoom scopes. Falls back to DefaultZoom for fixed scopes.");
             ScopedFov = Config.Bind("2. Zoom", "ScopedFov", 15f,
                 new ConfigDescription(
-                    "FOV (degrees) for FOV zoom fallback mode. Lower = more zoom. " +
-                    "Only used when shader zoom is unavailable.",
+                    "FOV (degrees) for FOV zoom fallback mode. Lower = more zoom. ",
                     new AcceptableValueRange<float>(5f, 75f)));
             FovAnimationDuration = Config.Bind("2. Zoom", "FovAnimationDuration", 0.25f,
                 new ConfigDescription(
