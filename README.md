@@ -12,3 +12,4 @@ Things to do:
 - Explore multiple ways of seeing through the scope
 - Fix variable scopes sticking when going past max/min zoom levels = Next step
 - ~~Make the auto disable FOV limit configurable~~ = DONE
+- Learn to actually code without being on AI life support
