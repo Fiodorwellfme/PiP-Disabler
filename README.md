@@ -10,6 +10,8 @@ Things to do:
 - Add a blacklist key and make it work properly
 - Find a way to apply the lens shader to the reticle
 - Explore multiple ways of seeing through the scope
+- Allow users to set custom variables for LOD and farclip settings
+- Make auto LOD and farclip be less intensive
 - Fix variable scopes sticking when going past max/min zoom levels = Next step
 - ~~Make the auto disable FOV limit configurable~~ = DONE
 - Learn to actually code without being on AI life support
