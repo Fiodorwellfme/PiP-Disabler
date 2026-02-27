@@ -147,6 +147,8 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<KeyCode> ScrollZoomModifierKey;
         internal static ConfigEntry<float> ScrollZoomMin;
         internal static ConfigEntry<float> ScrollZoomMax;
+        internal static ConfigEntry<float> maximumLODLevel;
+        internal static ConfigEntry<float> LODbias;
 
         // --- 4. Zeroing ---
         internal static ConfigEntry<bool> EnableZeroing;
@@ -205,6 +207,14 @@ namespace ScopeHousingMeshSurgery
                 "Enable scope magnification);
             EnableShaderZoom = Config.Bind("2. Zoom", "EnableShaderZoom", true,
                 "Deprecated"; // To remove
+            LODbias = Config.Bind("2. Zoom", "LOD bias", 4f,
+                new ConfigDescription(
+                    "Set LOD bias while scoped in with optic scopes. Set to 0 to multiply base LOD bias by the magnification level",
+                    new AcceptableValueRange<float>(-10f, 10f)));
+            maximumLODLevel = Config.Bind("2. Zoom", "LOD Level", 0.0f,
+                new ConfigDescription(
+                    "Set LOD Level while scoped in with optic scopes.",
+                    new AcceptableValueRange<float>(0.0f, 4.0f)));
             DefaultZoom = Config.Bind("2. Zoom", "DefaultZoom", 4f,
                 new ConfigDescription(
                     "Default magnification when auto-detection fails (e.g. fixed scopes without zoom data).",
