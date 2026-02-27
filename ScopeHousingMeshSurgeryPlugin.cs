@@ -173,8 +173,8 @@ namespace ScopeHousingMeshSurgery
             DisablePiP = Config.Bind("1. General", "DisablePiP", true,
                 "Disable Picture-in-Picture optic rendering (No-PiP mode). " +
                 "Core feature — gives identical perf between hip-fire and ADS.");
-            AutoDisableForHighMagnificationScopes = Config.Bind("1. General", "AutoDisableForHighMagnificationScopes", false,
-                "Automatically disable all mod effects while scoped with optics whose maximum magnification exceeds 10x.");
+            AutoDisableForHighMagnificationScopes = Config.Bind("1. General", "AutoDisableForHighMagnificationScopes", true,
+                "Automatically disable all mod effects while scoped with high magnification optics.");
             PiPDisableFOVFloor = Config.Bind("1. General", "PiPDisableFOVFloor", 5f,
                 new ConfigDescription(
                     "Scopes with min FOV under this value will auto-deactivate the mod",
@@ -196,11 +196,11 @@ namespace ScopeHousingMeshSurgery
             WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 0.90f,
                 new ConfigDescription(
                     "This is cooking territory",
-                    new AcceptableValueRange<float>(0.00f, 20.00f)));
+                    new AcceptableValueRange<float>(0.00f, 1.00f)));
             WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.258216f,
                 new ConfigDescription(
                     "This is cooking territory too",
-                    new AcceptableValueRange<float>(-0.50f, 0.50f)));
+                    new AcceptableValueRange<float>(0.00f, 0.50f)));
 
             // --- Zoom ---
             EnableZoom = Config.Bind("2. Zoom", "EnableZoom", true,
@@ -393,26 +393,26 @@ namespace ScopeHousingMeshSurgery
                     "across all zoom levels.  Typical scope lens diameter is 0.02-0.04 m.\n" +
                     "Set to 0 to fall back to the legacy CylinderRadius x2 value.",
                     new AcceptableValueRange<float>(0f, 0.2f)));
-            ReticleSmoothingFrames = Config.Bind("3. Mesh Surgery", "ReticleSmoothingFrames", 1,
+            ReticleSmoothingFrames = Config.Bind("3. Mesh Surgery", "ReticleSmoothingFrames", 1, //TO REMOVE
                 new ConfigDescription(
                     "[DEPRECATED — reticle is now parented to the lens transform.]\n" +
                     "Was: Number of frames to average the reticle world-position over.",
                     new AcceptableValueRange<int>(1, 60)));
-            ReticleJitterThreshold = Config.Bind("3. Mesh Surgery", "ReticleJitterThreshold", 0.0002f,
+            ReticleJitterThreshold = Config.Bind("3. Mesh Surgery", "ReticleJitterThreshold", 0.0002f, //TO REMOVE
                 new ConfigDescription(
                     "[DEPRECATED — reticle is now parented to the lens transform.]\n" +
                     "Was: Minimum world-space displacement before the reticle updates.",
                     new AcceptableValueRange<float>(0f, 0.05f)));
-            ReticleFlipHorizontal = Config.Bind("3. Mesh Surgery", "ReticleFlipHorizontal", false,
+            ReticleFlipHorizontal = Config.Bind("3. Mesh Surgery", "ReticleFlipHorizontal", false, 
                 "Flip the reticle texture along the Y axis (left-right mirror).\n" +
                 "Enable if the reticle appears mirrored compared to the original PiP view.");
-            ReticleMipBias = Config.Bind("3. Mesh Surgery", "ReticleMipBias", -1.5f,
+            ReticleMipBias = Config.Bind("3. Mesh Surgery", "ReticleMipBias", -1.5f, //TO REMOVE
                 new ConfigDescription(
                     "Mip map bias for the reticle texture. Negative = sharper.\n" +
                     "0 = Unity default.  -1 = subtle sharpening.  -2 = very crisp at the cost\n" +
                     "of slight shimmering.  Adjust to taste with your scope.",
                     new AcceptableValueRange<float>(-4f, 0f)));
-            AdsSettledThreshold = Config.Bind("3. Mesh Surgery", "AdsSettledThreshold", 0.006244131f,
+            AdsSettledThreshold = Config.Bind("3. Mesh Surgery", "AdsSettledThreshold", 0.006244131f, //TO REMOVE 
                 new ConfigDescription(
                     "Lens movement threshold (units/frame) below which the weapon is\n" +
                     "considered settled after ADS-in.  The reticle/vignette/shadow are\n" +
@@ -422,11 +422,11 @@ namespace ScopeHousingMeshSurgery
             ReticleOverlayCamera = Config.Bind("3. Mesh Surgery", "ReticleOverlayCamera", true,
                 "[DEPRECATED — reticle now uses a CommandBuffer with nonJitteredProjectionMatrix.\n" +
                 "The overlay camera has been removed. This setting has no effect.]");
-            RemoveCameraSide = Config.Bind("3. Mesh Surgery", "RemoveCameraSide", true,
+            RemoveCameraSide = Config.Bind("3. Mesh Surgery", "RemoveCameraSide", true, //TO REMOVE
                 "Remove geometry on the camera side of the lens plane.");
-            ForceManualKeepSide = Config.Bind("3. Mesh Surgery", "ForceManualKeepSide", false,
+            ForceManualKeepSide = Config.Bind("3. Mesh Surgery", "ForceManualKeepSide", false, //TO REMOVE
                 "If true, ignores auto keep-side selection.");
-            ManualKeepPositive = Config.Bind("3. Mesh Surgery", "ManualKeepPositive", true,
+            ManualKeepPositive = Config.Bind("3. Mesh Surgery", "ManualKeepPositive", true, //TO REMOVE
                 "Only used when ForceManualKeepSide=true.");
             ExcludeNameContainsCsv = Config.Bind("3. Mesh Surgery", "ExcludeNameContainsCsv",
                 "linza,lens,glass,reticle,collider,trigger,shadow,backlens",
