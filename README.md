@@ -10,5 +10,5 @@ Things to do:
 - Add a blacklist key and make it work properly
 - Find a way to apply the lens shader to the reticle
 - Explore multiple ways of seeing through the scope
-- Fix variable scopes sticking when going past max/min zoom levels
-- Make the auto disable FOV limit configurable
+- Fix variable scopes sticking when going past max/min zoom levels = Next step
+- ~~Make the auto disable FOV limit configurable~~ = DONE
