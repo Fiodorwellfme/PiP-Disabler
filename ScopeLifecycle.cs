@@ -92,9 +92,9 @@ namespace ScopeHousingMeshSurgery
                 // Update the active optic to the new mode
                 _activeOptic = os;
 
-                float maxMag = ZoomController.GetMaxMagnification(os);
+                float minFOV = ZoomController.GetMaxMagnification(os); // This should be switched to something else to make the autodisable function work with min FOV of the scope rather than wonky magnification calc
                 bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                    && maxMag > 10f;
+                    && minFOV > 10f; // Need to replace 10f with variable like PiPDisableFOVFloor
                 if (bypassForMode)
                 {
                     _modBypassedForCurrentScope = true;
@@ -335,13 +335,13 @@ namespace ScopeHousingMeshSurgery
             _isScoped = true;
             _activeOptic = os;
 
-            float maxMag = ZoomController.GetMaxMagnification(os);
+            float minFOV = ZoomController.GetMaxMagnification(os);
             _modBypassedForCurrentScope = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                && maxMag > 10f;
+                && minFOV > 10f;  // Need to replace 10f with variable like PiPDisableFOVFloor
             if (_modBypassedForCurrentScope)
             {
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    $"[ScopeLifecycle] Bypassing mod for high-magnification scope: max={maxMag:F1}x (>10x)");
+                    $"[ScopeLifecycle] Bypassing mod for high-magnification scope: max={minFOV:F1}x (>10x)"); // Need to understand how this works to display the FOV, 10x should be replaced with {configurable min FOV}
 
                 LensTransparency.RestoreAll();
                 CameraSettingsManager.Restore();
