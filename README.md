@@ -11,3 +11,4 @@ Things to do:
 - Find a way to apply the lens shader to the reticle
 - Explore multiple ways of seeing through the scope
 - Fix variable scopes sticking when going past max/min zoom levels
+- Make the auto disable floor FOV configurable
