@@ -21,7 +21,7 @@ namespace ScopeHousingMeshSurgery
     ///   OpticCullingMaskScale = 1
     ///
     /// Settings modified:
-    ///   QualitySettings.lodBias          — multiplied by magnification factor
+    ///   QualitySettings.lodBias          — multiplied by magnification factor or manually set in config
     ///   Camera.main.farClipPlane         — set to scope's FarClipPlane if greater
     ///   Camera.layerCullDistances        — adjusted for scope's culling scale
     /// </summary>
@@ -80,18 +80,25 @@ namespace ScopeHousingMeshSurgery
                     $"[CameraSettings] ScopeCameraData: FOV={scopeFov:F2} FarClip={scopeFarClip:F0}");
             }
 
-            // Calculate magnification
+            // Calculate magnification, NEEDS TO BE REMOVED
             float magnification = 1f;
             if (scopeFov > 0.1f)
                 magnification = 35f / scopeFov;
 
             // === Apply LOD bias ===
+            // THIS NEEDS TO BE SET MANUALLY IN THE CONFIG FILE AS WELL, IF SET TO 0 THEN WE NEED TO FIND ANOTHER OPTION
             // Increase LOD bias proportionally to magnification.
             // At 4x zoom, objects at distance appear 4x larger → use 4x finer LODs.
+            //if ScopeHousingMeshSurgeryPlugin.LODbias.Value == 0
+            //    float newLodBias = _savedLodBias * Mathf.Max(magnification, 1f);
+            //if ScopeHousingMeshSurgeryPlugin.LODbias.Value != 0 
+            //    float newLodBias = ScopeHousingMeshSurgeryPlugin.LODbias.Value;
             float newLodBias = _savedLodBias * Mathf.Max(magnification, 1f);
             QualitySettings.lodBias = newLodBias;
 
-            // Force highest LOD level during scope view
+            // Set different LOD level during scope view from main view.
+            // THIS NEEDS TO BE SET MANUALLY IN THE CONFIG FILE AS WELL
+            // QualitySettings.maximumLODLevel = ScopeHousingMeshSurgeryPlugin.maximumLODLevel.Value;
             QualitySettings.maximumLODLevel = 0;
 
             // === Apply far clip plane ===
