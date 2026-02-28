@@ -46,6 +46,17 @@ namespace ScopeHousingMeshSurgery.Patches
     {
         private static bool _isActive;
 
+
+        /// <summary>
+        /// True when weapon/ribcage visual scaling override is currently in effect.
+        /// Used by ReticleRenderer to apply a matching screen-space offset.
+        /// </summary>
+        internal static bool IsScalingActive =>
+            _isActive &&
+            ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value &&
+            ScopeLifecycle.IsScoped &&
+            !ScopeLifecycle.IsModBypassedForCurrentScope;
+
         // Zoom formula baseline (must match FovController.ZoomBaselineFov)
         private const float ZoomBaseline = 50f;
 

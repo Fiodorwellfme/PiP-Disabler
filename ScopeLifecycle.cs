@@ -92,9 +92,9 @@ namespace ScopeHousingMeshSurgery
                 // Update the active optic to the new mode
                 _activeOptic = os;
 
-                float maxMag = ZoomController.GetMaxMagnification(os);
+                float minFov = ZoomController.GetMinFov(os);
                 bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                    && maxMag > 10f;
+                    && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
                 if (bypassForMode)
                 {
                     _modBypassedForCurrentScope = true;
@@ -335,13 +335,13 @@ namespace ScopeHousingMeshSurgery
             _isScoped = true;
             _activeOptic = os;
 
-            float maxMag = ZoomController.GetMaxMagnification(os);
+            float minFov = ZoomController.GetMinFov(os);
             _modBypassedForCurrentScope = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                && maxMag > 10f;
+                && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
             if (_modBypassedForCurrentScope)
             {
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    $"[ScopeLifecycle] Bypassing mod for high-magnification scope: max={maxMag:F1}x (>10x)");
+                    $"[ScopeLifecycle] Bypassing mod for high-magnification scope: minFov={minFov:F2}° (< {ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value:F1}°)");
 
                 LensTransparency.RestoreAll();
                 CameraSettingsManager.Restore();

@@ -130,13 +130,14 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Returns the optic's maximum magnification.
+        /// Returns the optic's minimum FOV (i.e. maximum zoom level) in degrees.
         /// For variable zoom scopes this is read from ScopeZoomHandler range.
-        /// For fixed scopes this falls back to current magnification.
+        /// For fixed scopes this falls back to the current scope FOV.
+        /// Lower values = higher magnification (e.g. 3.5° ≈ 10x, 1.75° ≈ 20x).
         /// </summary>
-        public static float GetMaxMagnification(OpticSight os)
+        public static float GetMinFov(OpticSight os)
         {
-            if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
+            if (os == null) return 35f / ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
             try
             {
@@ -176,12 +177,14 @@ namespace ScopeHousingMeshSurgery
                     }
 
                     if (minFov > 0.1f)
-                        return 35f / minFov;
+                        return minFov;
                 }
             }
             catch { }
 
-            return GetMagnification(os);
+            // Fallback: convert current magnification back to FOV
+            float currentMag = GetMagnification(os);
+            return 35f / currentMag;
         }
 
         /// <summary>

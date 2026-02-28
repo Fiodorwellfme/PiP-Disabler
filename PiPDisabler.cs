@@ -197,7 +197,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 var os = field.GetValue(updater) as OpticSight;
                 if (os == null) return false;
 
-                return ZoomController.GetMaxMagnification(os) > 10f;
+                return ZoomController.GetMinFov(os) < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
             }
             catch
             {

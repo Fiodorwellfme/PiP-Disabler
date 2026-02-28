@@ -41,6 +41,10 @@ namespace ScopeHousingMeshSurgery
         // Cached transforms
         private static Transform _opticTransform;   // OpticSight   — for forward (downrange)
 
+        // Anchor used for weapon-scale offset projection (lens / optic camera).
+        private static Transform _reticleAnchor;
+        private static Renderer  _lensRenderer;
+
         // CommandBuffer state
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
@@ -55,6 +59,12 @@ namespace ScopeHousingMeshSurgery
 
         // Camera alignment state
         private static bool _alignmentActive;
+
+        // Weapon-scale compensation offset (NDC space, -1..1).
+        // When WeaponScalingPatch shrinks the ribcage, the scope housing shifts
+        // on screen relative to where the camera-aligned center is.  This offset
+        // moves the reticle to match that shift so reticle and housing stay locked.
+        private static Vector2 _weaponScaleOffset;
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -122,6 +132,13 @@ namespace ScopeHousingMeshSurgery
             {
                 _opticTransform = os.transform;
 
+
+                // Weapon-scale offset should track the optic's visual center, not the optic root pivot.
+                // Prefer the optic camera transform (kept in sync by OpticComponentUpdater), else lens renderer,
+                // else the optic root.
+                _lensRenderer = os.LensRenderer;
+                _reticleAnchor = _lensRenderer != null ? _lensRenderer.transform : null;
+                if (_reticleAnchor == null) _reticleAnchor = _opticTransform;
                 EnsureMeshAndMaterial();
 
                 _reticleMat.mainTexture = _savedMarkTex;
@@ -186,9 +203,12 @@ namespace ScopeHousingMeshSurgery
             _savedMarkTex      = null;
             _savedMaskTex      = null;
             _opticTransform    = null;
+            _reticleAnchor   = null;
+            _lensRenderer    = null;
             _lastMag           = 1f;
             _baseScale         = 0f;
             _settled           = false;
+            _weaponScaleOffset = Vector2.zero;
         }
 
         /// <summary>
@@ -197,6 +217,13 @@ namespace ScopeHousingMeshSurgery
         /// render centered rather than tracking lens position.
         /// </summary>
         public static bool IsAlignmentActive => _alignmentActive && _settled;
+
+        /// <summary>
+        /// Current weapon-scale offset in NDC space (-1..1).
+        /// ScopeEffectsRenderer reads this to shift vignette/shadow by the same amount
+        /// so all overlays track the visually-shifted scope housing.
+        /// </summary>
+        public static Vector2 WeaponScaleOffset => _weaponScaleOffset;
 
         /// <summary>
         /// Returns the current optic transform (for ScopeEffectsRenderer to
@@ -284,6 +311,46 @@ namespace ScopeHousingMeshSurgery
                 {
                     cam.transform.rotation = swaySource.rotation;
                 }
+
+                // ── Weapon-scale offset ──────────────────────────────────────
+                // When WeaponScalingPatch shrinks the ribcage, the scope housing
+                // shifts on screen because its vertices move toward the bone pivot.
+                // The camera is aligned to the scope's forward, so screen center
+                // is where the scope WOULD be at scale 1.0.  Project the optic's
+                // actual world position to viewport space; any offset from center
+                // IS the scale-induced displacement.  Apply the same offset to the
+                // reticle so it tracks the housing.
+                //
+                // When scaling is inactive (scale ≈ 1.0), the optic projects to
+                // center → offset is zero → reticle stays centered (preserving the
+                // original jitter-free behavior).
+                if (Patches.WeaponScalingPatch.IsScalingActive)
+                {
+                    // Prefer the optic camera transform (most stable), else our cached lens/optic anchor.
+                    Transform anchor = PiPDisabler.OpticCameraTransform ?? _reticleAnchor ?? _opticTransform;
+
+                    // Best: use lens renderer bounds center (tracks the visible tube center even if pivots are off).
+                    Vector3 worldPoint;
+                    if (_lensRenderer != null) worldPoint = _lensRenderer.bounds.center;
+                    else if (anchor != null) worldPoint = anchor.position;
+                    else worldPoint = Vector3.zero;
+
+                    Vector3 vp = cam.WorldToViewportPoint(worldPoint);
+                    if (vp.z > 0f) // in front of camera
+                    {
+                        Vector2 newOffset = new Vector2((vp.x - 0.5f) * 2f, (vp.y - 0.5f) * 2f);
+                        // Small smoothing kills micro-jitter without adding noticeable lag.
+                        _weaponScaleOffset = Vector2.Lerp(_weaponScaleOffset, newOffset, 0.35f);
+                    }
+                    else
+                    {
+                        _weaponScaleOffset = Vector2.zero;
+                    }
+                }
+                else
+                {
+                    _weaponScaleOffset = Vector2.zero;
+                }
             }
 
             RebuildMatrix(cam);
@@ -315,7 +382,9 @@ namespace ScopeHousingMeshSurgery
             float ndcSize = angularSize / tanHalfFov;
             ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
-            Vector3 pos = new Vector3(0f, 0f, 0.5f);
+            // Offset from center to track weapon-scale-induced housing shift.
+            // _weaponScaleOffset is in NDC (-1..1), computed in OnPreCullCallback.
+            Vector3 pos = new Vector3(_weaponScaleOffset.x, _weaponScaleOffset.y, 0.5f);
             float aspect = GetDisplayAspect(cam);
             Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
             _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);

@@ -73,6 +73,7 @@ namespace ScopeHousingMeshSurgery
         // --- General ---
         internal static ConfigEntry<bool> DisablePiP;
         internal static ConfigEntry<bool> AutoDisableForHighMagnificationScopes;
+        internal static ConfigEntry<float> HighMagnificationFovThreshold;
         internal static ConfigEntry<KeyCode> DisablePiPToggleKey;
         internal static ConfigEntry<bool> MakeLensesTransparent;
         internal static ConfigEntry<KeyCode> LensesTransparentToggleKey;
@@ -171,7 +172,12 @@ namespace ScopeHousingMeshSurgery
                 "Disable Picture-in-Picture optic rendering (No-PiP mode). " +
                 "Core feature — gives identical perf between hip-fire and ADS.");
             AutoDisableForHighMagnificationScopes = Config.Bind("1. General", "AutoDisableForHighMagnificationScopes", false,
-                "Automatically disable all mod effects while scoped with optics whose maximum magnification exceeds 10x.");
+                "Automatically disable all mod effects while scoped with optics whose minimum FOV is below the threshold.");
+            HighMagnificationFovThreshold = Config.Bind("1. General", "HighMagnificationFovThreshold", 3.5f,
+                new ConfigDescription(
+                    "FOV threshold (degrees) below which the mod auto-disables for high magnification scopes. " +
+                    "Lower FOV = higher magnification. Default 3.5° ≈ 10x. Set to 1.75 for ≈20x, 7.0 for ≈5x.",
+                    new AcceptableValueRange<float>(0.5f, 15f)));
             DisablePiPToggleKey = Config.Bind("1. General", "DisablePiPToggleKey", KeyCode.F10,
                 "Toggle key for PiP disable.");
 
