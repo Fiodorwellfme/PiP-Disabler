@@ -188,13 +188,17 @@ namespace ScopeHousingMeshSurgery
         {
             if (cam == null) return;
 
-            // Constant clip-space centered overlay.
-            // Texture controls the visible aperture size via VignetteSizeMult.
-            // >2 ensures full viewport coverage on all aspect ratios.
-            const float ndcScale = 2.25f;
+            // Match the reticle's placement technique: reuse the same NDC offset
+            // computed from optic projection when weapon scaling shifts the scope
+            // housing on screen. This keeps vignette, shadow, and reticle locked.
+            Vector2 ndcOffset = ReticleRenderer.WeaponScaleOffset;
+
+            // Expand overlay scale when offset is non-zero so we never expose
+            // texture borders at screen edges while swaying.
+            float ndcScale = ComputeScreenCoveringScale(2.25f, ndcOffset, 0.02f);
 
             _vigMatrix = Matrix4x4.TRS(
-                new Vector3(0f, 0f, 0.6f),
+                new Vector3(ndcOffset.x, ndcOffset.y, 0.6f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
         }
@@ -203,14 +207,24 @@ namespace ScopeHousingMeshSurgery
         {
             if (cam == null) return;
 
-            // Constant clip-space centered overlay.
-            // Texture controls hole radius via ScopeShadowRadius.
-            const float ndcScale = 2.25f;
+            // Use the same reticle-derived offset so shadow tracks the same
+            // optic displacement on screen.
+            Vector2 ndcOffset = ReticleRenderer.WeaponScaleOffset;
+
+            // Shadow needs guaranteed full-screen coverage while offset follows sway.
+            // Grow the quad based on current offset magnitude to avoid uncovered slivers.
+            float ndcScale = ComputeScreenCoveringScale(2.25f, ndcOffset, 0.03f);
 
             _shadowMatrix = Matrix4x4.TRS(
-                new Vector3(0f, 0f, 0.7f),
+                new Vector3(ndcOffset.x, ndcOffset.y, 0.7f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
+        }
+
+        private static float ComputeScreenCoveringScale(float baseScale, Vector2 ndcOffset, float extraPadding)
+        {
+            float minHalfExtent = 1f + Mathf.Max(Mathf.Abs(ndcOffset.x), Mathf.Abs(ndcOffset.y)) + Mathf.Max(0f, extraPadding);
+            return Mathf.Max(baseScale, minHalfExtent * 2f);
         }
 
         private static void RebuildCommandBuffer(Camera cam)

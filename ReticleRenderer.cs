@@ -339,8 +339,9 @@ namespace ScopeHousingMeshSurgery
                     if (vp.z > 0f) // in front of camera
                     {
                         Vector2 newOffset = new Vector2((vp.x - 0.5f) * 2f, (vp.y - 0.5f) * 2f);
-                        // Small smoothing kills micro-jitter without adding noticeable lag.
-                        _weaponScaleOffset = Vector2.Lerp(_weaponScaleOffset, newOffset, 0.35f);
+                        // No smoothing: reticle/vignette/shadow must follow the same
+                        // instantaneous offset each frame.
+                        _weaponScaleOffset = newOffset;
                     }
                     else
                     {
