@@ -188,13 +188,18 @@ namespace ScopeHousingMeshSurgery
         {
             if (cam == null) return;
 
+            // Match the reticle's placement technique: reuse the same NDC offset
+            // computed from optic projection when weapon scaling shifts the scope
+            // housing on screen. This keeps vignette, shadow, and reticle locked.
+            Vector2 ndcOffset = ReticleRenderer.WeaponScaleOffset;
+
             // Constant clip-space centered overlay.
             // Texture controls the visible aperture size via VignetteSizeMult.
             // >2 ensures full viewport coverage on all aspect ratios.
             const float ndcScale = 2.25f;
 
             _vigMatrix = Matrix4x4.TRS(
-                new Vector3(0f, 0f, 0.6f),
+                new Vector3(ndcOffset.x, ndcOffset.y, 0.6f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
         }
@@ -203,12 +208,16 @@ namespace ScopeHousingMeshSurgery
         {
             if (cam == null) return;
 
+            // Use the same reticle-derived offset so shadow tracks the same
+            // optic displacement on screen.
+            Vector2 ndcOffset = ReticleRenderer.WeaponScaleOffset;
+
             // Constant clip-space centered overlay.
             // Texture controls hole radius via ScopeShadowRadius.
             const float ndcScale = 2.25f;
 
             _shadowMatrix = Matrix4x4.TRS(
-                new Vector3(0f, 0f, 0.7f),
+                new Vector3(ndcOffset.x, ndcOffset.y, 0.7f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
         }
