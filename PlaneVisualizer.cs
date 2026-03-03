@@ -96,10 +96,14 @@ namespace ScopeHousingMeshSurgery
                 float p3Pos = ScopeHousingMeshSurgeryPlugin.Plane3Position.Value;
                 float p4R = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
                 float p4Pos = ScopeHousingMeshSurgeryPlugin.Plane4Position.Value;
+                float p5R = ScopeHousingMeshSurgeryPlugin.Plane5Radius.Value;
+                float p5Pos = ScopeHousingMeshSurgeryPlugin.Plane5Position.Value;
+                float p6R = ScopeHousingMeshSurgeryPlugin.Plane6Radius.Value;
+                float p6Pos = ScopeHousingMeshSurgeryPlugin.Plane6Position.Value;
                 float opacity = ScopeHousingMeshSurgeryPlugin.CutVolumeOpacity.Value;
 
-                int hash = ComputeTubeHash(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, cutLength);
-                EnsureTubeCreated(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, cutLength, opacity, hash);
+                int hash = ComputeTubeHash(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, p5R, p5Pos, p6R, p6Pos, cutLength);
+                EnsureTubeCreated(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, p5R, p5Pos, p6R, p6Pos, cutLength, opacity, hash);
 
                 // Update opacity in real-time without regenerating mesh
                 if (_tubeMat != null)
@@ -125,7 +129,7 @@ namespace ScopeHousingMeshSurgery
                     EnsurePreserveRingCreated();
                     // Compute the radius at the preserve boundary using the same profile
                     float preserveT = cutLength > 1e-5f ? Mathf.Clamp01(preserve / cutLength) : 0f;
-                    float preserveR = MeshPlaneCutter.RadiusAtT4(preserveT, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos);
+                    float preserveR = MeshPlaneCutter.RadiusAtT6(preserveT, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, p5R, p5Pos, p6R, p6Pos);
                     Vector3 preservePos = nearPos + planeNormal * preserve;
                     _preserveRingGO.SetActive(true);
                     _preserveRingGO.transform.position = preservePos;
@@ -191,7 +195,8 @@ namespace ScopeHousingMeshSurgery
         //  3D Tube Volume
         // ============================
 
-        private static int ComputeTubeHash(float p1R, float p2R, float p2Pos, float p3R, float p3Pos, float p4R, float p4Pos, float len)
+        private static int ComputeTubeHash(float p1R, float p2R, float p2Pos, float p3R, float p3Pos,
+            float p4R, float p4Pos, float p5R, float p5Pos, float p6R, float p6Pos, float len)
         {
             unchecked
             {
@@ -203,19 +208,24 @@ namespace ScopeHousingMeshSurgery
                 h = h * 31 + p3Pos.GetHashCode();
                 h = h * 31 + p4R.GetHashCode();
                 h = h * 31 + p4Pos.GetHashCode();
+                h = h * 31 + p5R.GetHashCode();
+                h = h * 31 + p5Pos.GetHashCode();
+                h = h * 31 + p6R.GetHashCode();
+                h = h * 31 + p6Pos.GetHashCode();
                 h = h * 31 + len.GetHashCode();
                 return h;
             }
         }
 
-        private static void EnsureTubeCreated(float p1R, float p2R, float p2Pos, float p3R, float p3Pos, float p4R, float p4Pos,
+        private static void EnsureTubeCreated(float p1R, float p2R, float p2Pos, float p3R, float p3Pos,
+            float p4R, float p4Pos, float p5R, float p5Pos, float p6R, float p6Pos,
             float cutLen, float opacity, int hash)
         {
             if (_tubeGO != null && _lastTubeHash == hash) return;
 
             // Regenerate mesh when config changes
             if (_tubeMesh != null) Object.Destroy(_tubeMesh);
-            _tubeMesh = GenerateTubeMesh(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, cutLen);
+            _tubeMesh = GenerateTubeMesh(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, p5R, p5Pos, p6R, p6Pos, cutLen);
 
             if (_tubeGO == null)
             {
@@ -229,12 +239,13 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Generate a tube mesh with near→mid→far radius profile.
+        /// Generate a tube mesh with 6-plane radius profile (planes 1–6, closest to farthest from camera).
         /// The tube extends along local Z from 0 to cutLen.
         /// Double-sided (visible from both inside and outside the bore).
         /// End caps included so the volume appears as a solid shape.
         /// </summary>
-        private static Mesh GenerateTubeMesh(float p1R, float p2R, float p2Pos, float p3R, float p3Pos, float p4R, float p4Pos, float cutLen)
+        private static Mesh GenerateTubeMesh(float p1R, float p2R, float p2Pos, float p3R, float p3Pos,
+            float p4R, float p4Pos, float p5R, float p5Pos, float p6R, float p6Pos, float cutLen)
         {
             const int segments = 32;   // circumferential resolution
             const int rings = 20;      // longitudinal resolution
@@ -249,7 +260,7 @@ namespace ScopeHousingMeshSurgery
             {
                 float t = (float)r / rings;
                 float z = t * cutLen;
-                float radius = GetRadiusAtT(t, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos);
+                float radius = GetRadiusAtT(t, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, p5R, p5Pos, p6R, p6Pos);
 
                 for (int s = 0; s <= segments; s++)
                 {
@@ -286,11 +297,11 @@ namespace ScopeHousingMeshSurgery
 
             // ── Near cap (z = 0) ────────────────────────────────────────
             AddCapDisc(verts, norms, uvs, tris, segments,
-                GetRadiusAtT(0f, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos), 0f, -Vector3.forward);
+                GetRadiusAtT(0f, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, p5R, p5Pos, p6R, p6Pos), 0f, -Vector3.forward);
 
             // ── Far cap (z = cutLen) ────────────────────────────────────
             AddCapDisc(verts, norms, uvs, tris, segments,
-                GetRadiusAtT(1f, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos), cutLen, Vector3.forward);
+                GetRadiusAtT(1f, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, p5R, p5Pos, p6R, p6Pos), cutLen, Vector3.forward);
 
             var mesh = new Mesh { name = "CutVolumeTube" };
             mesh.SetVertices(verts);
@@ -301,7 +312,8 @@ namespace ScopeHousingMeshSurgery
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[PlaneVis] Generated tube: verts={verts.Count} tris={tris.Count / 3} " +
-                $"p1R={p1R:F4}@0.00 p2R={p2R:F4}@{p2Pos:F2} p3R={p3R:F4}@{p3Pos:F2} p4R={p4R:F4}@{p4Pos:F2} len={cutLen:F3}");
+                $"p1R={p1R:F4}@0.00 p2R={p2R:F4}@{p2Pos:F2} p3R={p3R:F4}@{p3Pos:F2} " +
+                $"p4R={p4R:F4}@{p4Pos:F2} p5R={p5R:F4}@{p5Pos:F2} p6R={p6R:F4}@{p6Pos:F2} len={cutLen:F3}");
 
             return mesh;
         }
@@ -341,12 +353,13 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Compute radius at normalized position t (0=near, 1=far).
-        /// Delegates to MeshPlaneCutter.RadiusAtT so visualizer and cutter always agree.
+        /// Compute radius at normalized position t (0=near, 1=far) using all 6 planes.
+        /// Delegates to MeshPlaneCutter.RadiusAtT6 so visualizer and cutter always agree.
         /// </summary>
-        private static float GetRadiusAtT(float t, float p1R, float p2R, float p2Pos, float p3R, float p3Pos, float p4R, float p4Pos)
+        private static float GetRadiusAtT(float t, float p1R, float p2R, float p2Pos, float p3R, float p3Pos,
+            float p4R, float p4Pos, float p5R, float p5Pos, float p6R, float p6Pos)
         {
-            return MeshPlaneCutter.RadiusAtT4(t, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos);
+            return MeshPlaneCutter.RadiusAtT6(t, p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, p5R, p5Pos, p6R, p6Pos);
         }
 
         // ============================
