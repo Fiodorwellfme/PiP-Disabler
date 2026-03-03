@@ -193,7 +193,7 @@ namespace ScopeHousingMeshSurgery
                 "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
                 "With this enabled, the weapon shrinks proportionally as you zoom in so it\n" +
                 "always occupies the same screen space at every magnification level.");
-            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 0.00f,
+            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 0.90f,
                 new ConfigDescription(
                     "Placeholder text\n",
                     new AcceptableValueRange<float>(0.00f, 2.00f)));
@@ -423,9 +423,9 @@ namespace ScopeHousingMeshSurgery
             ManualKeepPositive = Config.Bind("3. Mesh Surgery", "ManualKeepPositive", true,
                 "Only used when ForceManualKeepSide=true.");
             ExcludeNameContainsCsv = Config.Bind("3. Mesh Surgery", "ExcludeNameContainsCsv",
-                "linza,lens,glass,reticle,collider,trigger,shadow,backlens",
+                "",
                 "Comma-separated substrings to exclude from mesh cutting.");
-            ExpandSearchToWeaponRoot = Config.Bind("3. Mesh Surgery", "ExpandSearchToWeaponRoot", false,
+            ExpandSearchToWeaponRoot = Config.Bind("3. Mesh Surgery", "ExpandSearchToWeaponRoot", true,
                 "Expand the mesh surgery search root all the way up to the Weapon_root node.\n" +
                 "When enabled, meshes on the weapon body under Weapon_root are also candidates\n" +
                 "for cutting — not just those in the scope sub-hierarchy.\n" +
@@ -434,7 +434,7 @@ namespace ScopeHousingMeshSurgery
                 "Example path: Weapon_root/Weapon_root_anim/weapon/mod_scope/...");
 
             // --- Scope Effects ---
-            VignetteEnabled = Config.Bind("4. Scope Effects", "VignetteEnabled", true,
+            VignetteEnabled = Config.Bind("4. Scope Effects", "VignetteEnabled", false,
                 "Render a circular vignette ring around the scope aperture.\n" +
                 "A world-space quad at the lens position fading from transparent centre to black edge.");
             VignetteOpacity = Config.Bind("4. Scope Effects", "VignetteOpacity", 0.5823944f,
