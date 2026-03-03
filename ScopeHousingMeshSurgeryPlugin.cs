@@ -75,6 +75,8 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> AutoDisableForHighMagnificationScopes;
         internal static ConfigEntry<float> HighMagnificationFovThreshold;
         internal static ConfigEntry<KeyCode> DisablePiPToggleKey;
+        internal static ConfigEntry<KeyCode> ScopeWhitelistToggleKey;
+        internal static ConfigEntry<string> ScopeWhitelist;
         internal static ConfigEntry<bool> MakeLensesTransparent;
         internal static ConfigEntry<KeyCode> LensesTransparentToggleKey;
 
@@ -181,6 +183,12 @@ namespace ScopeHousingMeshSurgery
                     new AcceptableValueRange<float>(0.5f, 15f)));
             DisablePiPToggleKey = Config.Bind("1. General", "DisablePiPToggleKey", KeyCode.F10,
                 "Toggle key for PiP disable.");
+            ScopeWhitelistToggleKey = Config.Bind("1. General", "ScopeWhitelistToggleKey", KeyCode.F7,
+                "Toggle the currently used scope in ScopeWhitelist (adds it if missing, removes it if present).");
+            ScopeWhitelist = Config.Bind("1. General", "ScopeWhitelist", "",
+                "Comma-separated list of allowed scope object names (scope_... under mod_scope).\n" +
+                "The mod only activates for scopes in this list. Use ScopeWhitelistToggleKey while ADS\n" +
+                "to quickly add/remove the currently active scope.");
 
             MakeLensesTransparent = Config.Bind("1. General", "MakeLensesTransparent", true,
                 "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.");
@@ -572,6 +580,11 @@ namespace ScopeHousingMeshSurgery
                 Logger.LogInfo($"Disable PiP toggled: {DisablePiP.Value}");
                 if (!DisablePiP.Value)
                     PiPDisabler.RestoreAllCameras();
+            }
+
+            if (ScopeWhitelistToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(ScopeWhitelistToggleKey.Value))
+            {
+                ScopeLifecycle.ToggleCurrentScopeWhitelist();
             }
 
             if (InputProxy.GetKeyDown(LensesTransparentToggleKey.Value))

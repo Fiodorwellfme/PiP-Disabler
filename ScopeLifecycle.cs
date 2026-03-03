@@ -40,10 +40,21 @@ namespace ScopeHousingMeshSurgery
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
+        private static string _currentScopeWhitelistName;
 
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
         public static OpticSight ActiveOptic => _activeOptic;
+        public static string CurrentScopeWhitelistName => _currentScopeWhitelistName;
+
+        public static bool IsCurrentScopeWhitelisted
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(_currentScopeWhitelistName)) return false;
+                return ScopeDiagnostics.IsInScopeWhitelist(_currentScopeWhitelistName);
+            }
+        }
 
         /// <summary>
         /// One-time reflection setup. Call from plugin Awake.
@@ -103,7 +114,10 @@ namespace ScopeHousingMeshSurgery
         public static void OnOpticEnabled(OpticSight os)
         {
             if (os != null)
+            {
                 _lastEnabledOptic = os;
+                _currentScopeWhitelistName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
+            }
 
             // If already scoped and a DIFFERENT optic enables → genuine mode switch.
             // Guard against sibling mode_000/mode_001 co-activating on scope enter, which
@@ -115,6 +129,29 @@ namespace ScopeHousingMeshSurgery
 
                 // Update the active optic to the new mode
                 _activeOptic = os;
+                _currentScopeWhitelistName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
+
+                if (!ScopeDiagnostics.IsInScopeWhitelist(_currentScopeWhitelistName))
+                {
+                    _modBypassedForCurrentScope = true;
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{(_currentScopeWhitelistName ?? "(unknown)")}'");
+
+                    RestoreFov();
+                    ZoomController.Restore();
+                    ZoomController.ResetScrollZoom();
+                    ReticleRenderer.Cleanup();
+                    ScopeEffectsRenderer.Cleanup();
+                    LensTransparency.RestoreAll();
+                    CameraSettingsManager.Restore();
+                    PiPDisabler.RestoreAllCameras();
+                    Patches.WeaponScalingPatch.RestoreScale();
+                    if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                        MeshSurgeryManager.RestoreForScope(os.transform);
+                    PlaneVisualizer.Hide();
+                    ZeroingController.Reset();
+                    return;
+                }
 
                 float minFov = ZoomController.GetMinFov(os);
                 bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
@@ -312,6 +349,7 @@ namespace ScopeHousingMeshSurgery
             if (_isScoped)
                 DoScopeExit();
             _modBypassedForCurrentScope = false;
+            _currentScopeWhitelistName = null;
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
             _lastEnabledOptic = null;
@@ -345,6 +383,21 @@ namespace ScopeHousingMeshSurgery
 
             _isScoped = true;
             _activeOptic = os;
+            _currentScopeWhitelistName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
+
+            if (!ScopeDiagnostics.IsInScopeWhitelist(_currentScopeWhitelistName))
+            {
+                _modBypassedForCurrentScope = true;
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{(_currentScopeWhitelistName ?? "(unknown)")}'");
+
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
+                return;
+            }
 
             float minFov = ZoomController.GetMinFov(os);
             _modBypassedForCurrentScope = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
@@ -432,6 +485,7 @@ namespace ScopeHousingMeshSurgery
 
             _isScoped = false;
             _activeOptic = null;
+            _currentScopeWhitelistName = null;
 
             // If this scope was bypassed (high magnification), skip mod cleanup paths.
             if (_modBypassedForCurrentScope)
@@ -488,6 +542,31 @@ namespace ScopeHousingMeshSurgery
 
             // 8. Reset zeroing state
             ZeroingController.Reset();
+        }
+
+        public static void ToggleCurrentScopeWhitelist()
+        {
+            string scopeName = _currentScopeWhitelistName;
+
+            if (string.IsNullOrWhiteSpace(scopeName) && _lastEnabledOptic != null)
+                scopeName = ScopeDiagnostics.GetScopeWhitelistName(_lastEnabledOptic.transform);
+
+            if (string.IsNullOrWhiteSpace(scopeName))
+            {
+                ScopeHousingMeshSurgeryPlugin.LogWarn("[Whitelist] No active scope to toggle.");
+                return;
+            }
+
+            bool added = ScopeDiagnostics.ToggleScopeWhitelistEntry(scopeName, out var newCsv);
+            ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value = newCsv;
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                $"[Whitelist] {(added ? "Added" : "Removed")} '{scopeName}'. List: {(string.IsNullOrWhiteSpace(newCsv) ? "(empty)" : newCsv)}");
+
+            if (_isScoped)
+            {
+                DoScopeExit();
+                CheckAndUpdate();
+            }
         }
 
         // ===== FOV Helpers =====
