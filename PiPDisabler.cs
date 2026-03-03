@@ -58,12 +58,14 @@ namespace ScopeHousingMeshSurgery
         private static readonly System.Collections.Generic.Dictionary<OpticSight, int> _ignoreOnDisableFrame =
             new System.Collections.Generic.Dictionary<OpticSight, int>(32);
 
-internal static void TickBaseOpticCamera()
+        internal static void TickBaseOpticCamera()
         {
             if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
 
-            // Auto-bypass for high-mag scopes must re-enable vanilla PiP.
-            if (ScopeLifecycle.IsModBypassedForCurrentScope)
+            // Auto-bypass for high-mag/non-whitelisted scopes must re-enable vanilla PiP,
+            // but only while we're actually scoped. If a bypass flag lingers for a frame
+            // during ADS exit, keeping PiP enabled can tank FPS until the next scope enter.
+            if (ScopeLifecycle.IsModBypassedForCurrentScope && ScopeLifecycle.IsScoped)
             {
                 RestoreAllCameras();
                 return;
