@@ -62,6 +62,16 @@ namespace ScopeHousingMeshSurgery
         {
             if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
 
+            // When not ADS-scoped, don't keep touching optic cameras every frame.
+            // This mirrors the observed behavior where fully disabling the mod restores FPS.
+            // If we have tracked camera/optic state, restore once and exit.
+            if (!ScopeLifecycle.IsScoped)
+            {
+                if (_cams.Count > 0 || _baseOpticCams.Count > 0 || _opticOrigEnabled.Count > 0)
+                    RestoreAllCameras();
+                return;
+            }
+
             // Auto-bypass for high-mag/non-whitelisted scopes must re-enable vanilla PiP,
             // but only while we're actually scoped. If a bypass flag lingers for a frame
             // during ADS exit, keeping PiP enabled can tank FPS until the next scope enter.
