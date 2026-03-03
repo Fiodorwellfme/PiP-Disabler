@@ -1,4 +1,6 @@
 using EFT.CameraControl;
+using System;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -33,6 +35,12 @@ namespace ScopeHousingMeshSurgery
         private static Mesh         _reticleMesh;
         private static Texture      _savedMarkTex;
         private static Texture      _savedMaskTex;
+        private static Mesh         _savedMeshReticle;
+        private static Material     _savedMeshReticleSourceMat;
+        private static Material     _meshReticleMat;
+        private static Vector3      _savedMeshPosition = new Vector3(0f, 0f, 0.5f);
+        private static Quaternion   _savedMeshRotation = Quaternion.identity;
+        private static float        _savedMeshScale = 1f;
 
         // Scale tracking
         private static float _baseScale;
@@ -69,6 +77,12 @@ namespace ScopeHousingMeshSurgery
 
             _savedMarkTex = null;
             _savedMaskTex = null;
+            _savedMeshReticle = null;
+            _savedMeshReticleSourceMat = null;
+            _meshReticleMat = null;
+            _savedMeshPosition = new Vector3(0f, 0f, 0.5f);
+            _savedMeshRotation = Quaternion.identity;
+            _savedMeshScale = 1f;
 
             try
             {
@@ -97,10 +111,14 @@ namespace ScopeHousingMeshSurgery
                         tex2d.mipMapBias = ScopeHousingMeshSurgeryPlugin.ReticleMipBias.Value;
                 }
 
+                if (_savedMarkTex == null)
+                    TryExtractMeshReticle(os);
+
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[Reticle] Extracted: _MarkTex={(_savedMarkTex != null ? _savedMarkTex.name : "null")} " +
                     $"({(_savedMarkTex != null ? $"{_savedMarkTex.width}x{_savedMarkTex.height}" : "?")}) " +
                     $"_MaskTex={(_savedMaskTex != null ? _savedMaskTex.name : "null")} " +
+                    $"meshFallback={(_savedMeshReticle != null ? _savedMeshReticle.name : "null")} " +
                     $"filter=Trilinear aniso=16 mipBias={ScopeHousingMeshSurgeryPlugin.ReticleMipBias.Value}");
             }
             catch (System.Exception e)
@@ -116,16 +134,22 @@ namespace ScopeHousingMeshSurgery
         public static void Show(OpticSight os, float magnification = 1f)
         {
             if (!ScopeHousingMeshSurgeryPlugin.ShowReticle.Value) return;
-            if (_savedMarkTex == null || os == null) return;
+            if ((_savedMarkTex == null && _savedMeshReticle == null) || os == null) return;
 
             try
             {
                 _opticTransform = os.transform;
 
-                EnsureMeshAndMaterial();
-
-                _reticleMat.mainTexture = _savedMarkTex;
-                ApplyHorizontalFlip();
+                if (_savedMeshReticle != null)
+                {
+                    EnsureMeshReticleMaterial();
+                }
+                else
+                {
+                    EnsureMeshAndMaterial();
+                    _reticleMat.mainTexture = _savedMarkTex;
+                    ApplyHorizontalFlip();
+                }
 
                 // Scale
                 float configBase = ScopeHousingMeshSurgeryPlugin.ReticleBaseSize.Value;
@@ -185,6 +209,9 @@ namespace ScopeHousingMeshSurgery
             Hide();
             _savedMarkTex      = null;
             _savedMaskTex      = null;
+            _savedMeshReticle  = null;
+            _savedMeshReticleSourceMat = null;
+            _meshReticleMat    = null;
             _opticTransform    = null;
             _lastMag           = 1f;
             _baseScale         = 0f;
@@ -261,7 +288,10 @@ namespace ScopeHousingMeshSurgery
         private static void OnPreCullCallback(Camera cam)
         {
             if (cam != _attachedCamera) return;
-            if (_cmdBuffer == null || _reticleMat == null || !_settled) return;
+            if (_cmdBuffer == null || !_settled) return;
+
+            Material activeMat = _savedMeshReticle != null ? _meshReticleMat : _reticleMat;
+            if (activeMat == null) return;
 
             // ── Camera alignment ─────────────────────────────────────────
             // Override the camera's rotation to look exactly where the scope
@@ -315,10 +345,28 @@ namespace ScopeHousingMeshSurgery
             float ndcSize = angularSize / tanHalfFov;
             ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
-            Vector3 pos = new Vector3(0f, 0f, 0.5f);
+            Vector3 pos = _savedMeshReticle != null ? _savedMeshPosition : new Vector3(0f, 0f, 0.5f);
             float aspect = GetDisplayAspect(cam);
-            Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
-            _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
+
+            Vector3 scale;
+            Quaternion rotation;
+
+            if (_savedMeshReticle != null)
+            {
+                float meshExtent = Mathf.Max(0.01f, Mathf.Max(
+                    _savedMeshReticle.bounds.size.x,
+                    _savedMeshReticle.bounds.size.y));
+                float unitScale = (ndcSize / meshExtent) * Mathf.Max(0.0001f, _savedMeshScale);
+                scale = new Vector3(unitScale / Mathf.Max(0.01f, aspect), unitScale, unitScale);
+                rotation = _savedMeshRotation;
+            }
+            else
+            {
+                scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
+                rotation = Quaternion.identity;
+            }
+
+            _reticleMatrix = Matrix4x4.TRS(pos, rotation, scale);
         }
 
         /// <summary>
@@ -335,7 +383,12 @@ namespace ScopeHousingMeshSurgery
 
             // Pure screen-space draw (clip-space matrices).
             _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-            _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+
+            Mesh drawMesh = _savedMeshReticle != null ? _savedMeshReticle : _reticleMesh;
+            Material drawMat = _savedMeshReticle != null ? _meshReticleMat : _reticleMat;
+            if (drawMesh != null && drawMat != null)
+                _cmdBuffer.DrawMesh(drawMesh, _reticleMatrix, drawMat, 0, -1);
+
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
         }
 
@@ -371,6 +424,98 @@ namespace ScopeHousingMeshSurgery
             _reticleMesh.uv = flip
                 ? new[] { new Vector2(1,0), new Vector2(0,0), new Vector2(0,1), new Vector2(1,1) }
                 : new[] { new Vector2(0,0), new Vector2(1,0), new Vector2(1,1), new Vector2(0,1) };
+        }
+
+        private static void EnsureMeshReticleMaterial()
+        {
+            if (_savedMeshReticle == null || _meshReticleMat != null) return;
+
+            if (_savedMeshReticleSourceMat != null)
+                _meshReticleMat = new Material(_savedMeshReticleSourceMat);
+            else
+            {
+                Shader shader =
+                    Shader.Find("Sprites/Default") ??
+                    Shader.Find("Unlit/Transparent") ??
+                    Shader.Find("Legacy Shaders/Transparent/Diffuse");
+                if (shader == null)
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogWarn("[Reticle] Mesh fallback material shader lookup failed.");
+                    return;
+                }
+                _meshReticleMat = new Material(shader) { color = Color.white };
+            }
+
+            _meshReticleMat.renderQueue = 3100;
+            _meshReticleMat.SetInt("_ZTest", (int)CompareFunction.Always);
+            _meshReticleMat.SetInt("_ZWrite", 0);
+        }
+
+        private static void TryExtractMeshReticle(OpticSight os)
+        {
+            try
+            {
+                Transform scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
+                Transform activeMode = ScopeHierarchy.FindBestMode(scopeRoot);
+                Transform searchRoot = activeMode ?? scopeRoot ?? os.transform;
+                var components = searchRoot.GetComponentsInChildren<MonoBehaviour>(true);
+
+                foreach (var mb in components)
+                {
+                    if (mb == null) continue;
+
+                    Type t = mb.GetType();
+                    string typeName = t.Name ?? string.Empty;
+                    if (typeName.IndexOf("ScopeReticle", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
+                    Mesh mesh = ReadMember<Mesh>(mb, t, "Mesh");
+                    if (mesh == null) continue;
+
+                    Material mat = ReadMember<Material>(mb, t, "Material");
+                    Vector3 pos = ReadMember<Vector3>(mb, t, "Position");
+                    Vector3 rotEuler = ReadMember<Vector3>(mb, t, "Rotation");
+                    float scale = ReadMember<float>(mb, t, "Scale");
+
+                    _savedMeshReticle = mesh;
+                    _savedMeshReticleSourceMat = mat;
+                    _savedMeshPosition = new Vector3(pos.x, pos.y, Mathf.Abs(pos.z) > 0.001f ? pos.z : 0.5f);
+                    _savedMeshRotation = Quaternion.Euler(rotEuler);
+                    _savedMeshScale = Mathf.Abs(scale) > 0.000001f ? Mathf.Abs(scale) : 1f;
+
+                    if (_savedMarkTex == null && mat != null)
+                        _savedMarkTex = mat.mainTexture;
+
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[Reticle] Mesh fallback found on '{typeName}': mesh='{mesh.name}' mat='{mat?.name}' pos={_savedMeshPosition} rot={rotEuler} scale={_savedMeshScale}");
+                    return;
+                }
+            }
+            catch (Exception e)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogWarn($"[Reticle] Mesh fallback extract failed: {e.Message}");
+            }
+        }
+
+        private static T ReadMember<T>(object instance, Type type, string memberName)
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+
+            var field = type.GetField(memberName, flags);
+            if (field != null)
+            {
+                object value = field.GetValue(instance);
+                if (value is T typed) return typed;
+            }
+
+            var prop = type.GetProperty(memberName, flags);
+            if (prop != null && prop.CanRead)
+            {
+                object value = prop.GetValue(instance, null);
+                if (value is T typed) return typed;
+            }
+
+            return default(T);
         }
 
         private static void EnsureMeshAndMaterial()
