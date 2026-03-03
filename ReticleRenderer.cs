@@ -44,7 +44,8 @@ namespace ScopeHousingMeshSurgery
         // CommandBuffer state
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
-        private static bool          _preCullRegistered;
+        private static ReticlePreCullHook _preCullHook;
+        private static bool              _commandBufferAttached;
 
         // World-space TRS for the reticle quad (rebuilt in onPreCull)
         private static Matrix4x4 _reticleMatrix = Matrix4x4.identity;
@@ -177,7 +178,7 @@ namespace ScopeHousingMeshSurgery
         {
             _alignmentActive = false;
             _settled = false;
-            DetachFromCamera();
+            _cmdBuffer?.Clear();
         }
 
         public static void Cleanup()
@@ -212,41 +213,44 @@ namespace ScopeHousingMeshSurgery
             if (mainCam == null) return;
 
             if (_attachedCamera != null && _attachedCamera != mainCam)
-                DetachFromCamera();
-
-            if (_attachedCamera == mainCam) return;
+                DetachFromCamera(releaseBuffer: false);
 
             if (_cmdBuffer == null)
                 _cmdBuffer = new CommandBuffer { name = "ScopeReticleOverlay" };
 
-            mainCam.AddCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer);
-            _attachedCamera = mainCam;
-
-            if (!_preCullRegistered)
+            if (!_commandBufferAttached || _attachedCamera != mainCam)
             {
-                Camera.onPreCull += OnPreCullCallback;
-                _preCullRegistered = true;
+                mainCam.AddCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer);
+                _commandBufferAttached = true;
             }
+
+            _preCullHook = mainCam.GetComponent<ReticlePreCullHook>();
+            if (_preCullHook == null)
+                _preCullHook = mainCam.gameObject.AddComponent<ReticlePreCullHook>();
+            _preCullHook.Initialize(mainCam);
+
+            _attachedCamera = mainCam;
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[Reticle] CommandBuffer attached to '{mainCam.name}' at AfterEverything");
         }
 
-        private static void DetachFromCamera()
+        private static void DetachFromCamera(bool releaseBuffer)
         {
-            if (_preCullRegistered)
-            {
-                Camera.onPreCull -= OnPreCullCallback;
-                _preCullRegistered = false;
-            }
-
             if (_attachedCamera != null && _cmdBuffer != null)
             {
                 try { _attachedCamera.RemoveCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer); }
                 catch (System.Exception) { }
             }
+            _commandBufferAttached = false;
 
-            if (_cmdBuffer != null)
+            if (_preCullHook != null)
+            {
+                Object.Destroy(_preCullHook);
+                _preCullHook = null;
+            }
+
+            if (releaseBuffer && _cmdBuffer != null)
             {
                 _cmdBuffer.Clear();
                 _cmdBuffer.Release();
@@ -254,6 +258,11 @@ namespace ScopeHousingMeshSurgery
             }
 
             _attachedCamera = null;
+        }
+
+        private static void DetachFromCamera()
+        {
+            DetachFromCamera(releaseBuffer: true);
         }
 
         // ── onPreCull — camera alignment + rebuild CommandBuffer ─────────────
@@ -288,6 +297,25 @@ namespace ScopeHousingMeshSurgery
 
             RebuildMatrix(cam);
             RebuildCommandBuffer(cam);
+        }
+
+        private sealed class ReticlePreCullHook : MonoBehaviour
+        {
+            private Camera _camera;
+
+            public void Initialize(Camera cam)
+            {
+                _camera = cam;
+            }
+
+            private void OnPreCull()
+            {
+                if (_camera == null)
+                    _camera = GetComponent<Camera>();
+
+                if (_camera != null)
+                    OnPreCullCallback(_camera);
+            }
         }
 
         // ── Centered quad matrix ─────────────────────────────────────────────

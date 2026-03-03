@@ -51,7 +51,8 @@ namespace ScopeHousingMeshSurgery
         // ── CommandBuffer ───────────────────────────────────────────────────
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
-        private static bool          _preCullRegistered;
+        private static ScopeEffectsPreCullHook _preCullHook;
+        private static bool                   _commandBufferAttached;
 
         // ─────────────────────────────────────────────────────────────────────
         // Public API
@@ -63,18 +64,35 @@ namespace ScopeHousingMeshSurgery
             _ = baseSize;
             _ = magnification;
 
-            if (ScopeHousingMeshSurgeryPlugin.VignetteEnabled.Value)
+            bool vignetteEnabled = ScopeHousingMeshSurgeryPlugin.VignetteEnabled.Value;
+            bool shadowEnabled = ScopeHousingMeshSurgeryPlugin.ScopeShadowEnabled.Value;
+
+            if (!vignetteEnabled && !shadowEnabled)
+            {
+                Hide();
+                return;
+            }
+
+            if (vignetteEnabled)
             {
                 EnsureVignetteMeshAndMat();
                 RefreshVignetteTexture();
                 _vigActive = true;
             }
+            else
+            {
+                _vigActive = false;
+            }
 
-            if (ScopeHousingMeshSurgeryPlugin.ScopeShadowEnabled.Value)
+            if (shadowEnabled)
             {
                 EnsureShadowMeshAndMat();
                 RefreshShadowTexture();
                 _shadowActive = true;
+            }
+            else
+            {
+                _shadowActive = false;
             }
 
             AttachToCamera();
@@ -103,7 +121,7 @@ namespace ScopeHousingMeshSurgery
         {
             _vigActive = false;
             _shadowActive = false;
-            DetachFromCamera();
+            _cmdBuffer?.Clear();
         }
 
         public static void Cleanup()
@@ -121,41 +139,44 @@ namespace ScopeHousingMeshSurgery
             if (mainCam == null) return;
 
             if (_attachedCamera != null && _attachedCamera != mainCam)
-                DetachFromCamera();
-
-            if (_attachedCamera == mainCam) return;
+                DetachFromCamera(releaseBuffer: false);
 
             if (_cmdBuffer == null)
                 _cmdBuffer = new CommandBuffer { name = "ScopeEffectsOverlay" };
 
-            mainCam.AddCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer);
-            _attachedCamera = mainCam;
-
-            if (!_preCullRegistered)
+            if (!_commandBufferAttached || _attachedCamera != mainCam)
             {
-                Camera.onPreCull += OnPreCullCallback;
-                _preCullRegistered = true;
+                mainCam.AddCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer);
+                _commandBufferAttached = true;
             }
+
+            _preCullHook = mainCam.GetComponent<ScopeEffectsPreCullHook>();
+            if (_preCullHook == null)
+                _preCullHook = mainCam.gameObject.AddComponent<ScopeEffectsPreCullHook>();
+            _preCullHook.Initialize(mainCam);
+
+            _attachedCamera = mainCam;
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[ScopeEffects] CommandBuffer attached to '{mainCam.name}' at AfterEverything");
         }
 
-        private static void DetachFromCamera()
+        private static void DetachFromCamera(bool releaseBuffer)
         {
-            if (_preCullRegistered)
-            {
-                Camera.onPreCull -= OnPreCullCallback;
-                _preCullRegistered = false;
-            }
-
             if (_attachedCamera != null && _cmdBuffer != null)
             {
                 try { _attachedCamera.RemoveCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer); }
                 catch (System.Exception) { }
             }
+            _commandBufferAttached = false;
 
-            if (_cmdBuffer != null)
+            if (_preCullHook != null)
+            {
+                Object.Destroy(_preCullHook);
+                _preCullHook = null;
+            }
+
+            if (releaseBuffer && _cmdBuffer != null)
             {
                 _cmdBuffer.Clear();
                 _cmdBuffer.Release();
@@ -163,6 +184,11 @@ namespace ScopeHousingMeshSurgery
             }
 
             _attachedCamera = null;
+        }
+
+        private static void DetachFromCamera()
+        {
+            DetachFromCamera(releaseBuffer: true);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -440,6 +466,25 @@ namespace ScopeHousingMeshSurgery
             // Keep lens effects large enough to match scope housing aperture.
             // Magnification scaling made them collapse too much at higher zoom.
             return fovScale;
+        }
+
+        private sealed class ScopeEffectsPreCullHook : MonoBehaviour
+        {
+            private Camera _camera;
+
+            public void Initialize(Camera cam)
+            {
+                _camera = cam;
+            }
+
+            private void OnPreCull()
+            {
+                if (_camera == null)
+                    _camera = GetComponent<Camera>();
+
+                if (_camera != null)
+                    OnPreCullCallback(_camera);
+            }
         }
 
         // ─────────────────────────────────────────────────────────────────────
