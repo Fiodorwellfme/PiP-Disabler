@@ -342,6 +342,23 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
+        /// Re-evaluates the current scope without clearing cached optic references.
+        /// Used by the whitelist toggle to force a full exit + re-enter cycle while
+        /// preserving the OpticSight reference so CheckAndUpdate can re-detect the scope.
+        /// ForceExit cannot be used here because it nulls _lastEnabledOptic, which
+        /// prevents the subsequent SyncState from finding the optic to re-enter.
+        /// </summary>
+        public static void ReEvaluateCurrentScope()
+        {
+            var savedOptic = _lastEnabledOptic ?? _activeOptic;
+            if (_isScoped)
+                DoScopeExit();
+            _modBypassedForCurrentScope = false;
+            _lastEnabledOptic = savedOptic;
+            CheckAndUpdate();
+        }
+
+        /// <summary>
         /// Called when the mod is re-enabled at runtime.
         /// Immediately reads current PWA state so the mod catches up if the player
         /// is already scoped — without this, effects stay absent until the next

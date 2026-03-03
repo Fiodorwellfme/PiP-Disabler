@@ -628,9 +628,10 @@ namespace ScopeHousingMeshSurgery
                         Logger.LogInfo($"[Whitelist] {(added ? "Added" : "Removed")} '{scopeId}' " +
                             $"{(added ? "to" : "from")} whitelist");
 
-                        // Force re-evaluation so the mod enables/disables immediately
-                        ScopeLifecycle.ForceExit();
-                        ScopeLifecycle.SyncState();
+                        // Force re-evaluation so the mod enables/disables immediately.
+                        // Uses ReEvaluateCurrentScope (not ForceExit+SyncState) because
+                        // ForceExit clears _lastEnabledOptic, preventing re-entry.
+                        ScopeLifecycle.ReEvaluateCurrentScope();
                     }
                 }
             }
