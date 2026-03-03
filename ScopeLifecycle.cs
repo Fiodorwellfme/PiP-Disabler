@@ -122,6 +122,12 @@ namespace ScopeHousingMeshSurgery
                 if (bypassForMode)
                 {
                     _modBypassedForCurrentScope = true;
+
+                    // Fully tear down our scoped state when switching into a bypassed mode.
+                    // Without this, a previously active zoom/FOV path can stay alive and hurt FPS.
+                    RestoreFov();
+                    ZoomController.Restore();
+                    ZoomController.ResetScrollZoom();
                     ReticleRenderer.Cleanup();
                     ScopeEffectsRenderer.Cleanup();
                     LensTransparency.RestoreAll();
@@ -430,6 +436,18 @@ namespace ScopeHousingMeshSurgery
             // If this scope was bypassed (high magnification), skip mod cleanup paths.
             if (_modBypassedForCurrentScope)
             {
+                // If anything slipped through while bypassed, force full cleanup on exit.
+                RestoreFov();
+                ZoomController.Restore();
+                ZoomController.ResetScrollZoom();
+                Patches.WeaponScalingPatch.RestoreScale();
+                ReticleRenderer.Cleanup();
+                ScopeEffectsRenderer.Cleanup();
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
                 _modBypassedForCurrentScope = false;
                 return;
             }
