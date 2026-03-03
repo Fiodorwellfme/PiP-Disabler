@@ -29,6 +29,92 @@ namespace ScopeHousingMeshSurgery
     /// </summary>
     internal static class ScopeDiagnostics
     {
+        public static string GetScopeWhitelistName(Transform fromOptic)
+        {
+            if (fromOptic == null) return null;
+
+            var scopeRoot = ScopeHierarchy.FindScopeRoot(fromOptic);
+            if (scopeRoot == null) return null;
+
+            var modScope = scopeRoot.Find("mod_scope");
+            if (modScope == null)
+                modScope = ScopeHierarchy.FindDeepChild(scopeRoot, "mod_scope");
+
+            if (modScope == null) return scopeRoot.name;
+
+            for (int i = 0; i < modScope.childCount; i++)
+            {
+                var c = modScope.GetChild(i);
+                if (c == null || string.IsNullOrWhiteSpace(c.name)) continue;
+                if (c.name.StartsWith("scope_", System.StringComparison.OrdinalIgnoreCase))
+                    return c.name;
+            }
+
+            for (int i = 0; i < modScope.childCount; i++)
+            {
+                var c = modScope.GetChild(i);
+                if (c != null && !string.IsNullOrWhiteSpace(c.name))
+                    return c.name;
+            }
+
+            return scopeRoot.name;
+        }
+
+        public static bool IsInScopeWhitelist(string scopeName)
+        {
+            if (string.IsNullOrWhiteSpace(scopeName)) return false;
+            string csv = ScopeHousingMeshSurgeryPlugin.ScopeWhitelist != null
+                ? ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value
+                : null;
+            if (string.IsNullOrWhiteSpace(csv)) return false;
+
+            var target = scopeName.Trim();
+            foreach (var raw in csv.Split(','))
+            {
+                var entry = raw.Trim();
+                if (entry.Length == 0) continue;
+                if (string.Equals(entry, target, System.StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        public static bool ToggleScopeWhitelistEntry(string scopeName, out string updatedCsv)
+        {
+            var values = new System.Collections.Generic.List<string>();
+            string csv = ScopeHousingMeshSurgeryPlugin.ScopeWhitelist != null
+                ? ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value
+                : string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(csv))
+            {
+                foreach (var raw in csv.Split(','))
+                {
+                    var entry = raw.Trim();
+                    if (entry.Length == 0) continue;
+                    if (!values.Any(v => string.Equals(v, entry, System.StringComparison.OrdinalIgnoreCase)))
+                        values.Add(entry);
+                }
+            }
+
+            int existingIndex = values.FindIndex(v => string.Equals(v, scopeName, System.StringComparison.OrdinalIgnoreCase));
+            bool added;
+            if (existingIndex >= 0)
+            {
+                values.RemoveAt(existingIndex);
+                added = false;
+            }
+            else
+            {
+                values.Add(scopeName);
+                added = true;
+            }
+
+            updatedCsv = string.Join(",", values);
+            return added;
+        }
+
         /// <summary>
         /// Returns true if the given scope root name matches any blacklist entry.
         /// Called from ScopeLifecycle.DoScopeEnter().
@@ -120,8 +206,11 @@ namespace ScopeHousingMeshSurgery
 
             var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
             string rootName = scopeRoot != null ? scopeRoot.name : "(NOT FOUND)";
+            string whitelistName = GetScopeWhitelistName(os.transform) ?? "(NOT FOUND)";
             sb.AppendLine($"[Diagnostics] Scope root       : {rootName}");
             sb.AppendLine($"[Diagnostics] Blacklisted      : {(IsBlacklisted(rootName) ? "YES (mesh surgery + reticle skipped)" : "no")}");
+            sb.AppendLine($"[Diagnostics] Whitelist name   : {whitelistName}");
+            sb.AppendLine($"[Diagnostics] Whitelisted      : {(IsInScopeWhitelist(whitelistName) ? "YES (mod enabled)" : "no (mod bypassed)")}");
 
             // ── Magnification ─────────────────────────────────────────────────
             float mag = 1f;
@@ -231,6 +320,11 @@ namespace ScopeHousingMeshSurgery
             sb.AppendLine($"[Diagnostics]   Add this scope    : {rootName}");
             if (!string.IsNullOrWhiteSpace(current))
                 sb.AppendLine($"[Diagnostics]   New value would be: {current},{rootName}");
+
+            sb.AppendLine("[Diagnostics] --- Whitelist ---");
+            string whitelist = ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value;
+            sb.AppendLine($"[Diagnostics]   Current whitelist : {(string.IsNullOrWhiteSpace(whitelist) ? "(empty)" : whitelist)}");
+            sb.AppendLine($"[Diagnostics]   Toggle target     : {whitelistName}");
 
             sb.AppendLine("[Diagnostics] ==========================================");
 
