@@ -573,7 +573,7 @@ namespace ScopeHousingMeshSurgery
                     out var planePoint, out var planeNormal, out var camPos))
                     return;
 
-                planePoint += planeNormal * ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value;
+                planePoint += planeNormal * ScopeHousingMeshSurgeryPlugin.Plane1OffsetMeters.Value;
                 PlaneVisualizer.Show(planePoint, planeNormal);
             }
             catch { }

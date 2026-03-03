@@ -40,7 +40,6 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
-            bool isCylinder = ScopeHousingMeshSurgeryPlugin.CutMode.Value == "Cylinder";
             float startOffset = ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value;
             float cutLength = ScopeHousingMeshSurgeryPlugin.CutLength.Value;
 
@@ -61,24 +60,13 @@ namespace ScopeHousingMeshSurgery
                 _farGO.transform.position = farPos;
                 _farGO.transform.rotation = rot;
 
-                if (isCylinder)
-                {
-                    float p1R = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
-                    float p4R = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
+                float p1R = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
+                float p4R = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
 
-                    _nearGO.transform.localScale = Vector3.one * p1R * 2f;
-                    _farGO.transform.localScale = Vector3.one * p4R * 2f;
-                    _nearGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
-                    _farGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
-                }
-                else
-                {
-                    float s = 0.015f;
-                    _nearGO.transform.localScale = Vector3.one * s;
-                    _farGO.transform.localScale = Vector3.one * s;
-                    _nearGO.GetComponent<MeshFilter>().sharedMesh = GetQuadMesh();
-                    _farGO.GetComponent<MeshFilter>().sharedMesh = GetQuadMesh();
-                }
+                _nearGO.transform.localScale = Vector3.one * p1R * 2f;
+                _farGO.transform.localScale = Vector3.one * p4R * 2f;
+                _nearGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
+                _farGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
             }
             else
             {
@@ -87,7 +75,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             // --- 3D tube volume (ShowCutVolume) ---
-            if (showVolume && isCylinder)
+            if (showVolume)
             {
                 float p1R = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
                 float p2R = ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value;

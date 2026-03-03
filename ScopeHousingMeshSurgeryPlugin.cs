@@ -82,18 +82,13 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> EnableMeshSurgery;
         internal static ConfigEntry<KeyCode> MeshSurgeryToggleKey;
         internal static ConfigEntry<bool> RestoreOnUnscope;
-        internal static ConfigEntry<float> PlaneOffsetMeters;
+        internal static ConfigEntry<float> Plane1OffsetMeters;
         internal static ConfigEntry<string> PlaneNormalAxis;
         internal static ConfigEntry<float> CutRadius;
         internal static ConfigEntry<bool> ShowCutPlane;
         internal static ConfigEntry<bool> ShowCutVolume;
         internal static ConfigEntry<float> CutVolumeOpacity;
-        internal static ConfigEntry<string> CutMode;
         internal static ConfigEntry<float> CylinderRadius;
-        internal static ConfigEntry<float> MidCylinderRadius;
-        internal static ConfigEntry<float> MidCylinderPosition;
-        internal static ConfigEntry<float> FarCylinderRadius;
-        internal static ConfigEntry<float> Plane1OffsetMeters;
         internal static ConfigEntry<float> Plane2Position;
         internal static ConfigEntry<float> Plane2Radius;
         internal static ConfigEntry<float> Plane3Position;
@@ -267,15 +262,13 @@ namespace ScopeHousingMeshSurgery
             ZeroingDownKey = Config.Bind("4. Zeroing", "ZeroingDownKey", KeyCode.PageDown,
                 "Key to decrease zeroing distance.");
 
-            // --- Mesh Surgery (ON by default, Cylinder mode) ---
+            // --- Mesh Surgery (ON by default, Frustum mode) ---
             EnableMeshSurgery = Config.Bind("3. Mesh Surgery", "EnableMeshSurgery", true,
                 "Enable runtime mesh cutting to bore a hole through the scope housing.");
             MeshSurgeryToggleKey = Config.Bind("3. Mesh Surgery", "MeshSurgeryToggleKey", KeyCode.F9,
                 "Toggle key for mesh surgery.");
             RestoreOnUnscope = Config.Bind("3. Mesh Surgery", "RestoreOnUnscope", true,
                 "Restore original meshes when leaving scope.");
-            PlaneOffsetMeters = Config.Bind("3. Mesh Surgery", "PlaneOffsetMeters", 0.001f,
-                "Offset applied along plane normal (meters).");
             PlaneNormalAxis = Config.Bind("3. Mesh Surgery", "PlaneNormalAxis", "-Y",
                 new ConfigDescription(
                     "Which local axis to use as the cut plane normal.\n" +
@@ -299,38 +292,15 @@ namespace ScopeHousingMeshSurgery
                 new ConfigDescription(
                     "Opacity of the 3D cut volume visualizer (0 = invisible, 1 = opaque).",
                     new AcceptableValueRange<float>(0.05f, 0.8f)));
-            CutMode = Config.Bind("3. Mesh Surgery", "CutMode", "Cylinder",
+            CylinderRadius = Config.Bind("3. Mesh Surgery", "Plane1Radius", 0.015f,
                 new ConfigDescription(
-                    "Plane = flat infinite cut. Cylinder = cylindrical bore cut centered on the lens axis.\n" +
-                    "Cylinder removes geometry inside a cylinder of CylinderRadius around the lens center.",
-                    new AcceptableValueList<string>("Plane", "Cylinder")));
-            CylinderRadius = Config.Bind("3. Mesh Surgery", "CylinderRadius", 0.015f,
-                new ConfigDescription(
-                    "Near radius (meters) of the cylindrical/cone cut (camera side).\n" +
+                    "Radius (meters) at plane 1 (camera side).\n" +
                     "Typical scope lens radius is ~0.01-0.02m.",
                     new AcceptableValueRange<float>(0.001f, 0.1f)));
-            MidCylinderRadius = Config.Bind("3. Mesh Surgery", "MidCylinderRadius", 0.013f,
-                new ConfigDescription(
-                    "Intermediate radius (meters) at MidCylinderPosition along the bore.\n" +
-                    "0 = disabled (linear near→far interpolation).\n" +
-                    ">0 = two-segment interpolation: near→mid, then mid→far.\n" +
-                    "Set smaller than near/far to create a waist (hourglass). Set larger for a bulge.",
-                    new AcceptableValueRange<float>(0f, 0.2f)));
-            MidCylinderPosition = Config.Bind("3. Mesh Surgery", "MidCylinderPosition", 0.28f,
-                new ConfigDescription(
-                    "Position of the mid-radius control point along the cut length (0=near, 1=far).\n" +
-                    "0.5 = midpoint. 0.3 = closer to camera. 0.7 = closer to objective.",
-                    new AcceptableValueRange<float>(0.01f, 0.99f)));
-            FarCylinderRadius = Config.Bind("3. Mesh Surgery", "FarCylinderRadius", 0.12f,
-                new ConfigDescription(
-                    "Far radius (meters) of the cone cut (objective side).\n" +
-                    "0 = same as CylinderRadius (pure cylinder). >0 creates a cone/frustum shape.\n" +
-                    "Set larger than CylinderRadius to widen the bore toward the objective lens.",
-                    new AcceptableValueRange<float>(0f, 0.2f)));
             Plane1OffsetMeters = Config.Bind("3. Mesh Surgery", "Plane1OffsetMeters", 0f,
                 new ConfigDescription(
                     "Offset (meters) for plane 1 from linza/backLens origin along bore axis.\n" +
-                    "Plane 1 radius is always CylinderRadius.",
+                    "Plane 1 radius is always Plane1Radius.",
                     new AcceptableValueRange<float>(-0.02f, 0.02f)));
             Plane2Position = Config.Bind("3. Mesh Surgery", "Plane2Position", 0.05751174f,
                 new ConfigDescription(
@@ -385,7 +355,7 @@ namespace ScopeHousingMeshSurgery
                     "Physical diameter (meters) of the reticle quad at 1x magnification.\n" +
                     "The quad is scaled by 1/magnification so screen-pixel coverage stays constant\n" +
                     "across all zoom levels.  Typical scope lens diameter is 0.02-0.04 m.\n" +
-                    "Set to 0 to fall back to the legacy CylinderRadius x2 value.",
+                    "Set to 0 to fall back to the legacy Plane1Radius x2 value.",
                     new AcceptableValueRange<float>(0f, 0.2f)));
             ReticleSmoothingFrames = Config.Bind("3. Mesh Surgery", "ReticleSmoothingFrames", 1,
                 new ConfigDescription(
@@ -499,7 +469,7 @@ namespace ScopeHousingMeshSurgery
             Logger.LogInfo($"  EnableZoom={EnableZoom.Value}  ShaderZoom={EnableShaderZoom.Value} (available={ZoomController.ShaderAvailable})");
             Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
             Logger.LogInfo($"  ScrollZoom={EnableScrollZoom.Value}  ScrollSens={ScrollZoomSensitivity.Value}  ModifierKey={ScrollZoomModifierKey.Value}  Min={ScrollZoomMin.Value}  Max={ScrollZoomMax.Value}");
-            Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
+            Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
         }
 
         private void OnDestroy()
