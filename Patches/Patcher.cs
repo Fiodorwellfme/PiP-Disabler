@@ -16,6 +16,9 @@ namespace ScopeHousingMeshSurgery.Patches
             SafeEnable<OpticSightOnEnablePatch>();
             SafeEnable<OpticSightOnDisablePatch>();
             SafeEnable<ChangeAimingModePatch>();
+            SafeEnable<OpticSightOnEnableTimingPatch>();
+            SafeEnable<CameraClassMethod10Patch>();
+            SafeEnable<SetFovParamsTimingPatch>();
 
             // No-PiP
             SafeEnable<PiPDisabler.OpticComponentUpdaterCopyComponentFromOptic_DisablePiP>();

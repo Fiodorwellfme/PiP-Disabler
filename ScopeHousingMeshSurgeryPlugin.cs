@@ -158,6 +158,8 @@ namespace ScopeHousingMeshSurgery
 
         // --- Debug ---
         internal static ConfigEntry<bool> VerboseLogging;
+        internal static ConfigEntry<bool> OpticPipelineTimingLogs;
+        internal static ConfigEntry<bool> SkipVanillaOpticPipelineInNoPiP;
 
         private void Awake()
         {
@@ -489,6 +491,12 @@ namespace ScopeHousingMeshSurgery
             // --- Debug ---
             VerboseLogging = Config.Bind("6. Debug", "VerboseLogging", false,
                 "Enable detailed logging. Turn on to diagnose lens/zoom issues.");
+            OpticPipelineTimingLogs = Config.Bind("6. Debug", "OpticPipelineTimingLogs", false,
+                "Log timings for OpticSight.OnEnable, CameraClass.method_10, and SetFovParams call rate.\n" +
+                "Use for ADS stutter diagnosis.");
+            SkipVanillaOpticPipelineInNoPiP = Config.Bind("6. Debug", "SkipVanillaOpticPipelineInNoPiP", true,
+                "When NoPiP is enabled, skip CameraClass.method_10 to avoid vanilla optic-camera/SSAA setup hitches.\n" +
+                "Disable this if you need to compare against vanilla behavior.");
 
             Patches.Patcher.Enable();
 
