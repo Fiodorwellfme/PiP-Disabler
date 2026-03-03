@@ -75,6 +75,8 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> AutoDisableForHighMagnificationScopes;
         internal static ConfigEntry<float> HighMagnificationFovThreshold;
         internal static ConfigEntry<KeyCode> DisablePiPToggleKey;
+        internal static ConfigEntry<KeyCode> ScopeWhitelistToggleKey;
+        internal static ConfigEntry<string> ScopeWhitelistCsv;
         internal static ConfigEntry<bool> MakeLensesTransparent;
         internal static ConfigEntry<KeyCode> LensesTransparentToggleKey;
 
@@ -181,6 +183,11 @@ namespace ScopeHousingMeshSurgery
                     new AcceptableValueRange<float>(0.5f, 15f)));
             DisablePiPToggleKey = Config.Bind("1. General", "DisablePiPToggleKey", KeyCode.F10,
                 "Toggle key for PiP disable.");
+            ScopeWhitelistToggleKey = Config.Bind("1. General", "ScopeWhitelistToggleKey", KeyCode.F7,
+                "Toggle key to add/remove the currently used scope from the whitelist.");
+            ScopeWhitelistCsv = Config.Bind("1. General", "ScopeWhitelistCsv", "",
+                "Comma-separated whitelist of scope names (scope_* under mod_scope). " +
+                "When the current scope is not listed, the mod is fully bypassed.");
 
             MakeLensesTransparent = Config.Bind("1. General", "MakeLensesTransparent", true,
                 "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.");
@@ -482,6 +489,8 @@ namespace ScopeHousingMeshSurgery
             VerboseLogging = Config.Bind("6. Debug", "VerboseLogging", false,
                 "Enable detailed logging. Turn on to diagnose lens/zoom issues.");
 
+            ScopeWhitelist.Initialize();
+
             Patches.Patcher.Enable();
 
             // Initialize scope detection via PWA reflection
@@ -493,6 +502,7 @@ namespace ScopeHousingMeshSurgery
             // --- Config change handlers (catches config manager changes, not just hotkeys) ---
             ModEnabled.SettingChanged += OnModEnabledChanged;
             EnableWeaponScaling.SettingChanged += OnWeaponScalingToggled;
+            ScopeWhitelistCsv.SettingChanged += OnScopeWhitelistChanged;
 
             Logger.LogInfo("ScopeHousingMeshSurgery v4.7.0 loaded.");
             Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
@@ -510,6 +520,7 @@ namespace ScopeHousingMeshSurgery
 
             ModEnabled.SettingChanged -= OnModEnabledChanged;
             EnableWeaponScaling.SettingChanged -= OnWeaponScalingToggled;
+            ScopeWhitelistCsv.SettingChanged -= OnScopeWhitelistChanged;
         }
 
         /// <summary>
@@ -526,6 +537,13 @@ namespace ScopeHousingMeshSurgery
             {
                 ScopeLifecycle.SyncState();
             }
+        }
+
+
+        private static void OnScopeWhitelistChanged(object sender, EventArgs e)
+        {
+            ScopeWhitelist.ReloadFromConfig();
+            ScopeLifecycle.CheckAndUpdate();
         }
 
         /// <summary>
@@ -572,6 +590,12 @@ namespace ScopeHousingMeshSurgery
                 Logger.LogInfo($"Disable PiP toggled: {DisablePiP.Value}");
                 if (!DisablePiP.Value)
                     PiPDisabler.RestoreAllCameras();
+            }
+
+            if (ScopeWhitelistToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(ScopeWhitelistToggleKey.Value))
+            {
+                ScopeWhitelist.ToggleCurrentScopeEntry();
+                ScopeLifecycle.CheckAndUpdate();
             }
 
             if (InputProxy.GetKeyDown(LensesTransparentToggleKey.Value))

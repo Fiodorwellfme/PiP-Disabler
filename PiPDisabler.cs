@@ -314,6 +314,7 @@ _ignoreOnDisableFrame.Clear();
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
                 if (__instance == null) return;
+                if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
                 if (ShouldSkipPiPDisableForHighMagnification(__instance)) return;
 
                 // Cache the optic camera transform for ReticleRenderer camera alignment
@@ -360,6 +361,7 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return true;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
+                if (ScopeLifecycle.IsModBypassedForCurrentScope) return true;
                 if (ShouldSkipPiPDisableForHighMagnification(__instance)) return true;
 
                 // Ensure the camera can't render, but let LateUpdate run for transforms.

@@ -117,11 +117,19 @@ namespace ScopeHousingMeshSurgery
                 _activeOptic = os;
 
                 float minFov = ZoomController.GetMinFov(os);
-                bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
+                bool bypassForHighMag = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
                     && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
+                bool allowByWhitelist = ScopeWhitelist.IsAllowedForOptic(os, out var scopeNameForModeSwitch);
+                bool bypassForMode = bypassForHighMag || !allowByWhitelist;
                 if (bypassForMode)
                 {
                     _modBypassedForCurrentScope = true;
+
+                    if (!allowByWhitelist)
+                    {
+                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{scopeNameForModeSwitch ?? "unknown"}'");
+                    }
 
                     // Fully tear down our scoped state when switching into a bypassed mode.
                     // Without this, a previously active zoom/FOV path can stay alive and hurt FPS.
@@ -347,12 +355,22 @@ namespace ScopeHousingMeshSurgery
             _activeOptic = os;
 
             float minFov = ZoomController.GetMinFov(os);
-            _modBypassedForCurrentScope = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
+            bool bypassForHighMag = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
                 && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
+            bool allowByWhitelist = ScopeWhitelist.IsAllowedForOptic(os, out var scopeName);
+            _modBypassedForCurrentScope = bypassForHighMag || !allowByWhitelist;
             if (_modBypassedForCurrentScope)
             {
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    $"[ScopeLifecycle] Bypassing mod for high-magnification scope: minFov={minFov:F2}° (< {ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value:F1}°)");
+                if (bypassForHighMag)
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[ScopeLifecycle] Bypassing mod for high-magnification scope: minFov={minFov:F2}° (< {ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value:F1}°)");
+                }
+                else
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{scopeName ?? "unknown"}'");
+                }
 
                 LensTransparency.RestoreAll();
                 CameraSettingsManager.Restore();
