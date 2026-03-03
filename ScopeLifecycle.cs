@@ -535,9 +535,18 @@ namespace ScopeHousingMeshSurgery
                         ? ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value
                         : 0.1f; // Short duration for variable zoom updates
 
-                    CameraClass.Instance.SetFov(zoomedFov, duration, false);
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
-                        $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
+                    var cc = CameraClass.Instance;
+                    var cam = cc != null ? cc.Camera : null;
+                    float currentFov = cam != null ? cam.fieldOfView : -1f;
+
+                    // Avoid fighting base-game FOV animation with redundant SetFov calls.
+                    // This reduces micro-stutter during rapid scroll zoom adjustments.
+                    if (currentFov < 0f || Mathf.Abs(currentFov - zoomedFov) > 0.01f)
+                    {
+                        cc.SetFov(zoomedFov, duration, false);
+                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
+                    }
                 }
             }
             catch (Exception ex)
@@ -567,9 +576,14 @@ namespace ScopeHousingMeshSurgery
                 float baseFov = pwa.Single_2;
                 if (baseFov > 30f)
                 {
-                    cc.SetFov(baseFov, 0f, true); // duration=0 = instant
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° (instant)");
+                    var cam = cc.Camera;
+                    float currentFov = cam != null ? cam.fieldOfView : -1f;
+                    if (currentFov < 0f || Mathf.Abs(currentFov - baseFov) > 0.01f)
+                    {
+                        cc.SetFov(baseFov, 0f, true); // duration=0 = instant
+                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                            $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° (instant)");
+                    }
                 }
             }
             catch (Exception ex)

@@ -19,6 +19,8 @@ namespace ScopeHousingMeshSurgery
         }
 
         private static readonly System.Collections.Generic.List<CameraState> _cams = new System.Collections.Generic.List<CameraState>(16);
+        private static readonly System.Collections.Generic.HashSet<Camera> _trackedCams =
+            new System.Collections.Generic.HashSet<Camera>();
 
         // Cached reflection field for OpticSight inside OpticComponentUpdater.
         // The field name is obfuscated and varies between EFT builds, so we
@@ -263,6 +265,7 @@ _opticOrigEnabled.Clear();
 _ignoreOnDisableFrame.Clear();
 
             _cams.Clear();
+            _trackedCams.Clear();
 
             _baseOpticCams.Clear();
             _loggedBase = false;
@@ -279,8 +282,7 @@ _ignoreOnDisableFrame.Clear();
             if (cam == null) return;
 
             // Store only once
-            for (int i = 0; i < _cams.Count; i++)
-                if (_cams[i].Cam == cam) return;
+            if (!_trackedCams.Add(cam)) return;
 
             var st = new CameraState
             {

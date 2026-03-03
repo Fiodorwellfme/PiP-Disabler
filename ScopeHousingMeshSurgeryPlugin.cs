@@ -544,6 +544,8 @@ namespace ScopeHousingMeshSurgery
             }
         }
 
+        private int _nextSafetyScopeCheckFrame;
+
         private void Update()
         {
             // --- Global mod toggle (always active, even when mod is OFF) ---
@@ -612,8 +614,14 @@ namespace ScopeHousingMeshSurgery
             // --- Per-frame logic ---
             PiPDisabler.TickBaseOpticCamera();
 
-            // Safety-net: re-check scope state every frame in case we missed an event.
-            ScopeLifecycle.CheckAndUpdate();
+            // Safety-net: periodic re-check in case we missed an event.
+            // Scoped transitions are still event-driven; this only backstops edge cases
+            // and avoids repeated reflection-heavy checks every single frame.
+            if (Time.frameCount >= _nextSafetyScopeCheckFrame)
+            {
+                ScopeLifecycle.CheckAndUpdate();
+                _nextSafetyScopeCheckFrame = Time.frameCount + (ScopeLifecycle.IsScoped ? 2 : 1);
+            }
 
             // Per-frame maintenance (ensure lens hidden, update variable zoom, etc.)
             ScopeLifecycle.Tick();
