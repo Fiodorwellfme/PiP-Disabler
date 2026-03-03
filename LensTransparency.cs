@@ -42,6 +42,8 @@ namespace ScopeHousingMeshSurgery
         }
 
         private static readonly List<HiddenEntry> _hidden = new List<HiddenEntry>(16);
+        private static readonly Dictionary<Transform, List<Renderer>> _cachedLensByRoot =
+            new Dictionary<Transform, List<Renderer>>(8);
         private static Mesh _emptyMesh;
 
         // Shader property IDs (cached for perf)
@@ -75,14 +77,13 @@ namespace ScopeHousingMeshSurgery
             // Always dump hierarchy on first enter
             DumpHierarchy(searchRoot);
 
-            // Kill only ACTIVE lens renderers (prevents nuking inactive sibling modes on hybrids)
-            var allRenderers = searchRoot.GetComponentsInChildren<Renderer>(true);
+            var lensCandidates = GetOrBuildLensCandidates(searchRoot);
             int killed = 0;
-            foreach (var r in allRenderers)
+            foreach (var r in lensCandidates)
             {
                 if (r == null) continue;
                 if (!r.gameObject.activeInHierarchy) continue;
-                if (IsLensSurface(r) && !ShouldSkipForCollimator(r))
+                if (!ShouldSkipForCollimator(r))
                 {
                     KillMesh(r);
                     killed++;
@@ -200,6 +201,29 @@ namespace ScopeHousingMeshSurgery
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[LensTransparency] Restored {_hidden.Count} lens meshes");
             _hidden.Clear();
+            _cachedLensByRoot.Clear();
+        }
+
+        private static List<Renderer> GetOrBuildLensCandidates(Transform searchRoot)
+        {
+            if (searchRoot == null)
+                return new List<Renderer>(0);
+
+            if (_cachedLensByRoot.TryGetValue(searchRoot, out var cached) && cached != null)
+                return cached;
+
+            var allRenderers = searchRoot.GetComponentsInChildren<Renderer>(true);
+            var lens = new List<Renderer>(Mathf.Max(4, allRenderers.Length / 2));
+            for (int i = 0; i < allRenderers.Length; i++)
+            {
+                var r = allRenderers[i];
+                if (r == null) continue;
+                if (IsLensSurface(r))
+                    lens.Add(r);
+            }
+
+            _cachedLensByRoot[searchRoot] = lens;
+            return lens;
         }
 
         // ===== Core =====
@@ -311,16 +335,16 @@ namespace ScopeHousingMeshSurgery
             var goName = r.gameObject.name;
             if (!string.IsNullOrEmpty(goName))
             {
-                var lo = goName.ToLowerInvariant();
-                if (lo.Contains("linza") ||
-                    lo.Contains("backlens") || lo.Contains("back_lens") ||
-                    lo.Contains("frontlens") || lo.Contains("front_lens") ||
-                    lo.Contains("front_linza"))
+                if (ContainsIgnoreCase(goName, "linza") ||
+                    ContainsIgnoreCase(goName, "backlens") || ContainsIgnoreCase(goName, "back_lens") ||
+                    ContainsIgnoreCase(goName, "frontlens") || ContainsIgnoreCase(goName, "front_lens") ||
+                    ContainsIgnoreCase(goName, "front_linza"))
                     return true;
 
                 // "glass" only when it looks like a scope lens (not "fiberglass" etc.)
                 // Match: *_glass_LOD*, *glass*lod*, scope*glass*
-                if (lo.Contains("glass") && (lo.Contains("lod") || lo.Contains("scope") || lo.Contains("optic")))
+                if (ContainsIgnoreCase(goName, "glass") &&
+                    (ContainsIgnoreCase(goName, "lod") || ContainsIgnoreCase(goName, "scope") || ContainsIgnoreCase(goName, "optic")))
                     return true;
             }
 
@@ -331,8 +355,7 @@ namespace ScopeHousingMeshSurgery
                 var meshName = mf.sharedMesh.name;
                 if (!string.IsNullOrEmpty(meshName))
                 {
-                    var mlo = meshName.ToLowerInvariant();
-                    if (mlo.Contains("linza") || mlo.Contains("_glass_") || mlo.Contains("_glass_lod"))
+                    if (ContainsIgnoreCase(meshName, "linza") || ContainsIgnoreCase(meshName, "_glass_") || ContainsIgnoreCase(meshName, "_glass_lod"))
                         return true;
                 }
             }
@@ -359,8 +382,7 @@ namespace ScopeHousingMeshSurgery
                         var matName = m.name ?? "";
                         if (!string.IsNullOrEmpty(matName))
                         {
-                            var matLo = matName.ToLowerInvariant();
-                            if (matLo.Contains("linza") || matLo.Contains("_lens"))
+                            if (ContainsIgnoreCase(matName, "linza") || ContainsIgnoreCase(matName, "_lens"))
                                 return true;
                         }
                     }
@@ -502,6 +524,13 @@ namespace ScopeHousingMeshSurgery
                 parts.Add(cur.name ?? "?");
             parts.Reverse();
             return string.Join("/", parts);
+        }
+
+        private static bool ContainsIgnoreCase(string source, string value)
+        {
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(value))
+                return false;
+            return source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

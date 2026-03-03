@@ -37,6 +37,7 @@ namespace ScopeHousingMeshSurgery
 
         private static int _nextBaseScanFrame = -1;
         private static bool _loggedBase;
+        private static bool _triedBaseFindByName;
 
         /// <summary>
         /// The optic camera's Transform — synced to the scope's look direction
@@ -140,48 +141,48 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
         private static void TryFindBaseOpticCameras()
         {
-            _baseOpticCams.Clear();
-
             try
             {
-                var cams = Resources.FindObjectsOfTypeAll<Camera>();
-                for (int i = 0; i < cams.Length; i++)
+                // Cheap scene-only lookup first; avoid Resources.FindObjectsOfTypeAll hitch.
+                if (!_triedBaseFindByName || _baseOpticCams.Count == 0)
                 {
-                    var cam = cams[i];
-                    if (cam == null) continue;
-
-                    var go = cam.gameObject;
-                    if (go == null) continue;
-
-                    // Skip prefabs/assets.
-                    if (!go.scene.IsValid()) continue;
-
-                    var n = go.name;
-                    if (n == "BaseOpticCamera(Clone)" || n == "BaseOpticCamera")
-                    {
-                        // Collect this camera and any child cameras.
-                        var all = go.GetComponentsInChildren<Camera>(true);
-                        for (int c = 0; c < all.Length; c++)
-                        {
-                            var cc = all[c];
-                            if (cc != null && !_baseOpticCams.Contains(cc))
-                                _baseOpticCams.Add(cc);
-                        }
-
-                        if (!_baseOpticCams.Contains(cam))
-                            _baseOpticCams.Add(cam);
-
-                        if (!_loggedBase)
-                        {
-                            _loggedBase = true;
-                            ScopeHousingMeshSurgeryPlugin.LogInfo(
-                                $"[PiPDisabler] Found BaseOpticCamera: {n} (cameras: {_baseOpticCams.Count})");
-                        }
-                        break;
-                    }
+                    RegisterBaseOpticByName("BaseOpticCamera(Clone)");
+                    RegisterBaseOpticByName("BaseOpticCamera");
+                    _triedBaseFindByName = true;
                 }
             }
             catch { /* ignore */ }
+        }
+
+        private static void RegisterBaseOpticByName(string name)
+        {
+            var go = GameObject.Find(name);
+            if (go == null) return;
+            RegisterBaseOpticCameraRoot(go);
+        }
+
+        private static void RegisterBaseOpticCameraRoot(GameObject root)
+        {
+            if (root == null) return;
+
+            var all = root.GetComponentsInChildren<Camera>(true);
+            for (int c = 0; c < all.Length; c++)
+            {
+                var cc = all[c];
+                if (cc != null && !_baseOpticCams.Contains(cc))
+                    _baseOpticCams.Add(cc);
+            }
+
+            var rootCam = root.GetComponent<Camera>();
+            if (rootCam != null && !_baseOpticCams.Contains(rootCam))
+                _baseOpticCams.Add(rootCam);
+
+            if (!_loggedBase && _baseOpticCams.Count > 0)
+            {
+                _loggedBase = true;
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[PiPDisabler] Found BaseOpticCamera: {root.name} (cameras: {_baseOpticCams.Count})");
+            }
         }
 
         private static bool ShouldSkipPiPDisableForHighMagnification(OpticComponentUpdater updater)
@@ -265,6 +266,7 @@ _ignoreOnDisableFrame.Clear();
 
             _baseOpticCams.Clear();
             _loggedBase = false;
+            _triedBaseFindByName = false;
             _nextBaseScanFrame = -1;
             OpticCameraTransform = null;
             Debug_LastOpticCameraTransform = null;
@@ -322,6 +324,14 @@ _ignoreOnDisableFrame.Clear();
 
                 var cam = __instance.GetComponent<Camera>();
                 ForceDisable(cam);
+
+                // Capture global base optic camera hierarchy from this updater when available.
+                if (__instance != null)
+                {
+                    var root = __instance.transform.root;
+                    if (root != null)
+                        RegisterBaseOpticCameraRoot(root.gameObject);
+                }
             }
         }
 
