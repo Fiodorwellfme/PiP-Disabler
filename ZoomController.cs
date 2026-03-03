@@ -320,12 +320,13 @@ namespace ScopeHousingMeshSurgery
             // scope mode switching when the player over-scrolls at 1x/maximum zoom.
             if (Mathf.Abs(_scrollZoomFov - previousFov) < 0.001f)
             {
-                if (!wasActive)
-                {
-                    _scrollZoomFov = 0f;
-                    _scrollStartNativeFov = 0f;
-                }
-                return false;
+                // At the native boundary there is no real zoom step left.
+                // Drop any active override so reticle/FOV follow native scope mode
+                // immediately (prevents variable-scope reticle scale drift).
+                _scrollZoomActive = false;
+                _scrollZoomFov = 0f;
+                _scrollStartNativeFov = 0f;
+                return wasActive;
             }
 
             _scrollZoomActive = true;
