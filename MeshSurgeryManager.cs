@@ -191,11 +191,9 @@ namespace ScopeHousingMeshSurgery
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value);
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane2Position.Value);
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value);
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane3Position.Value);
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value);
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane4Position.Value);
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value);
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane5Position.Value);
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane5Radius.Value);
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane6Position.Value);
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.Plane6Radius.Value);
@@ -378,11 +376,9 @@ namespace ScopeHousingMeshSurgery
                             float preserve = ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value;
                             float p2 = ScopeHousingMeshSurgeryPlugin.Plane2Position.Value;
                             float r2 = ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value;
-                            float p3 = ScopeHousingMeshSurgeryPlugin.Plane3Position.Value;
                             float r3 = ScopeHousingMeshSurgeryPlugin.Plane3Radius.Value;
                             float p4 = ScopeHousingMeshSurgeryPlugin.Plane4Position.Value;
                             float r4 = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
-                            float p5 = ScopeHousingMeshSurgeryPlugin.Plane5Position.Value;
                             float r5 = ScopeHousingMeshSurgeryPlugin.Plane5Radius.Value;
                             float p6 = ScopeHousingMeshSurgeryPlugin.Plane6Position.Value;
                             float r6 = ScopeHousingMeshSurgeryPlugin.Plane6Radius.Value;
@@ -391,13 +387,14 @@ namespace ScopeHousingMeshSurgery
                                 planePoint, planeNormal, nearR, r4, startOff, cutLen,
                                 keepInside: false, midRadius: r2, midPosition: p2,
                                 nearPreserveDepth: preserve,
-                                plane3Radius: r3, plane3Position: p3, plane4Position: p4,
-                                plane5Radius: r5, plane5Position: p5,
+                                plane3Radius: r3, plane4Position: p4,
+                                plane5Radius: r5,
                                 plane6Radius: r6, plane6Position: p6);
                             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                                $"[MeshSurgery] Frustum cut '{originalAsset.name}': p1R={nearR:F4}@0.00 " +
-                                $"p2R={r2:F4}@{p2:F2} p3R={r3:F4}@{p3:F2} p4R={r4:F4}@{p4:F2} " +
-                                $"p5R={r5:F4}@{p5:F2} p6R={r6:F4}@{p6:F2} " +
+                                $"[MeshSurgery] Frustum cut '{originalAsset.name}': " +
+                                $"frustum1=[p1R={nearR:F4}→p2R={r2:F4}]@[0,{p2:F2}] " +
+                                $"frustum2=[p3R={r3:F4}→p4R={r4:F4}]@[{p2:F2},{p4:F2}] " +
+                                $"frustum3=[p5R={r5:F4}→p6R={r6:F4}]@[{p4:F2},{p6:F2}] " +
                                 $"start={startOff:F4} len={cutLen:F4} offset={plane1Offset:F4}" +
                                 (preserve > 0f ? $" preserve={preserve:F4}" : ""));
                         }

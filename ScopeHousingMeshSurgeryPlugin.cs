@@ -96,11 +96,9 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<float> Plane1OffsetMeters;
         internal static ConfigEntry<float> Plane2Position;
         internal static ConfigEntry<float> Plane2Radius;
-        internal static ConfigEntry<float> Plane3Position;
         internal static ConfigEntry<float> Plane3Radius;
         internal static ConfigEntry<float> Plane4Position;
         internal static ConfigEntry<float> Plane4Radius;
-        internal static ConfigEntry<float> Plane5Position;
         internal static ConfigEntry<float> Plane5Radius;
         internal static ConfigEntry<float> Plane6Position;
         internal static ConfigEntry<float> Plane6Radius;
@@ -338,43 +336,39 @@ namespace ScopeHousingMeshSurgery
                     new AcceptableValueRange<float>(-0.02f, 0.02f)));
             Plane2Position = Config.Bind("3. Mesh Surgery", "Plane2Position", 0.05751174f,
                 new ConfigDescription(
-                    "Normalized depth of plane 2 from near (0) to far (1).",
+                    "Normalized depth of plane 2 from near (0) to far (1). End of frustum 1, start of frustum 2.",
                     new AcceptableValueRange<float>(0f, 1f)));
             Plane2Radius = Config.Bind("3. Mesh Surgery", "Plane2Radius", 0.013f,
                 new ConfigDescription(
-                    "Radius (meters) at plane 2.",
+                    "Radius (meters) at plane 2 (far end of frustum 1).",
                     new AcceptableValueRange<float>(0f, 0.2f)));
-            Plane3Position = Config.Bind("3. Mesh Surgery", "Plane3Position", 0.55f,
-                new ConfigDescription(
-                    "Normalized depth of plane 3 from near (0) to far (1).",
-                    new AcceptableValueRange<float>(0f, 1f)));
             Plane3Radius = Config.Bind("3. Mesh Surgery", "Plane3Radius", 0.2f,
                 new ConfigDescription(
-                    "Radius (meters) at plane 3.",
+                    "Radius (meters) at plane 3 (near end of frustum 2).\n" +
+                    "Plane 3 is always at the same position as plane 2.\n" +
+                    "Set different from Plane2Radius to create a step between frustum 1 and 2.",
                     new AcceptableValueRange<float>(0f, 0.2f)));
             Plane4Position = Config.Bind("3. Mesh Surgery", "Plane4Position", 1f,
                 new ConfigDescription(
-                    "Normalized depth of plane 4 from near (0) to far (1).",
+                    "Normalized depth of plane 4 from near (0) to far (1). End of frustum 2, start of frustum 3.",
                     new AcceptableValueRange<float>(0f, 1f)));
             Plane4Radius = Config.Bind("3. Mesh Surgery", "Plane4Radius", 0.2f,
                 new ConfigDescription(
-                    "Radius (meters) at plane 4.",
+                    "Radius (meters) at plane 4 (far end of frustum 2).",
                     new AcceptableValueRange<float>(0f, 0.2f)));
-            Plane5Position = Config.Bind("3. Mesh Surgery", "Plane5Position", 1f,
-                new ConfigDescription(
-                    "Normalized depth of plane 5 from near (0) to far (1).",
-                    new AcceptableValueRange<float>(0f, 1f)));
             Plane5Radius = Config.Bind("3. Mesh Surgery", "Plane5Radius", 0.2f,
                 new ConfigDescription(
-                    "Radius (meters) at plane 5.",
+                    "Radius (meters) at plane 5 (near end of frustum 3).\n" +
+                    "Plane 5 is always at the same position as plane 4.\n" +
+                    "Set different from Plane4Radius to create a step between frustum 2 and 3.",
                     new AcceptableValueRange<float>(0f, 0.2f)));
             Plane6Position = Config.Bind("3. Mesh Surgery", "Plane6Position", 1f,
                 new ConfigDescription(
-                    "Normalized depth of plane 6 from near (0) to far (1). Plane 6 is farthest from camera.",
+                    "Normalized depth of plane 6 from near (0) to far (1). Far end of frustum 3.",
                     new AcceptableValueRange<float>(0f, 1f)));
             Plane6Radius = Config.Bind("3. Mesh Surgery", "Plane6Radius", 0.2f,
                 new ConfigDescription(
-                    "Radius (meters) at plane 6 (farthest from player).",
+                    "Radius (meters) at plane 6 (farthest from player, far end of frustum 3).",
                     new AcceptableValueRange<float>(0f, 0.2f)));
             CutStartOffset = Config.Bind("3. Mesh Surgery", "CutStartOffset", 0.04084507f,
                 new ConfigDescription(

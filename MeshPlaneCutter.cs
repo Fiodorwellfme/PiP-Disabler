@@ -242,15 +242,20 @@ namespace ScopeHousingMeshSurgery
         ///   midPosition = fractional position along the bore (0=near, 1=far) for plane 2
         ///   This allows hourglass (mid &lt; near/far) or bulge (mid &gt; near/far) shapes
         ///
-        /// plane3Radius/Position = third control point
-        /// plane4Position = position of the farRadius control point (plane 4)
-        /// plane5Radius/Position = fifth control point (NEW)
-        /// plane6Radius/Position = sixth control point / far end (NEW)
+        /// plane3Radius = near radius of frustum 2 (at the same position as plane 2)
+        /// plane4Position = position of plane 4 — far end of frustum 2, near end of frustum 3
+        /// plane5Radius = near radius of frustum 3 (at the same position as plane 4)
+        /// plane6Radius/Position = far end of frustum 3
+        ///
+        /// The three frustums share boundaries: frustum 2 starts where frustum 1 ends (at
+        /// midPosition), and frustum 3 starts where frustum 2 ends (at plane4Position).
+        /// Planes 3 and 5 have no independent position — they are always at midPosition
+        /// and plane4Position respectively, allowing a radius step at each boundary.
         ///
         /// startOffset = distance along axis from center to start of cut (toward camera = positive)
         /// length = depth of the cut volume
         ///
-        /// keepInside=false → removes geometry inside the frustum (bore a hole)
+        /// keepInside=false → removes geometry inside any of the three frustums (bore a hole)
         /// </summary>
         public static bool CutMeshFrustum(
             Mesh mesh,
@@ -266,10 +271,8 @@ namespace ScopeHousingMeshSurgery
             float midPosition = 0.5f,
             float nearPreserveDepth = 0f,
             float plane3Radius = 0f,
-            float plane3Position = 0.66f,
             float plane4Position = 1f,
             float plane5Radius = 0f,
-            float plane5Position = 1f,
             float plane6Radius = 0f,
             float plane6Position = 1f,
             float epsilon = 1e-5f)
@@ -290,14 +293,16 @@ namespace ScopeHousingMeshSurgery
             float localStart = avgScale > 0.001f ? startOffset / avgScale : startOffset;
             float localLen   = avgScale > 0.001f ? length / avgScale : length;
             float localMidPos = Mathf.Clamp01(midPosition);
-            float localP3Pos = Mathf.Clamp01(plane3Position);
+            // Plane 3 is always at the same position as plane 2 (midPosition)
+            float localP3Pos = localMidPos;
             float localP4Pos = Mathf.Clamp01(plane4Position);
             float localP3R = plane3Radius > 0f ? (avgScale > 0.001f ? plane3Radius / avgScale : plane3Radius) : 0f;
             float localPreserve = nearPreserveDepth > 0f
                 ? (avgScale > 0.001f ? nearPreserveDepth / avgScale : nearPreserveDepth)
                 : 0f;
             float localP5R = plane5Radius > 0f ? (avgScale > 0.001f ? plane5Radius / avgScale : plane5Radius) : 0f;
-            float localP5Pos = Mathf.Clamp01(plane5Position);
+            // Plane 5 is always at the same position as plane 4
+            float localP5Pos = localP4Pos;
             float localP6R = plane6Radius > 0f ? (avgScale > 0.001f ? plane6Radius / avgScale : plane6Radius) : 0f;
             float localP6Pos = Mathf.Clamp01(plane6Position);
 
