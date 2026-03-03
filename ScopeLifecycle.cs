@@ -286,8 +286,7 @@ namespace ScopeHousingMeshSurgery
             }
             else if (!shouldBeScoped && _isScoped)
             {
-                // Normal ADS exit path: allow restart only if this scope was bypassed.
-                DoScopeExit(allowBypassRestart: true);
+                DoScopeExit();
             }
         }
 
@@ -348,7 +347,7 @@ namespace ScopeHousingMeshSurgery
         public static void ForceExit()
         {
             if (_isScoped)
-                DoScopeExit(allowBypassRestart: false);
+                DoScopeExit();
             _modBypassedForCurrentScope = false;
             _currentScopeWhitelistName = null;
             // Always clear the last-enabled cache so a stale OpticSight reference
@@ -476,7 +475,7 @@ namespace ScopeHousingMeshSurgery
             ZeroingController.ReadCurrentZeroing();
         }
 
-        private static void DoScopeExit(bool allowBypassRestart)
+        private static void DoScopeExit()
         {
             if (!_isScoped) return;
 
@@ -487,28 +486,6 @@ namespace ScopeHousingMeshSurgery
             _isScoped = false;
             _activeOptic = null;
             _currentScopeWhitelistName = null;
-
-            // If this scope was bypassed (high magnification), skip mod cleanup paths.
-            if (_modBypassedForCurrentScope)
-            {
-                // If anything slipped through while bypassed, force full cleanup on exit.
-                RestoreFov();
-                ZoomController.Restore();
-                ZoomController.ResetScrollZoom();
-                Patches.WeaponScalingPatch.RestoreScale();
-                ReticleRenderer.Cleanup();
-                ScopeEffectsRenderer.Cleanup();
-                LensTransparency.RestoreAll();
-                CameraSettingsManager.Restore();
-                PiPDisabler.RestoreAllCameras();
-                PlaneVisualizer.Hide();
-                ZeroingController.Reset();
-                _modBypassedForCurrentScope = false;
-
-                if (allowBypassRestart && ScopeHousingMeshSurgeryPlugin.ModEnabled.Value)
-                    ScopeHousingMeshSurgeryPlugin.ForceModRestartAfterScopeExit();
-                return;
-            }
 
             // 1. Restore FOV INSTANTLY (duration=0, no sluggish exit feel)
             RestoreFov();
@@ -547,6 +524,9 @@ namespace ScopeHousingMeshSurgery
             // 8. Reset zeroing state
             ZeroingController.Reset();
 
+            // ADS exit should always clear bypass state.
+            _modBypassedForCurrentScope = false;
+
         }
 
         public static void ToggleCurrentScopeWhitelist()
@@ -569,7 +549,7 @@ namespace ScopeHousingMeshSurgery
 
             if (_isScoped)
             {
-                DoScopeExit(allowBypassRestart: false);
+                DoScopeExit();
                 CheckAndUpdate();
             }
         }
