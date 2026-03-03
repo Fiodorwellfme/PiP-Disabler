@@ -58,12 +58,24 @@ namespace ScopeHousingMeshSurgery
         private static readonly System.Collections.Generic.Dictionary<OpticSight, int> _ignoreOnDisableFrame =
             new System.Collections.Generic.Dictionary<OpticSight, int>(32);
 
-internal static void TickBaseOpticCamera()
+        internal static void TickBaseOpticCamera()
         {
             if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
 
-            // Auto-bypass for high-mag scopes must re-enable vanilla PiP.
-            if (ScopeLifecycle.IsModBypassedForCurrentScope)
+            // When not ADS-scoped, don't keep touching optic cameras every frame.
+            // This mirrors the observed behavior where fully disabling the mod restores FPS.
+            // If we have tracked camera/optic state, restore once and exit.
+            if (!ScopeLifecycle.IsScoped)
+            {
+                if (_cams.Count > 0 || _baseOpticCams.Count > 0 || _opticOrigEnabled.Count > 0)
+                    RestoreAllCameras();
+                return;
+            }
+
+            // Auto-bypass for high-mag/non-whitelisted scopes must re-enable vanilla PiP,
+            // but only while we're actually scoped. If a bypass flag lingers for a frame
+            // during ADS exit, keeping PiP enabled can tank FPS until the next scope enter.
+            if (ScopeLifecycle.IsModBypassedForCurrentScope && ScopeLifecycle.IsScoped)
             {
                 RestoreAllCameras();
                 return;
@@ -185,9 +197,8 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
             }
         }
 
-        private static bool ShouldSkipPiPDisableForHighMagnification(OpticComponentUpdater updater)
+        private static bool ShouldSkipPiPDisableForBypassedScope(OpticComponentUpdater updater)
         {
-            if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value) return false;
             if (updater == null) return false;
 
             try
@@ -197,6 +208,15 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
                 var os = field.GetValue(updater) as OpticSight;
                 if (os == null) return false;
+
+                // Non-whitelisted scopes should behave exactly like high-mag bypass scopes:
+                // keep vanilla PiP by skipping our PiP disable patches.
+                string scopeName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
+                if (!ScopeDiagnostics.IsInScopeWhitelist(scopeName))
+                    return true;
+
+                if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value)
+                    return false;
 
                 return ZoomController.GetMinFov(os) < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
             }
@@ -314,7 +334,7 @@ _ignoreOnDisableFrame.Clear();
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
                 if (__instance == null) return;
-                if (ShouldSkipPiPDisableForHighMagnification(__instance)) return;
+                if (ShouldSkipPiPDisableForBypassedScope(__instance)) return;
 
                 // Cache the optic camera transform for ReticleRenderer camera alignment
                 OpticCameraTransform = __instance.transform;
@@ -360,7 +380,7 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return true;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
-                if (ShouldSkipPiPDisableForHighMagnification(__instance)) return true;
+                if (ShouldSkipPiPDisableForBypassedScope(__instance)) return true;
 
                 // Ensure the camera can't render, but let LateUpdate run for transforms.
                 var cam = __instance != null ? __instance.GetComponent<Camera>() : null;

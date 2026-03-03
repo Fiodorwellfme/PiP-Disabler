@@ -487,25 +487,6 @@ namespace ScopeHousingMeshSurgery
             _activeOptic = null;
             _currentScopeWhitelistName = null;
 
-            // If this scope was bypassed (high magnification), skip mod cleanup paths.
-            if (_modBypassedForCurrentScope)
-            {
-                // If anything slipped through while bypassed, force full cleanup on exit.
-                RestoreFov();
-                ZoomController.Restore();
-                ZoomController.ResetScrollZoom();
-                Patches.WeaponScalingPatch.RestoreScale();
-                ReticleRenderer.Cleanup();
-                ScopeEffectsRenderer.Cleanup();
-                LensTransparency.RestoreAll();
-                CameraSettingsManager.Restore();
-                PiPDisabler.RestoreAllCameras();
-                PlaneVisualizer.Hide();
-                ZeroingController.Reset();
-                _modBypassedForCurrentScope = false;
-                return;
-            }
-
             // 1. Restore FOV INSTANTLY (duration=0, no sluggish exit feel)
             RestoreFov();
 
@@ -542,6 +523,10 @@ namespace ScopeHousingMeshSurgery
 
             // 8. Reset zeroing state
             ZeroingController.Reset();
+
+            // ADS exit should always clear bypass state.
+            _modBypassedForCurrentScope = false;
+
         }
 
         public static void ToggleCurrentScopeWhitelist()
