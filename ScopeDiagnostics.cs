@@ -224,6 +224,15 @@ namespace ScopeHousingMeshSurgery
             sb.AppendLine($"[Diagnostics]   SmoothingFrames  : {ScopeHousingMeshSurgeryPlugin.ReticleSmoothingFrames.Value}");
             sb.AppendLine($"[Diagnostics]   JitterThreshold  : {ScopeHousingMeshSurgeryPlugin.ReticleJitterThreshold.Value:F5}");
 
+            // ── Whitelist ────────────────────────────────────────────────────
+            sb.AppendLine("[Diagnostics] --- Whitelist ---");
+            string scopeId = ScopeWhitelist.GetScopeIdentifier(os);
+            sb.AppendLine($"[Diagnostics]   Whitelist enabled : {ScopeHousingMeshSurgeryPlugin.EnableScopeWhitelist.Value}");
+            sb.AppendLine($"[Diagnostics]   Scope identifier  : {(scopeId ?? "(not found)")}");
+            sb.AppendLine($"[Diagnostics]   Is whitelisted    : {ScopeWhitelist.IsWhitelisted(scopeId)}");
+            string wlEntries = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEntries.Value;
+            sb.AppendLine($"[Diagnostics]   Whitelist entries : {(string.IsNullOrWhiteSpace(wlEntries) ? "(empty)" : wlEntries)}");
+
             // ── Blacklist hint ────────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Blacklist ---");
             string current = ScopeHousingMeshSurgeryPlugin.ScopeBlacklist.Value;

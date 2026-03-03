@@ -154,6 +154,11 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<KeyCode> ZeroingUpKey;
         internal static ConfigEntry<KeyCode> ZeroingDownKey;
 
+        // --- 7. Scope Whitelist ---
+        internal static ConfigEntry<bool> EnableScopeWhitelist;
+        internal static ConfigEntry<string> ScopeWhitelistEntries;
+        internal static ConfigEntry<KeyCode> WhitelistToggleKey;
+
         // --- Debug ---
         internal static ConfigEntry<bool> VerboseLogging;
 
@@ -478,6 +483,21 @@ namespace ScopeHousingMeshSurgery
                 "of the log output.  Match is case-insensitive substring: e.g. 'elcan' matches\n" +
                 "any scope whose root name contains 'elcan'.");
 
+            // --- 7. Scope Whitelist ---
+            EnableScopeWhitelist = Config.Bind("7. Scope Whitelist", "EnableScopeWhitelist", false,
+                "Enable the scope whitelist system. When ON, the mod only applies to scopes\n" +
+                "whose identifier has been added to the whitelist. All other scopes are\n" +
+                "bypassed and use vanilla PiP rendering.\n" +
+                "An empty whitelist with this enabled means ALL scopes are bypassed.");
+            ScopeWhitelistEntries = Config.Bind("7. Scope Whitelist", "ScopeWhitelistEntries", "",
+                "Comma-separated list of whitelisted scope identifiers.\n" +
+                "These are the scope_* object names under mod_scope, without the (Clone) suffix.\n" +
+                "Example: scope_dovetail_mosin_scope_pu_35,scope_30mm_elcan_specterdr_14\n" +
+                "Use the WhitelistToggleKey while scoped to add/remove scopes at runtime.");
+            WhitelistToggleKey = Config.Bind("7. Scope Whitelist", "WhitelistToggleKey", KeyCode.F7,
+                "Press while scoped to add the current scope to the whitelist (if not on it)\n" +
+                "or remove it (if already on it). The mod effects update immediately.");
+
             // --- Debug ---
             VerboseLogging = Config.Bind("6. Debug", "VerboseLogging", false,
                 "Enable detailed logging. Turn on to diagnose lens/zoom issues.");
@@ -500,6 +520,7 @@ namespace ScopeHousingMeshSurgery
             Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
             Logger.LogInfo($"  ScrollZoom={EnableScrollZoom.Value}  ScrollSens={ScrollZoomSensitivity.Value}  ModifierKey={ScrollZoomModifierKey.Value}  Min={ScrollZoomMin.Value}  Max={ScrollZoomMax.Value}");
             Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
+            Logger.LogInfo($"  ScopeWhitelist={EnableScopeWhitelist.Value}  WhitelistKey={WhitelistToggleKey.Value}  Entries={(!string.IsNullOrWhiteSpace(ScopeWhitelistEntries.Value) ? ScopeWhitelistEntries.Value : "(empty)")}");
         }
 
         private void OnDestroy()
@@ -593,6 +614,26 @@ namespace ScopeHousingMeshSurgery
             // --- Diagnostics dump ---
             if (DiagnosticsKey.Value != KeyCode.None && InputProxy.GetKeyDown(DiagnosticsKey.Value))
                 ScopeDiagnostics.Dump(ScopeLifecycle.ActiveOptic);
+
+            // --- Scope whitelist toggle ---
+            if (WhitelistToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(WhitelistToggleKey.Value))
+            {
+                if (ScopeLifecycle.IsScoped)
+                {
+                    var currentOptic = ScopeLifecycle.ActiveOptic;
+                    string scopeId = ScopeWhitelist.GetScopeIdentifier(currentOptic);
+                    if (!string.IsNullOrEmpty(scopeId))
+                    {
+                        bool added = ScopeWhitelist.Toggle(scopeId);
+                        Logger.LogInfo($"[Whitelist] {(added ? "Added" : "Removed")} '{scopeId}' " +
+                            $"{(added ? "to" : "from")} whitelist");
+
+                        // Force re-evaluation so the mod enables/disables immediately
+                        ScopeLifecycle.ForceExit();
+                        ScopeLifecycle.SyncState();
+                    }
+                }
+            }
 
             // --- Scroll wheel zoom (only while scoped + modifier held) ---
             if (ScopeLifecycle.IsScoped && EnableScrollZoom.Value)

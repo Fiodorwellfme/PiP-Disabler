@@ -143,6 +143,30 @@ namespace ScopeHousingMeshSurgery
 
                 _modBypassedForCurrentScope = false;
 
+                // Check whitelist — if scope not whitelisted, keep bypassed
+                if (ScopeHousingMeshSurgeryPlugin.EnableScopeWhitelist.Value)
+                {
+                    string whitelistId = ScopeWhitelist.GetScopeIdentifier(os);
+                    if (!ScopeWhitelist.IsWhitelisted(whitelistId))
+                    {
+                        _modBypassedForCurrentScope = true;
+                        RestoreFov();
+                        ZoomController.Restore();
+                        ZoomController.ResetScrollZoom();
+                        ReticleRenderer.Cleanup();
+                        ScopeEffectsRenderer.Cleanup();
+                        LensTransparency.RestoreAll();
+                        CameraSettingsManager.Restore();
+                        PiPDisabler.RestoreAllCameras();
+                        Patches.WeaponScalingPatch.RestoreScale();
+                        if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                            MeshSurgeryManager.RestoreForScope(os.transform);
+                        PlaneVisualizer.Hide();
+                        ZeroingController.Reset();
+                        return;
+                    }
+                }
+
                 // Re-extract reticle from the NEW mode's linza
                 ReticleRenderer.Cleanup();
                 ReticleRenderer.ExtractReticle(os);
@@ -360,6 +384,25 @@ namespace ScopeHousingMeshSurgery
                 PlaneVisualizer.Hide();
                 ZeroingController.Reset();
                 return;
+            }
+
+            // Check scope whitelist — if enabled and scope is not whitelisted, bypass entirely
+            if (ScopeHousingMeshSurgeryPlugin.EnableScopeWhitelist.Value)
+            {
+                string whitelistId = ScopeWhitelist.GetScopeIdentifier(os);
+                if (!ScopeWhitelist.IsWhitelisted(whitelistId))
+                {
+                    _modBypassedForCurrentScope = true;
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[ScopeLifecycle] Scope '{whitelistId}' not in whitelist — bypassing mod");
+
+                    LensTransparency.RestoreAll();
+                    CameraSettingsManager.Restore();
+                    PiPDisabler.RestoreAllCameras();
+                    PlaneVisualizer.Hide();
+                    ZeroingController.Reset();
+                    return;
+                }
             }
 
             // Check blacklist before doing anything — blacklisted scopes skip surgery + reticle
