@@ -165,7 +165,7 @@ namespace ScopeHousingMeshSurgery
             ModEnabled = Config.Bind("0. Global", "ModEnabled", true,
                 "Master ON/OFF switch for the entire mod. When OFF, all effects are " +
                 "cleaned up and the game behaves as if the mod is not installed.");
-            ModToggleKey = Config.Bind("0. Global", "ModToggleKey", KeyCode.F12,
+            ModToggleKey = Config.Bind("0. Global", "ModToggleKey", KeyCode.Backspace,
                 "Toggle key for master mod enable/disable.");
 
             // --- General ---
@@ -188,16 +188,16 @@ namespace ScopeHousingMeshSurgery
                 "Toggle key for lens transparency.");
 
             // --- Weapon Scaling ---
-            EnableWeaponScaling = Config.Bind("2. Zoom", "EnableWeaponScaling", true,
+            EnableWeaponScaling = Config.Bind("2. Zoom", "EnableWeaponScaling", false,
                 "Compensate weapon/arms model scale across magnification levels.\n" +
                 "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
                 "With this enabled, the weapon shrinks proportionally as you zoom in so it\n" +
                 "always occupies the same screen space at every magnification level.");
-            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 0.90f,
+            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 1.031455f,
                 new ConfigDescription(
                     "Placeholder text\n",
                     new AcceptableValueRange<float>(0.00f, 2.00f)));
-            WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.00f,
+            WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.3051643f,
                 new ConfigDescription(
                     "Placeholder text\n",
                     new AcceptableValueRange<float>(0.00f, 1.00f)));
@@ -205,7 +205,7 @@ namespace ScopeHousingMeshSurgery
             // --- Zoom ---
             EnableZoom = Config.Bind("2. Zoom", "EnableZoom", true,
                 "Enable scope magnification (either shader zoom or FOV zoom fallback).");
-            EnableShaderZoom = Config.Bind("2. Zoom", "EnableShaderZoom", true,
+            EnableShaderZoom = Config.Bind("2. Zoom", "EnableShaderZoom", false,
                 "Use GrabPass shader zoom on the lens surface (best quality, weapon stays normal size). " +
                 "Requires scopezoom.bundle in assets/ folder. Falls back to FOV zoom if not available.");
             DefaultZoom = Config.Bind("2. Zoom", "DefaultZoom", 4f,
@@ -220,7 +220,7 @@ namespace ScopeHousingMeshSurgery
                     "FOV (degrees) for FOV zoom fallback mode. Lower = more zoom. " +
                     "Only used when shader zoom is unavailable.",
                     new AcceptableValueRange<float>(5f, 75f)));
-            FovAnimationDuration = Config.Bind("2. Zoom", "FovAnimationDuration", 0f,
+            FovAnimationDuration = Config.Bind("2. Zoom", "FovAnimationDuration", 0.08450704f,
                 new ConfigDescription(
                     "Duration (seconds) of the FOV zoom-in animation when entering ADS.\n" +
                     "0 = instant snap. 0.25 = smooth quarter-second transition.\n" +
@@ -363,13 +363,13 @@ namespace ScopeHousingMeshSurgery
                     "0 = starts exactly at the backLens. 0.05 = 5cm behind it (catches interior tube geometry).\n" +
                     "Changing CutLength does NOT move this plane.",
                     new AcceptableValueRange<float>(0f, 0.3f)));
-            CutLength = Config.Bind("3. Mesh Surgery", "CutLength", 0.755493f,
+            CutLength = Config.Bind("3. Mesh Surgery", "CutLength", 1f,
                 new ConfigDescription(
                     "How far forward from the near plane the cut extends (toward the objective).\n" +
                     "The far plane is at: nearPlane + (length × boreAxis).\n" +
                     "Only the far plane moves when you change this value.",
                     new AcceptableValueRange<float>(0.01f, 1f)));
-            NearPreserveDepth = Config.Bind("3. Mesh Surgery", "NearPreserveDepth", 0.03042253f,
+            NearPreserveDepth = Config.Bind("3. Mesh Surgery", "NearPreserveDepth", 0.01492957f,
                 new ConfigDescription(
                     "Depth (meters) from the near cut plane where NO geometry is cut.\n" +
                     "Preserves the eyepiece housing closest to the camera so you\n" +
@@ -406,7 +406,7 @@ namespace ScopeHousingMeshSurgery
                     "0 = Unity default.  -1 = subtle sharpening.  -2 = very crisp at the cost\n" +
                     "of slight shimmering.  Adjust to taste with your scope.",
                     new AcceptableValueRange<float>(-4f, 0f)));
-            AdsSettledThreshold = Config.Bind("3. Mesh Surgery", "AdsSettledThreshold", 0.006244131f,
+            AdsSettledThreshold = Config.Bind("3. Mesh Surgery", "AdsSettledThreshold", 0.01f,
                 new ConfigDescription(
                     "Lens movement threshold (units/frame) below which the weapon is\n" +
                     "considered settled after ADS-in.  The reticle/vignette/shadow are\n" +
@@ -437,10 +437,10 @@ namespace ScopeHousingMeshSurgery
             VignetteEnabled = Config.Bind("4. Scope Effects", "VignetteEnabled", false,
                 "Render a circular vignette ring around the scope aperture.\n" +
                 "A world-space quad at the lens position fading from transparent centre to black edge.");
-            VignetteOpacity = Config.Bind("4. Scope Effects", "VignetteOpacity", 0.5823944f,
+            VignetteOpacity = Config.Bind("4. Scope Effects", "VignetteOpacity", 0.8922536f,
                 new ConfigDescription("Maximum opacity of the lens vignette ring (0=invisible, 1=full black).",
                     new AcceptableValueRange<float>(0f, 1f)));
-            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 0.2730047f,
+            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 0.6110329f,
                 new ConfigDescription(
                     "Vignette quad diameter as a multiplier of ReticleBaseSize.\n" +
                     "1.0 = same size as reticle.  1.5 gives a visible border ring.\n" +
