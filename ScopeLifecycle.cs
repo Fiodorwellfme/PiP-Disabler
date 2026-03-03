@@ -192,8 +192,9 @@ namespace ScopeHousingMeshSurgery
                 float modeMag = ZoomController.GetMagnification(os);
                 ReticleRenderer.Show(os, modeMag);
 
-                // Notify FOV controller the mode changed so it re-reads ScopeCameraData
+                // Notify FOV controller / magnification driver to refresh on mode change
                 FovController.OnModeSwitch();
+                MagnificationFovDriver.OnScopeEnter();
 
                 // RESTORE all meshes first, then re-cut with new mode's plane position.
                 if (ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
@@ -326,6 +327,7 @@ namespace ScopeHousingMeshSurgery
                 {
                     float mag = ZoomController.GetMagnification(_activeOptic);
                     ZoomController.SetZoom(mag);
+                    MagnificationFovDriver.SetMagnification(mag);
                     // Update reticle + effects position (smoothed), rotation, and scale each frame
                     ReticleRenderer.UpdateTransform(mag);
                     ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
@@ -346,6 +348,7 @@ namespace ScopeHousingMeshSurgery
                 if (_activeOptic != null)
                 {
                     float mag = ZoomController.GetMagnification(_activeOptic);
+                    MagnificationFovDriver.SetMagnification(mag);
                     ReticleRenderer.UpdateTransform(mag);
                     ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
                 }
@@ -455,6 +458,8 @@ namespace ScopeHousingMeshSurgery
 
             // 3. Get magnification for reticle scaling and zoom
             float mag = ZoomController.GetMagnification(os);
+            MagnificationFovDriver.OnScopeEnter();
+            MagnificationFovDriver.SetMagnification(mag);
 
             // 4. Show reticle overlay at the lens position, scaled for magnification
             if (!isBlacklisted)
@@ -589,7 +594,10 @@ namespace ScopeHousingMeshSurgery
         {
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
-            ApplyFov(false); // false = short duration for scroll feel
+            if (_activeOptic == null) return;
+            float mag = ZoomController.GetMagnification(_activeOptic);
+            MagnificationFovDriver.SetMagnification(mag);
+            ApplyFov(false);
         }
 
         /// <summary>
@@ -613,18 +621,24 @@ namespace ScopeHousingMeshSurgery
                 if (pwa == null) return;
 
                 float playerBaseFov = pwa.Single_2;
-                float zoomBaseFov = FovController.ZoomBaselineFov;
                 float zoomedFov = FovController.ComputeZoomedFov(playerBaseFov, pwa);
+                float mag = _activeOptic != null ? ZoomController.GetMagnification(_activeOptic) : 0f;
+                if (mag > 0.0001f)
+                    MagnificationFovDriver.SetMagnification(mag);
 
-                if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
+                if (!ScopeHousingMeshSurgeryPlugin.EnableMagnificationDrivenFov.Value)
                 {
-                    float duration = isTransition
-                        ? ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value
-                        : 0.1f; // Short duration for variable zoom updates
+                    float zoomBaseFov = FovController.ZoomBaselineFov;
+                    if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
+                    {
+                        float duration = isTransition
+                            ? ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value
+                            : 0.1f;
 
-                    CameraClass.Instance.SetFov(zoomedFov, duration, false);
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
-                        $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
+                        CameraClass.Instance.SetFov(zoomedFov, duration, false);
+                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            $"[ScopeLifecycle] ApplyFov(Legacy): {zoomedFov:F1}° dur={duration:F2}s");
+                    }
                 }
             }
             catch (Exception ex)
@@ -652,7 +666,11 @@ namespace ScopeHousingMeshSurgery
                 if (pwa == null) return;
 
                 float baseFov = pwa.Single_2;
-                if (baseFov > 30f)
+                if (ScopeHousingMeshSurgeryPlugin.EnableMagnificationDrivenFov.Value)
+                {
+                    MagnificationFovDriver.OnScopeExit();
+                }
+                else if (baseFov > 30f)
                 {
                     cc.SetFov(baseFov, 0f, true); // duration=0 = instant
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(

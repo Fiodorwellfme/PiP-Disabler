@@ -146,6 +146,11 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> AutoFovFromScope;
         internal static ConfigEntry<float> ScopedFov;
         internal static ConfigEntry<float> FovAnimationDuration;
+        internal static ConfigEntry<bool> EnableMagnificationDrivenFov;
+        internal static ConfigEntry<float> ZoomBaselineFovDeg;
+        internal static ConfigEntry<float> ClampFovMinDeg;
+        internal static ConfigEntry<float> ClampFovMaxDeg;
+        internal static ConfigEntry<float> FovApplyEpsilon;
         internal static ConfigEntry<KeyCode> ZoomToggleKey;
         internal static ConfigEntry<bool> EnableScrollZoom;
         internal static ConfigEntry<float> ScrollZoomSensitivity;
@@ -245,6 +250,19 @@ namespace ScopeHousingMeshSurgery
                     "0 = instant snap. 0.25 = smooth quarter-second transition.\n" +
                     "Scope exit always restores FOV instantly to avoid sluggish feel.",
                     new AcceptableValueRange<float>(0f, 2f)));
+            EnableMagnificationDrivenFov = Config.Bind("2. Zoom", "EnableMagnificationDrivenFov", true,
+                "Set FPS camera FOV from optic template magnification using tangent-based zoom math.");
+            ZoomBaselineFovDeg = Config.Bind("2. Zoom", "ZoomBaselineFovDeg", 50f,
+                new ConfigDescription(
+                    "Baseline vertical FOV used for magnification-driven camera FOV mapping.",
+                    new AcceptableValueRange<float>(10f, 120f)));
+            ClampFovMinDeg = Config.Bind("2. Zoom", "ClampFovMinDeg", 1f,
+                new ConfigDescription("Minimum allowed scoped camera FOV.", new AcceptableValueRange<float>(0.5f, 30f)));
+            ClampFovMaxDeg = Config.Bind("2. Zoom", "ClampFovMaxDeg", 75f,
+                new ConfigDescription("Maximum allowed scoped camera FOV.", new AcceptableValueRange<float>(10f, 150f)));
+            FovApplyEpsilon = Config.Bind("2. Zoom", "FovApplyEpsilon", 0.01f,
+                new ConfigDescription("Only write camera FOV when target change exceeds this epsilon.",
+                    new AcceptableValueRange<float>(0.0001f, 1f)));
 
             // --- Scroll Zoom ---
             EnableScrollZoom = Config.Bind("2. Zoom", "EnableScrollZoom", true,
@@ -517,6 +535,7 @@ namespace ScopeHousingMeshSurgery
             Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}  EnableLensMaterialFallback={EnableLensMaterialFallback.Value}");
             Logger.LogInfo($"  EnableZoom={EnableZoom.Value}  ShaderZoom={EnableShaderZoom.Value} (available={ZoomController.ShaderAvailable})");
             Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
+            Logger.LogInfo($"  MagDrivenFov={EnableMagnificationDrivenFov.Value}  BaselineFov={ZoomBaselineFovDeg.Value}  Clamp=[{ClampFovMinDeg.Value}, {ClampFovMaxDeg.Value}] eps={FovApplyEpsilon.Value}");
             Logger.LogInfo($"  ScrollZoom={EnableScrollZoom.Value}  ScrollSens={ScrollZoomSensitivity.Value}  ModifierKey={ScrollZoomModifierKey.Value}  Min={ScrollZoomMin.Value}  Max={ScrollZoomMax.Value}");
             Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
         }
@@ -641,6 +660,12 @@ namespace ScopeHousingMeshSurgery
 
             // Per-frame maintenance (ensure lens hidden, update variable zoom, etc.)
             ScopeLifecycle.Tick();
+        }
+
+        private void LateUpdate()
+        {
+            if (!ModEnabled.Value) return;
+            MagnificationFovDriver.LateTickApply();
         }
     }
 

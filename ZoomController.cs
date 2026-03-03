@@ -27,6 +27,8 @@ namespace ScopeHousingMeshSurgery
         private static bool  _fovRangeDiscovered;  // true once DiscoverFovRange has run for this scope
         private static bool  _isVariableZoom;      // true if ScopeZoomHandler was found (has zoom ring)
         private static float _scrollStartNativeFov; // native FOV when scroll zoom first activated
+        private static float _nativeMinMag = 1f;
+        private static float _nativeMaxMag = 1f;
 
         /// <summary>Shader zoom is disabled permanently.</summary>
         public static bool ShaderAvailable => false;
@@ -91,22 +93,20 @@ namespace ScopeHousingMeshSurgery
         {
             if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
+            if (TryGetTemplateMagnification(os, out float templateMag))
+                return templateMag;
+
             float scopeFov = GetScopeFov(os);
             if (scopeFov > 0.1f)
             {
                 _nativeFov = scopeFov;
 
-                // Discover FOV range only once per scope session
                 if (!_fovRangeDiscovered)
                 {
                     DiscoverFovRange(os);
                     _fovRangeDiscovered = true;
                 }
 
-                // Scroll zoom override — but detect mode switches first.
-                // If the native FOV changed significantly from when scroll zoom started
-                // (e.g. user alt+right-clicked to switch magnification level), reset
-                // scroll zoom so the native change takes effect.
                 if (_scrollZoomActive && _scrollZoomFov > 0f)
                 {
                     if (Mathf.Abs(scopeFov - _scrollStartNativeFov) > 0.3f)
@@ -118,14 +118,13 @@ namespace ScopeHousingMeshSurgery
                     }
                     else
                     {
-                        return 35f / _scrollZoomFov;
+                        return MagnificationFromScopeFov(_scrollZoomFov);
                     }
                 }
 
-                return 35f / scopeFov;
+                return MagnificationFromScopeFov(scopeFov);
             }
 
-            _nativeFov = 35f / ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
             return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
         }
 
@@ -137,7 +136,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static float GetMinFov(OpticSight os)
         {
-            if (os == null) return 35f / ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
+            if (os == null) return MagnificationFovDriver.FovFromMagnification(FovController.ZoomBaselineFov, ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value);
 
             try
             {
@@ -184,7 +183,7 @@ namespace ScopeHousingMeshSurgery
 
             // Fallback: convert current magnification back to FOV
             float currentMag = GetMagnification(os);
-            return 35f / currentMag;
+            return MagnificationFovDriver.FovFromMagnification(FovController.ZoomBaselineFov, currentMag);
         }
 
         /// <summary>
@@ -196,55 +195,25 @@ namespace ScopeHousingMeshSurgery
         {
             if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
-            // If FOV range has been discovered and we have a valid max FOV (min zoom)
+            if (TryGetTemplateZoomRange(os, out float minMag, out _))
+                return minMag;
+
             if (_fovRangeDiscovered && _nativeMaxFov > 0.1f)
-                return 35f / _nativeMaxFov;
+                return MagnificationFromScopeFov(_nativeMaxFov);
 
-            // Range not yet discovered — try to discover it now
-            try
-            {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>();
-                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
-                if (szh != null)
-                {
-                    var szhType = szh.GetType();
-                    float maxFov = 0f;
+            return GetMagnification(os);
+        }
 
-                    var s0Prop = szhType.GetProperty("Single_0",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    if (s0Prop != null && s0Prop.PropertyType == typeof(float))
-                        maxFov = (float)s0Prop.GetValue(szh);
+        public static float GetMaxMagnification(OpticSight os)
+        {
+            if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
-                    if (maxFov < 0.1f)
-                    {
-                        foreach (var field in szhType.GetFields(
-                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
-                        {
-                            if (field.FieldType.Name.Contains("IAdjustableOpticData") ||
-                                field.FieldType.Name.Contains("AdjustableOptic") ||
-                                field.Name.Contains("iadjustableOpticData"))
-                            {
-                                var opticData = field.GetValue(szh);
-                                if (opticData == null) continue;
+            if (TryGetTemplateZoomRange(os, out _, out float maxMag))
+                return maxMag;
 
-                                var mmfProp = opticData.GetType().GetProperty("MinMaxFov");
-                                if (mmfProp != null && mmfProp.PropertyType == typeof(Vector3))
-                                {
-                                    var mmf = (Vector3)mmfProp.GetValue(opticData);
-                                    maxFov = mmf.x; // max FOV = min zoom
-                                    break;
-                                }
-                            }
-                        }
-                    }
+            if (_fovRangeDiscovered && _nativeMinFov > 0.1f)
+                return MagnificationFromScopeFov(_nativeMinFov);
 
-                    if (maxFov > 0.1f)
-                        return 35f / maxFov;
-                }
-            }
-            catch { }
-
-            // Fixed scope: min mag = current mag
             return GetMagnification(os);
         }
 
@@ -284,8 +253,8 @@ namespace ScopeHousingMeshSurgery
             // Config overrides are in magnification units for user-friendliness
             float cfgMinMag = ScopeHousingMeshSurgeryPlugin.ScrollZoomMin.Value;
             float cfgMaxMag = ScopeHousingMeshSurgeryPlugin.ScrollZoomMax.Value;
-            if (cfgMaxMag > 0f) minFov = 35f / cfgMaxMag;
-            if (cfgMinMag > 0f) maxFov = 35f / cfgMinMag;
+            if (cfgMaxMag > 0f) minFov = MagnificationFovDriver.FovFromMagnification(FovController.ZoomBaselineFov, cfgMaxMag);
+            if (cfgMinMag > 0f) maxFov = MagnificationFovDriver.FovFromMagnification(FovController.ZoomBaselineFov, cfgMinMag);
 
             // Safety: if range is degenerate after config overrides, allow ±50%
             if (maxFov <= minFov + 0.05f)
@@ -329,6 +298,83 @@ namespace ScopeHousingMeshSurgery
             _scrollStartNativeFov = 0f;
             _fovRangeDiscovered = false;
             _isVariableZoom = false;
+            _nativeMinMag = 1f;
+            _nativeMaxMag = 1f;
+        }
+
+        private static bool TryGetTemplateMagnification(OpticSight os, out float magnification)
+        {
+            magnification = 0f;
+            try
+            {
+                var player = GetLocalPlayer();
+                var pwa = player != null ? player.ProceduralWeaponAnimation : null;
+                var sight = pwa != null ? pwa.CurrentAimingMod : null;
+                if (sight == null) return false;
+
+                var m = sight.GetType().GetMethod("GetCurrentOpticZoom",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (m == null) return false;
+
+                object raw = m.Invoke(sight, null);
+                if (raw == null) return false;
+
+                magnification = Convert.ToSingle(raw);
+                return magnification > 0.0001f;
+            }
+            catch { return false; }
+        }
+
+        private static bool TryGetTemplateZoomRange(OpticSight os, out float minMag, out float maxMag)
+        {
+            minMag = 0f;
+            maxMag = 0f;
+            try
+            {
+                var player = GetLocalPlayer();
+                var pwa = player != null ? player.ProceduralWeaponAnimation : null;
+                var sight = pwa != null ? pwa.CurrentAimingMod : null;
+                if (sight == null) return false;
+
+                var t = sight.GetType();
+                var minM = t.GetMethod("GetMinOpticZoom", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                var maxM = t.GetMethod("GetMaxOpticZoom", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (minM == null || maxM == null) return false;
+
+                minMag = Convert.ToSingle(minM.Invoke(sight, null));
+                maxMag = Convert.ToSingle(maxM.Invoke(sight, null));
+                if (minMag > maxMag)
+                {
+                    float tmp = minMag;
+                    minMag = maxMag;
+                    maxMag = tmp;
+                }
+
+                if (maxMag > 0.0001f)
+                {
+                    _nativeMinMag = minMag;
+                    _nativeMaxMag = maxMag;
+                    return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private static float MagnificationFromScopeFov(float scopeFov)
+        {
+            return MagnificationFovDriver.MagnificationFromFov(FovController.ZoomBaselineFov, scopeFov);
+        }
+
+        private static EFT.Player GetLocalPlayer()
+        {
+            try
+            {
+                var gw = Comfort.Common.Singleton<EFT.GameWorld>.Instance;
+                return gw != null ? gw.MainPlayer : null;
+            }
+            catch { return null; }
         }
 
         /// <summary>
@@ -343,6 +389,8 @@ namespace ScopeHousingMeshSurgery
             _nativeMinFov = _nativeFov;
             _nativeMaxFov = _nativeFov;
             _isVariableZoom = false;
+            _nativeMinMag = 1f;
+            _nativeMaxMag = 1f;
 
             try
             {

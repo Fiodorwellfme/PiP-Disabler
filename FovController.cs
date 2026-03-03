@@ -40,36 +40,27 @@ namespace ScopeHousingMeshSurgery
             _ = baseFov;
             _ = pwa;
 
-            float effectiveBaseFov = ZoomBaselineFov;
+            if (!ScopeHousingMeshSurgeryPlugin.AutoFovFromScope.Value)
+                return ScopeHousingMeshSurgeryPlugin.ScopedFov.Value;
 
-            if (ScopeHousingMeshSurgeryPlugin.AutoFovFromScope.Value)
+            var os = ScopeLifecycle.ActiveOptic;
+            if (os == null)
+                return ScopeHousingMeshSurgeryPlugin.ScopedFov.Value;
+
+            float magnification = ZoomController.GetMagnification(os);
+            if (magnification <= 0.0001f)
+                return ScopeHousingMeshSurgeryPlugin.ScopedFov.Value;
+
+            float resultFov = MagnificationFovDriver.FovFromMagnification(ZoomBaselineFov, magnification);
+
+            if (Mathf.Abs(magnification - _lastScopeFov) > 0.001f)
             {
-                // Check scroll zoom override first — keeps FOV and reticle in sync
-                float overrideFov = ZoomController.GetEffectiveScopeFov();
-                float scopeFov = overrideFov > 0.1f ? overrideFov : GetScopeFov();
-
-                if (scopeFov > 0.1f)
-                {
-                    float magnification = 35f / scopeFov;
-                    float baseFovRad = effectiveBaseFov * Mathf.Deg2Rad;
-                    float resultFovRad = 2f * Mathf.Atan2(Mathf.Tan(baseFovRad * 0.5f), magnification);
-                    float resultFov = resultFovRad * Mathf.Rad2Deg;
-
-                    // Only log when value actually changes
-                    if (Mathf.Abs(scopeFov - _lastScopeFov) > 0.01f)
-                    {
-                        _lastScopeFov = scopeFov;
-                        ScopeHousingMeshSurgeryPlugin.LogInfo(
-                            $"[FovController] scopeFov={scopeFov:F2} → mag={magnification:F2}x → " +
-                            $"mainFov={resultFov:F1} (baseFov={effectiveBaseFov:F0})" +
-                            (overrideFov > 0.1f ? " [SCROLL OVERRIDE]" : ""));
-                    }
-
-                    return resultFov;
-                }
+                _lastScopeFov = magnification;
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[FovController] mag={magnification:F2}x → mainFov={resultFov:F2} (baseline={ZoomBaselineFov:F0})");
             }
 
-            return ScopeHousingMeshSurgeryPlugin.ScopedFov.Value;
+            return resultFov;
         }
 
         /// <summary>
