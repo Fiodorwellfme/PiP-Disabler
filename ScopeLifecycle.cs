@@ -30,6 +30,9 @@ namespace ScopeHousingMeshSurgery
         private static PropertyInfo _isAimingProp;
         private static PropertyInfo _currentScopeProp;
         private static PropertyInfo _isOpticProp;
+        private static Func<ProceduralWeaponAnimation, bool> _isAimingGetter;
+        private static Func<ProceduralWeaponAnimation, object> _currentScopeGetter;
+        private static Func<object, bool> _isOpticGetter;
         private static bool _reflectionReady;
 
         // State
@@ -62,6 +65,27 @@ namespace ScopeHousingMeshSurgery
                 _reflectionReady = _isAimingProp != null
                                 && _currentScopeProp != null
                                 && _isOpticProp != null;
+
+                if (_reflectionReady)
+                {
+                    _isAimingGetter = (Func<ProceduralWeaponAnimation, bool>)Delegate.CreateDelegate(
+                        typeof(Func<ProceduralWeaponAnimation, bool>),
+                        null,
+                        _isAimingProp.GetGetMethod(true));
+
+                    _currentScopeGetter = (Func<ProceduralWeaponAnimation, object>)Delegate.CreateDelegate(
+                        typeof(Func<ProceduralWeaponAnimation, object>),
+                        null,
+                        _currentScopeProp.GetGetMethod(true));
+
+                    var scopeType = _currentScopeProp.PropertyType;
+                    var objectParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "o");
+                    var castScope = System.Linq.Expressions.Expression.Convert(objectParam, scopeType);
+                    var isOpticCall = System.Linq.Expressions.Expression.Call(castScope, _isOpticProp.GetGetMethod(true));
+                    _isOpticGetter = System.Linq.Expressions.Expression
+                        .Lambda<Func<object, bool>>(isOpticCall, objectParam)
+                        .Compile();
+                }
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[ScopeLifecycle] Reflection: IsAiming={_isAimingProp != null}, " +
@@ -174,13 +198,13 @@ namespace ScopeHousingMeshSurgery
                 var pwa = player.ProceduralWeaponAnimation;
                 if (pwa == null) { reason = "no PWA"; goto evaluate; }
 
-                bool isAiming = (bool)_isAimingProp.GetValue(pwa);
+                bool isAiming = _isAimingGetter != null ? _isAimingGetter(pwa) : (bool)_isAimingProp.GetValue(pwa);
                 if (!isAiming) { reason = "not aiming"; goto evaluate; }
 
-                object currentScope = _currentScopeProp.GetValue(pwa);
+                object currentScope = _currentScopeGetter != null ? _currentScopeGetter(pwa) : _currentScopeProp.GetValue(pwa);
                 if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
 
-                bool isOptic = (bool)_isOpticProp.GetValue(currentScope);
+                bool isOptic = _isOpticGetter != null ? _isOpticGetter(currentScope) : (bool)_isOpticProp.GetValue(currentScope);
                 if (!isOptic) { reason = "not optic"; goto evaluate; }
 
                 var enabledOs = FindEnabledOpticFromPWA();
@@ -210,7 +234,7 @@ namespace ScopeHousingMeshSurgery
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[ScopeLifecycle] State change: {(_isScoped ? "SCOPED" : "NOT_SCOPED")} → " +
                     $"{(shouldBeScoped ? "SCOPED" : "NOT_SCOPED")} reason='{reason}' " +
-                    $"caller={GetCaller()} frame={Time.frameCount}");
+                    $"frame={Time.frameCount}");
             }
 
             if (shouldBeScoped && !_isScoped)
@@ -221,23 +245,6 @@ namespace ScopeHousingMeshSurgery
             {
                 DoScopeExit();
             }
-        }
-
-        /// <summary>Identifies what called CheckAndUpdate for debugging.</summary>
-        private static string GetCaller()
-        {
-            try
-            {
-                var st = new System.Diagnostics.StackTrace(2, false);
-                if (st.FrameCount > 0)
-                {
-                    var method = st.GetFrame(0)?.GetMethod();
-                    if (method != null)
-                        return $"{method.DeclaringType?.Name}.{method.Name}";
-                }
-            }
-            catch { }
-            return "?";
         }
 
         /// <summary>
@@ -312,8 +319,8 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void SyncState()
         {
-            // _lastEnabledOptic was cleared by ForceExit; if we're already scoped
-            // FindOpticFromPWA() will locate the active one when DoScopeEnter fires.
+            // _lastEnabledOptic was cleared by ForceExit; if we're already scoped,
+            // OnOpticEnabled/CheckAndUpdate will repopulate it on the next optic event.
             CheckAndUpdate();
         }
 
@@ -323,8 +330,6 @@ namespace ScopeHousingMeshSurgery
         {
             // Get the OpticSight — cached from OnEnable, or find from pwa
             var os = _lastEnabledOptic;
-            if (os == null)
-                os = FindOpticFromPWA();
             if (os == null)
             {
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
@@ -590,32 +595,8 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Fallback: find OpticSight if _lastEnabledOptic wasn't cached.
-        /// Uses FindObjectsOfType as last resort.
-        /// </summary>
-        private static OpticSight FindOpticFromPWA()
-        {
-            try
-            {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
-                foreach (var os in all)
-                {
-                    if (os != null && os.isActiveAndEnabled)
-                        return os;
-                }
-                foreach (var os in all)
-                {
-                    if (os != null) return os;
-                }
-            }
-            catch { }
-
-            return null;
-        }
-
-        /// <summary>
         /// Finds an enabled OpticSight, preferring active and cached instances before
-        /// a global search.
+        /// fallback behavior.
         /// </summary>
         private static OpticSight FindEnabledOpticFromPWA()
         {
@@ -624,17 +605,6 @@ namespace ScopeHousingMeshSurgery
 
             if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled)
                 return _lastEnabledOptic;
-
-            try
-            {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
-                foreach (var os in all)
-                {
-                    if (os != null && os.isActiveAndEnabled)
-                        return os;
-                }
-            }
-            catch { }
 
             return null;
         }
