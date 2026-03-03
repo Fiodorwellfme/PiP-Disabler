@@ -374,7 +374,7 @@ namespace ScopeHousingMeshSurgery
                 $"[ScopeLifecycle] ENTER: '{os.name}' root='{rootNameForBlacklist}' scopeItem='{whitelistName ?? ""}' " +
                 $"blacklisted={isBlacklisted} whitelisted={isWhitelisted} frame={Time.frameCount}");
 
-            bool bypassForWhitelist = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value && !isWhitelisted;
+            bool bypassForWhitelist = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value && isWhitelisted;
             bool suppressScopeFeatures = isBlacklisted || bypassForWhitelist;
 
             if (bypassForWhitelist)

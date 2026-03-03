@@ -476,13 +476,13 @@ namespace ScopeHousingMeshSurgery
                 "Press to log full diagnostics for the currently active scope: name, hierarchy,\n" +
                 "magnification, cut-plane config, target mesh list, blacklist hint.");
             ScopeWhitelistEnabled = Config.Bind("5. Diagnostics", "ScopeWhitelistEnabled", false,
-                "Only enable mesh surgery + reticle on scopes listed in ScopeWhitelist.\n" +
+                "When enabled, scopes listed in ScopeWhitelist are BYPASSED by the mod.\n" +
                 "Matching is case-insensitive substring against the scope object under mod_scope\n" +
                 "whose name starts with 'scope_'.");
             ScopeWhitelist = Config.Bind("5. Diagnostics", "ScopeWhitelist", "",
-                "Comma-separated whitelist entries. When ScopeWhitelistEnabled=true,\n" +
-                "the mod only applies on scopes whose detected 'scope_*' object name\n" +
-                "contains at least one entry (case-insensitive).\n" +
+                "Comma-separated scope entries to bypass. When ScopeWhitelistEnabled=true,\n" +
+                "any scope whose detected 'scope_*' object name contains an entry\n" +
+                "is fully bypassed by the mod (case-insensitive).\n" +
                 "Example: 'scope_34mm_s&b_pm_ii_3_12x50'.");
             ToggleCurrentScopeWhitelistKey = Config.Bind("5. Diagnostics", "ToggleCurrentScopeWhitelistKey", KeyCode.F7,
                 "Press while scoped to add/remove the currently used scope_* object\n" +

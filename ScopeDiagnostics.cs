@@ -50,14 +50,11 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Returns true if whitelist is disabled OR the scope item name matches ScopeWhitelist entries.
+        /// Returns true if the scope item name matches any ScopeWhitelist entry.
         /// Matching is case-insensitive substring.
         /// </summary>
         public static bool IsWhitelisted(string scopeItemName)
         {
-            if (!ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value)
-                return true;
-
             if (string.IsNullOrWhiteSpace(scopeItemName))
                 return false;
 
@@ -220,8 +217,11 @@ namespace ScopeHousingMeshSurgery
             sb.AppendLine($"[Diagnostics] Scope root       : {rootName}");
             sb.AppendLine($"[Diagnostics] Scope item       : {whitelistName}");
             sb.AppendLine($"[Diagnostics] Blacklisted      : {(IsBlacklisted(rootName) ? "YES (mesh surgery + reticle skipped)" : "no")}");
+            bool isWhitelisted = IsWhitelisted(whitelistName);
+            bool whitelistBypass = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value && isWhitelisted;
             sb.AppendLine($"[Diagnostics] Whitelist active : {ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value}");
-            sb.AppendLine($"[Diagnostics] Whitelisted      : {(IsWhitelisted(whitelistName) ? "YES" : "no")}");
+            sb.AppendLine($"[Diagnostics] Whitelisted      : {(isWhitelisted ? "YES" : "no")}");
+            sb.AppendLine($"[Diagnostics] Whitelist bypass : {(whitelistBypass ? "YES (mod bypassed for this scope)" : "no")}");
 
             // ── Magnification ─────────────────────────────────────────────────
             float mag = 1f;
