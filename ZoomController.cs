@@ -295,12 +295,14 @@ namespace ScopeHousingMeshSurgery
             }
 
             // Initialize from native FOV if this is the first scroll
+            bool wasActive = _scrollZoomActive;
             if (!_scrollZoomActive)
             {
                 _scrollZoomFov = _nativeFov;
                 _scrollStartNativeFov = _nativeFov;
-                _scrollZoomActive = true;
             }
+
+            float previousFov = _scrollZoomFov;
 
             // Multiplicative scaling in FOV space:
             // scroll up (+) = zoom in = smaller FOV → divide
@@ -312,6 +314,21 @@ namespace ScopeHousingMeshSurgery
                 _scrollZoomFov *= factor;
 
             _scrollZoomFov = Mathf.Clamp(_scrollZoomFov, minFov, maxFov);
+
+            // If scroll hit the boundary and produced no effective change,
+            // don't activate/keep an override. This avoids desync with native
+            // scope mode switching when the player over-scrolls at 1x/maximum zoom.
+            if (Mathf.Abs(_scrollZoomFov - previousFov) < 0.001f)
+            {
+                if (!wasActive)
+                {
+                    _scrollZoomFov = 0f;
+                    _scrollStartNativeFov = 0f;
+                }
+                return false;
+            }
+
+            _scrollZoomActive = true;
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[ZoomController] Scroll zoom: FOV={_scrollZoomFov:F2}° (range={minFov:F2}°-{maxFov:F2}°)");
