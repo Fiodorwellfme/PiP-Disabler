@@ -166,12 +166,11 @@ namespace ScopeHousingMeshSurgery
                 var activeMode = ScopeHierarchy.FindBestMode(scopeRoot);
                 sb.AppendLine($"[Diagnostics]   Active mode     : {(activeMode != null ? activeMode.name : "(none)")}");
 
-                var backLens = ScopeHierarchy.FindDeepChild(
-                    activeMode ?? scopeRoot, "backLens");
+                var backLens = ScopeHierarchy.FindBackLensTransform(activeMode ?? scopeRoot);
                 if (backLens != null)
-                    sb.AppendLine($"[Diagnostics]   backLens pos    : {backLens.position:F4}  local fwd: {backLens.forward:F4}");
+                    sb.AppendLine($"[Diagnostics]   backLens ('{backLens.name}') pos: {backLens.position:F4}  local fwd: {backLens.forward:F4}");
                 else
-                    sb.AppendLine($"[Diagnostics]   backLens        : NOT FOUND");
+                    sb.AppendLine($"[Diagnostics]   backLens        : NOT FOUND (tried backLens, back_lens, RearLens, rear_lens)");
 
                 if (ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode ?? scopeRoot,
                     out var pp, out var pn, out _))

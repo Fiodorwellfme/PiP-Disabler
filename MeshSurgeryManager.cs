@@ -553,13 +553,14 @@ namespace ScopeHousingMeshSurgery
                 if (HasModeChild(t)) return t;
             }
 
-            // Pass 2: backLens-based (handles single-mode scopes with direct backLens child)
+            // Pass 2: backLens-based (handles single-mode scopes with a direct back-lens child,
+            // regardless of naming — "backLens", "back_lens", "RearLens", "rear_lens", etc.)
             for (var t = any; t != null; t = t.parent)
             {
-                if (HasDirectChild(t, "backLens") || HasDirectChild(t, "backlens"))
+                if (HasBackLensChild(t))
                 {
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[ScopeHierarchy] FindScopeRoot fallback (backLens child): '{t.name}'");
+                        $"[ScopeHierarchy] FindScopeRoot fallback (back-lens child): '{t.name}'");
                     return t;
                 }
             }
@@ -636,7 +637,7 @@ namespace ScopeHousingMeshSurgery
 
                 if (c.gameObject.activeInHierarchy)
                 {
-                    var bl = FindDeepChild(c, "backLens");
+                    var bl = FindBackLensTransform(c);
                     if (bl != null) { withBackLens = c; break; }
                 }
             }
@@ -671,6 +672,34 @@ namespace ScopeHousingMeshSurgery
             return null;
         }
 
+        // Canonical names for the rear/back lens reference transform.
+        // Some scopes use "backLens" (most common), others use "RearLens" or "rear_lens".
+        private static readonly string[] BackLensNames = { "backLens", "back_lens", "RearLens", "rear_lens" };
+
+        /// <summary>
+        /// Finds the rear/back lens reference transform by trying all known naming variants.
+        /// </summary>
+        public static Transform FindBackLensTransform(Transform root)
+        {
+            if (root == null) return null;
+            foreach (var name in BackLensNames)
+            {
+                var t = FindDeepChild(root, name);
+                if (t != null) return t;
+            }
+            return null;
+        }
+
+        private static bool HasBackLensChild(Transform t)
+        {
+            if (t == null) return false;
+            foreach (var name in BackLensNames)
+            {
+                if (HasDirectChild(t, name)) return true;
+            }
+            return false;
+        }
+
         public static bool TryGetPlane(OpticSight os, Transform scopeRoot, Transform activeMode,
             out Vector3 planePoint, out Vector3 planeNormal, out Vector3 camPos)
         {
@@ -687,7 +716,7 @@ namespace ScopeHousingMeshSurgery
             // Find the best reference transform for the cut plane.
             Transform refTransform = null;
 
-            var backLens = FindDeepChild(activeMode, "backLens");
+            var backLens = FindBackLensTransform(activeMode);
             if (backLens != null)
             {
                 planePoint = backLens.position;

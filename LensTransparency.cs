@@ -314,6 +314,7 @@ namespace ScopeHousingMeshSurgery
                 var lo = goName.ToLowerInvariant();
                 if (lo.Contains("linza") ||
                     lo.Contains("backlens") || lo.Contains("back_lens") ||
+                    lo.Contains("rearlens") || lo.Contains("rear_lens") ||
                     lo.Contains("frontlens") || lo.Contains("front_lens") ||
                     lo.Contains("front_linza"))
                     return true;
