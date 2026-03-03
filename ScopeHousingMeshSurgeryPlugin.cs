@@ -79,6 +79,7 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<string> ScopeWhitelist;
         internal static ConfigEntry<int> OpticModeSwitchDebounceFrames;
         internal static ConfigEntry<bool> MakeLensesTransparent;
+        internal static ConfigEntry<bool> EnableLensMaterialFallback;
         internal static ConfigEntry<KeyCode> LensesTransparentToggleKey;
 
         // --- Mesh Surgery ---
@@ -200,6 +201,8 @@ namespace ScopeHousingMeshSurgery
 
             MakeLensesTransparent = Config.Bind("1. General", "MakeLensesTransparent", true,
                 "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.");
+            EnableLensMaterialFallback = Config.Bind("1. General", "EnableLensMaterialFallback", false,
+                "Also force lens materials to transparent as a fallback. Disabled by default to avoid material-clone GC/CPU overhead.");
             LensesTransparentToggleKey = Config.Bind("1. General", "LensesTransparentToggleKey", KeyCode.F11,
                 "Toggle key for lens transparency.");
 
@@ -511,7 +514,7 @@ namespace ScopeHousingMeshSurgery
             EnableWeaponScaling.SettingChanged += OnWeaponScalingToggled;
 
             Logger.LogInfo("ScopeHousingMeshSurgery v4.7.0 loaded.");
-            Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
+            Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}  EnableLensMaterialFallback={EnableLensMaterialFallback.Value}");
             Logger.LogInfo($"  EnableZoom={EnableZoom.Value}  ShaderZoom={EnableShaderZoom.Value} (available={ZoomController.ShaderAvailable})");
             Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
             Logger.LogInfo($"  ScrollZoom={EnableScrollZoom.Value}  ScrollSens={ScrollZoomSensitivity.Value}  ModifierKey={ScrollZoomModifierKey.Value}  Min={ScrollZoomMin.Value}  Max={ScrollZoomMax.Value}");
