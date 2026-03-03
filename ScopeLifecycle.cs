@@ -286,7 +286,7 @@ namespace ScopeHousingMeshSurgery
             }
             else if (!shouldBeScoped && _isScoped)
             {
-                DoScopeExit();
+                DoScopeExit(restartModAfterExit: true);
             }
         }
 
@@ -347,7 +347,7 @@ namespace ScopeHousingMeshSurgery
         public static void ForceExit()
         {
             if (_isScoped)
-                DoScopeExit();
+                DoScopeExit(restartModAfterExit: false);
             _modBypassedForCurrentScope = false;
             _currentScopeWhitelistName = null;
             // Always clear the last-enabled cache so a stale OpticSight reference
@@ -475,7 +475,7 @@ namespace ScopeHousingMeshSurgery
             ZeroingController.ReadCurrentZeroing();
         }
 
-        private static void DoScopeExit()
+        private static void DoScopeExit(bool restartModAfterExit)
         {
             if (!_isScoped) return;
 
@@ -503,6 +503,9 @@ namespace ScopeHousingMeshSurgery
                 PlaneVisualizer.Hide();
                 ZeroingController.Reset();
                 _modBypassedForCurrentScope = false;
+
+                if (restartModAfterExit && ScopeHousingMeshSurgeryPlugin.ModEnabled.Value)
+                    ScopeHousingMeshSurgeryPlugin.ForceModRestartAfterScopeExit();
                 return;
             }
 
@@ -542,6 +545,9 @@ namespace ScopeHousingMeshSurgery
 
             // 8. Reset zeroing state
             ZeroingController.Reset();
+
+            if (restartModAfterExit && ScopeHousingMeshSurgeryPlugin.ModEnabled.Value)
+                ScopeHousingMeshSurgeryPlugin.ForceModRestartAfterScopeExit();
         }
 
         public static void ToggleCurrentScopeWhitelist()
@@ -564,7 +570,7 @@ namespace ScopeHousingMeshSurgery
 
             if (_isScoped)
             {
-                DoScopeExit();
+                DoScopeExit(restartModAfterExit: false);
                 CheckAndUpdate();
             }
         }

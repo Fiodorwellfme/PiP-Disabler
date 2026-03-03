@@ -11,6 +11,7 @@ namespace ScopeHousingMeshSurgery
     public sealed class ScopeHousingMeshSurgeryPlugin : BaseUnityPlugin
     {
         internal static ScopeHousingMeshSurgeryPlugin Instance;
+        private static bool _modRestartInProgress;
 
         // --- Logging helpers ---
         internal static void LogInfo(string msg) { if (Instance != null) Instance.Logger.LogInfo(msg); }
@@ -533,6 +534,26 @@ namespace ScopeHousingMeshSurgery
             else
             {
                 ScopeLifecycle.SyncState();
+            }
+        }
+
+        internal static void ForceModRestartAfterScopeExit()
+        {
+            if (_modRestartInProgress) return;
+            if (Instance == null) return;
+            if (!ModEnabled.Value) return;
+
+            try
+            {
+                _modRestartInProgress = true;
+                Instance.Logger.LogInfo("[ScopeLifecycle] Forcing mod restart after optic exit");
+
+                ModEnabled.Value = false;
+                ModEnabled.Value = true;
+            }
+            finally
+            {
+                _modRestartInProgress = false;
             }
         }
 
