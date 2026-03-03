@@ -147,17 +147,13 @@ namespace ScopeHousingMeshSurgery
 
             // ── Cut plane ─────────────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Cut Plane Config ---");
-            sb.AppendLine($"[Diagnostics]   CutMode          : {ScopeHousingMeshSurgeryPlugin.CutMode.Value}");
             sb.AppendLine($"[Diagnostics]   PlaneNormalAxis  : {ScopeHousingMeshSurgeryPlugin.PlaneNormalAxis.Value}");
-            sb.AppendLine($"[Diagnostics]   PlaneOffsetMeters: {ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value:F4}");
+            sb.AppendLine($"[Diagnostics]   Plane1Offset     : {ScopeHousingMeshSurgeryPlugin.Plane1OffsetMeters.Value:F4}");
             sb.AppendLine($"[Diagnostics]   CylinderRadius   : {ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value:F4}");
-            sb.AppendLine($"[Diagnostics]   MidCylinderRadius: {ScopeHousingMeshSurgeryPlugin.MidCylinderRadius.Value:F4} @ pos={ScopeHousingMeshSurgeryPlugin.MidCylinderPosition.Value:F2}");
-            sb.AppendLine($"[Diagnostics]   FarCylinderRadius: {ScopeHousingMeshSurgeryPlugin.FarCylinderRadius.Value:F4}");
             sb.AppendLine($"[Diagnostics]   CutStartOffset   : {ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value:F4}");
             sb.AppendLine($"[Diagnostics]   CutLength        : {ScopeHousingMeshSurgeryPlugin.CutLength.Value:F4}");
             sb.AppendLine($"[Diagnostics]   NearPreserveDepth: {ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value:F4}");
             sb.AppendLine($"[Diagnostics]   CutRadius        : {ScopeHousingMeshSurgeryPlugin.CutRadius.Value:F4}");
-            sb.AppendLine($"[Diagnostics]   RemoveCameraSide : {ScopeHousingMeshSurgeryPlugin.RemoveCameraSide.Value}");
 
             // ── Plane resolution ──────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Plane Resolution ---");
@@ -174,9 +170,9 @@ namespace ScopeHousingMeshSurgery
                     sb.AppendLine($"[Diagnostics]   backLens        : NOT FOUND");
 
                 if (ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode ?? scopeRoot,
-                    out var pp, out var pn, out _))
+                    out var pp, out var pn))
                 {
-                    pp += pn * ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value;
+                    pp += pn * ScopeHousingMeshSurgeryPlugin.Plane1OffsetMeters.Value;
                     sb.AppendLine($"[Diagnostics]   Plane point     : {pp:F4}");
                     sb.AppendLine($"[Diagnostics]   Plane normal    : {pn:F4}");
                 }

@@ -16,7 +16,6 @@ namespace ScopeHousingMeshSurgery
         private static GameObject _farGO;
         private static Material _nearMat;
         private static Material _farMat;
-        private static Mesh _quadMesh;
         private static Mesh _circleMesh;
 
         // 3D tube volume (ShowCutVolume)
@@ -40,7 +39,6 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
-            bool isCylinder = ScopeHousingMeshSurgeryPlugin.CutMode.Value == "Cylinder";
             float startOffset = ScopeHousingMeshSurgeryPlugin.CutStartOffset.Value;
             float cutLength = ScopeHousingMeshSurgeryPlugin.CutLength.Value;
 
@@ -53,32 +51,20 @@ namespace ScopeHousingMeshSurgery
             {
                 EnsureCirclesCreated();
 
+                float p1R = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
+                float p4R = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
+
                 _nearGO.SetActive(true);
                 _nearGO.transform.position = nearPos;
                 _nearGO.transform.rotation = rot;
+                _nearGO.transform.localScale = Vector3.one * p1R * 2f;
+                _nearGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
 
                 _farGO.SetActive(true);
                 _farGO.transform.position = farPos;
                 _farGO.transform.rotation = rot;
-
-                if (isCylinder)
-                {
-                    float p1R = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
-                    float p4R = ScopeHousingMeshSurgeryPlugin.Plane4Radius.Value;
-
-                    _nearGO.transform.localScale = Vector3.one * p1R * 2f;
-                    _farGO.transform.localScale = Vector3.one * p4R * 2f;
-                    _nearGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
-                    _farGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
-                }
-                else
-                {
-                    float s = 0.015f;
-                    _nearGO.transform.localScale = Vector3.one * s;
-                    _farGO.transform.localScale = Vector3.one * s;
-                    _nearGO.GetComponent<MeshFilter>().sharedMesh = GetQuadMesh();
-                    _farGO.GetComponent<MeshFilter>().sharedMesh = GetQuadMesh();
-                }
+                _farGO.transform.localScale = Vector3.one * p4R * 2f;
+                _farGO.GetComponent<MeshFilter>().sharedMesh = GetCircleMesh();
             }
             else
             {
@@ -87,7 +73,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             // --- 3D tube volume (ShowCutVolume) ---
-            if (showVolume && isCylinder)
+            if (showVolume)
             {
                 float p1R = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value;
                 float p2R = ScopeHousingMeshSurgeryPlugin.Plane2Radius.Value;
@@ -157,7 +143,7 @@ namespace ScopeHousingMeshSurgery
         {
             SafeDestroy(ref _nearGO); SafeDestroy(ref _farGO);
             SafeDestroy(ref _nearMat); SafeDestroy(ref _farMat);
-            SafeDestroy(ref _quadMesh); SafeDestroy(ref _circleMesh);
+            SafeDestroy(ref _circleMesh);
             SafeDestroy(ref _tubeGO); SafeDestroy(ref _tubeMat); SafeDestroy(ref _tubeMesh);
             SafeDestroy(ref _preserveRingGO); SafeDestroy(ref _preserveRingMat);
             _lastTubeHash = 0;
@@ -365,26 +351,13 @@ namespace ScopeHousingMeshSurgery
         {
             var go = new GameObject(name);
             Object.DontDestroyOnLoad(go);
-            go.AddComponent<MeshFilter>().sharedMesh = GetQuadMesh();
+            go.AddComponent<MeshFilter>();
             var mr = go.AddComponent<MeshRenderer>();
             mr.sharedMaterial = mat;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             mr.receiveShadows = false;
             go.layer = 0;
             return go;
-        }
-
-        private static Mesh GetQuadMesh()
-        {
-            if (_quadMesh != null) return _quadMesh;
-            _quadMesh = new Mesh { name = "VisQuad" };
-            _quadMesh.vertices = new[] {
-                new Vector3(-0.5f,0,-0.5f), new Vector3(0.5f,0,-0.5f),
-                new Vector3(0.5f,0,0.5f), new Vector3(-0.5f,0,0.5f) };
-            _quadMesh.triangles = new[] { 0,2,1, 0,3,2, 0,1,2, 0,2,3 };
-            _quadMesh.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
-            _quadMesh.RecalculateBounds();
-            return _quadMesh;
         }
 
         private static Mesh GetCircleMesh()

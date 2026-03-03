@@ -570,10 +570,10 @@ namespace ScopeHousingMeshSurgery
 
                 Transform activeMode = os.transform;
                 if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
-                    out var planePoint, out var planeNormal, out var camPos))
+                    out var planePoint, out var planeNormal))
                     return;
 
-                planePoint += planeNormal * ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value;
+                planePoint += planeNormal * ScopeHousingMeshSurgeryPlugin.Plane1OffsetMeters.Value;
                 PlaneVisualizer.Show(planePoint, planeNormal);
             }
             catch { }
