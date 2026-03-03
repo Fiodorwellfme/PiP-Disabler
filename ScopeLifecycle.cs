@@ -133,19 +133,7 @@ namespace ScopeHousingMeshSurgery
 
                     // Fully tear down our scoped state when switching into a bypassed mode.
                     // Without this, a previously active zoom/FOV path can stay alive and hurt FPS.
-                    RestoreFov();
-                    ZoomController.Restore();
-                    ZoomController.ResetScrollZoom();
-                    ReticleRenderer.Cleanup();
-                    ScopeEffectsRenderer.Cleanup();
-                    LensTransparency.RestoreAll();
-                    CameraSettingsManager.Restore();
-                    PiPDisabler.RestoreAllCameras();
-                    Patches.WeaponScalingPatch.RestoreScale();
-                    if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
-                        MeshSurgeryManager.RestoreForScope(os.transform);
-                    PlaneVisualizer.Hide();
-                    ZeroingController.Reset();
+                    DeactivateScopedSystems(os);
                     return;
                 }
 
@@ -318,7 +306,18 @@ namespace ScopeHousingMeshSurgery
         public static void ForceExit()
         {
             if (_isScoped)
+            {
                 DoScopeExit();
+            }
+            else
+            {
+                // Safety: if state desynced and scoped effects are still active while not scoped,
+                // force a full teardown anyway.
+                DeactivateScopedSystems(_activeOptic);
+                _activeOptic = null;
+            }
+
+            _isScoped = false;
             _modBypassedForCurrentScope = false;
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
@@ -372,11 +371,7 @@ namespace ScopeHousingMeshSurgery
                         $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{scopeName ?? "unknown"}'");
                 }
 
-                LensTransparency.RestoreAll();
-                CameraSettingsManager.Restore();
-                PiPDisabler.RestoreAllCameras();
-                PlaneVisualizer.Hide();
-                ZeroingController.Reset();
+                DeactivateScopedSystems(os);
                 return;
             }
 
@@ -451,60 +446,33 @@ namespace ScopeHousingMeshSurgery
             _isScoped = false;
             _activeOptic = null;
 
-            // If this scope was bypassed (high magnification), skip mod cleanup paths.
-            if (_modBypassedForCurrentScope)
-            {
-                // If anything slipped through while bypassed, force full cleanup on exit.
-                RestoreFov();
-                ZoomController.Restore();
-                ZoomController.ResetScrollZoom();
-                Patches.WeaponScalingPatch.RestoreScale();
-                ReticleRenderer.Cleanup();
-                ScopeEffectsRenderer.Cleanup();
-                LensTransparency.RestoreAll();
-                CameraSettingsManager.Restore();
-                PiPDisabler.RestoreAllCameras();
-                PlaneVisualizer.Hide();
-                ZeroingController.Reset();
-                _modBypassedForCurrentScope = false;
-                return;
-            }
+            DeactivateScopedSystems(prevOptic);
+            _modBypassedForCurrentScope = false;
+        }
 
-            // 1. Restore FOV INSTANTLY (duration=0, no sluggish exit feel)
+
+        private static void DeactivateScopedSystems(OpticSight meshRestoreOptic)
+        {
+            // Hard restore path used by normal un-scope and bypassed scopes.
             RestoreFov();
-
-            // 1b. Restore normal weapon model scaling (after FOV is back to normal)
             Patches.WeaponScalingPatch.RestoreScale();
-
-            // 2. Restore zoom controller
             ZoomController.Restore();
-
-            // 2b. Always reset scroll zoom (Restore only runs for shader zoom)
             ZoomController.ResetScrollZoom();
-
-            // 3. Hide reticle overlay + scope effects
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
-
-            // 4. Restore lens
             LensTransparency.RestoreAll();
-
-            // 5. Restore camera LOD/culling settings
             CameraSettingsManager.Restore();
+            PiPDisabler.RestoreAllCameras();
 
-            // 6. Restore meshes
             if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
             {
-                if (prevOptic != null)
-                    MeshSurgeryManager.RestoreForScope(prevOptic.transform);
+                if (meshRestoreOptic != null)
+                    MeshSurgeryManager.RestoreForScope(meshRestoreOptic.transform);
                 else
                     MeshSurgeryManager.RestoreAll();
             }
 
-            // 7. Hide plane visualizer
             PlaneVisualizer.Hide();
-
-            // 8. Reset zeroing state
             ZeroingController.Reset();
         }
 
