@@ -40,6 +40,7 @@ namespace ScopeHousingMeshSurgery
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
+        private static bool _scopedSystemsActive;
 
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
@@ -133,7 +134,8 @@ namespace ScopeHousingMeshSurgery
 
                     // Fully tear down our scoped state when switching into a bypassed mode.
                     // Without this, a previously active zoom/FOV path can stay alive and hurt FPS.
-                    DeactivateScopedSystems(os);
+                    if (_scopedSystemsActive)
+                        DeactivateScopedSystems(os);
                     return;
                 }
 
@@ -168,6 +170,7 @@ namespace ScopeHousingMeshSurgery
 
                 // Animated FOV change for mode switch (uses configured duration)
                 ApplyFov(true);
+                _scopedSystemsActive = true;
             }
 
             CheckAndUpdate();
@@ -313,12 +316,14 @@ namespace ScopeHousingMeshSurgery
             {
                 // Safety: if state desynced and scoped effects are still active while not scoped,
                 // force a full teardown anyway.
-                DeactivateScopedSystems(_activeOptic);
+                if (_scopedSystemsActive)
+                    DeactivateScopedSystems(_activeOptic);
                 _activeOptic = null;
             }
 
             _isScoped = false;
             _modBypassedForCurrentScope = false;
+            _scopedSystemsActive = false;
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
             _lastEnabledOptic = null;
@@ -371,7 +376,8 @@ namespace ScopeHousingMeshSurgery
                         $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{scopeName ?? "unknown"}'");
                 }
 
-                DeactivateScopedSystems(os);
+                if (_scopedSystemsActive)
+                    DeactivateScopedSystems(os);
                 return;
             }
 
@@ -433,6 +439,8 @@ namespace ScopeHousingMeshSurgery
 
             // 10. Read initial zeroing distance
             ZeroingController.ReadCurrentZeroing();
+
+            _scopedSystemsActive = true;
         }
 
         private static void DoScopeExit()
@@ -446,7 +454,8 @@ namespace ScopeHousingMeshSurgery
             _isScoped = false;
             _activeOptic = null;
 
-            DeactivateScopedSystems(prevOptic);
+            if (_scopedSystemsActive)
+                DeactivateScopedSystems(prevOptic);
             _modBypassedForCurrentScope = false;
         }
 
@@ -474,6 +483,7 @@ namespace ScopeHousingMeshSurgery
 
             PlaneVisualizer.Hide();
             ZeroingController.Reset();
+            _scopedSystemsActive = false;
         }
 
         // ===== FOV Helpers =====
