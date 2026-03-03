@@ -41,6 +41,7 @@ namespace ScopeHousingMeshSurgery
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
         private static string _currentScopeWhitelistName;
+        private static int _pendingOpticExitFrames;
 
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
@@ -236,32 +237,51 @@ namespace ScopeHousingMeshSurgery
             try
             {
                 var player = GetLocalPlayer();
-                if (player == null) { reason = "no player"; goto evaluate; }
+                if (player == null) { _pendingOpticExitFrames = 0; reason = "no player"; goto evaluate; }
 
                 var pwa = player.ProceduralWeaponAnimation;
-                if (pwa == null) { reason = "no PWA"; goto evaluate; }
+                if (pwa == null) { _pendingOpticExitFrames = 0; reason = "no PWA"; goto evaluate; }
 
                 bool isAiming = _isAimingGetter != null ? _isAimingGetter(pwa) : (bool)_isAimingProp.GetValue(pwa);
-                if (!isAiming) { reason = "not aiming"; goto evaluate; }
+                if (!isAiming) { _pendingOpticExitFrames = 0; reason = "not aiming"; goto evaluate; }
 
                 object currentScope = _currentScopeGetter != null ? _currentScopeGetter(pwa) : _currentScopeProp.GetValue(pwa);
-                if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
+                if (currentScope == null) { _pendingOpticExitFrames = 0; reason = "no CurrentScope"; goto evaluate; }
 
                 bool isOptic = _isOpticGetter != null ? _isOpticGetter(currentScope) : (bool)_isOpticProp.GetValue(currentScope);
-                if (!isOptic) { reason = "not optic"; goto evaluate; }
+                if (!isOptic) { _pendingOpticExitFrames = 0; reason = "not optic"; goto evaluate; }
 
                 var enabledOs = FindEnabledOpticFromPWA();
                 if (enabledOs == null)
                 {
-                    // Hybrid toggle case: CurrentScope may still report optic while the
-                    // enabled OpticSight switched off (e.g., now in collimator mode).
-                    // Force scope exit immediately so RestoreAll runs without waiting for
-                    // a full ADS exit.
+                    if (_isScoped)
+                    {
+                        int debounceFrames = 3;
+                        if (ScopeHousingMeshSurgeryPlugin.OpticModeSwitchDebounceFrames != null)
+                            debounceFrames = Mathf.Clamp(
+                                ScopeHousingMeshSurgeryPlugin.OpticModeSwitchDebounceFrames.Value,
+                                1,
+                                120);
+
+                        _pendingOpticExitFrames++;
+                        if (_pendingOpticExitFrames < debounceFrames)
+                        {
+                            shouldBeScoped = true;
+                            reason = $"optic handoff pending ({_pendingOpticExitFrames}/{debounceFrames})";
+                            goto evaluate;
+                        }
+
+                        shouldBeScoped = false;
+                        reason = $"optic handoff timeout ({_pendingOpticExitFrames}/{debounceFrames})";
+                        goto evaluate;
+                    }
+
                     shouldBeScoped = false;
                     reason = "optic flag true but no enabled OpticSight";
                     goto evaluate;
                 }
 
+                _pendingOpticExitFrames = 0;
                 shouldBeScoped = true;
                 _activeOptic = enabledOs;
                 _lastEnabledOptic = enabledOs;
@@ -353,6 +373,7 @@ namespace ScopeHousingMeshSurgery
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
             _lastEnabledOptic = null;
+            _pendingOpticExitFrames = 0;
         }
 
         /// <summary>
@@ -381,6 +402,7 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
+            _pendingOpticExitFrames = 0;
             _isScoped = true;
             _activeOptic = os;
             _currentScopeWhitelistName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
@@ -483,6 +505,7 @@ namespace ScopeHousingMeshSurgery
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[ScopeLifecycle] EXIT: '{(prevOptic != null ? prevOptic.name : "null")}' frame={Time.frameCount}");
 
+            _pendingOpticExitFrames = 0;
             _isScoped = false;
             _activeOptic = null;
             _currentScopeWhitelistName = null;

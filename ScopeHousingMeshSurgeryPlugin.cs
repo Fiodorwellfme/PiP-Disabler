@@ -77,6 +77,7 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<KeyCode> DisablePiPToggleKey;
         internal static ConfigEntry<KeyCode> ScopeWhitelistToggleKey;
         internal static ConfigEntry<string> ScopeWhitelist;
+        internal static ConfigEntry<int> OpticModeSwitchDebounceFrames;
         internal static ConfigEntry<bool> MakeLensesTransparent;
         internal static ConfigEntry<KeyCode> LensesTransparentToggleKey;
 
@@ -189,6 +190,13 @@ namespace ScopeHousingMeshSurgery
                 "Comma-separated list of allowed scope object names (scope_... under mod_scope).\n" +
                 "The mod only activates for scopes in this list. Use ScopeWhitelistToggleKey while ADS\n" +
                 "to quickly add/remove the currently active scope.");
+            OpticModeSwitchDebounceFrames = Config.Bind("1. General", "OpticModeSwitchDebounceFrames", 3,
+                new ConfigDescription(
+                    "Debounce window (frames) for optic mode switches while ADS.\n" +
+                    "When IsAiming + CurrentScope.IsOptic are true but no OpticSight is enabled yet,\n" +
+                    "ScopeLifecycle waits this many frames before forcing scope exit.\n" +
+                    "Prevents enter/exit thrash during 1-2 frame mode handoffs.",
+                    new AcceptableValueRange<int>(1, 120)));
 
             MakeLensesTransparent = Config.Bind("1. General", "MakeLensesTransparent", true,
                 "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.");
