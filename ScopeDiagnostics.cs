@@ -218,7 +218,7 @@ namespace ScopeHousingMeshSurgery
             sb.AppendLine($"[Diagnostics] Scope item       : {whitelistName}");
             sb.AppendLine($"[Diagnostics] Blacklisted      : {(IsBlacklisted(rootName) ? "YES (mesh surgery + reticle skipped)" : "no")}");
             bool isWhitelisted = IsWhitelisted(whitelistName);
-            bool whitelistBypass = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value && isWhitelisted;
+            bool whitelistBypass = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value && !isWhitelisted;
             sb.AppendLine($"[Diagnostics] Whitelist active : {ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value}");
             sb.AppendLine($"[Diagnostics] Whitelisted      : {(isWhitelisted ? "YES" : "no")}");
             sb.AppendLine($"[Diagnostics] Whitelist bypass : {(whitelistBypass ? "YES (mod bypassed for this scope)" : "no")}");

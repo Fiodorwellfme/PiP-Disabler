@@ -141,6 +141,31 @@ namespace ScopeHousingMeshSurgery
                     return;
                 }
 
+                string modeWhitelistName = ScopeDiagnostics.GetCurrentScopeWhitelistName(os);
+                bool modeWhitelisted = ScopeDiagnostics.IsWhitelisted(modeWhitelistName);
+                bool modeBypassedByWhitelist = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value && !modeWhitelisted;
+                if (modeBypassedByWhitelist)
+                {
+                    _modBypassedForCurrentScope = true;
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[ScopeLifecycle] Mode switch bypassed by whitelist: '{os.name}' scopeItem='{modeWhitelistName ?? ""}'");
+
+                    RestoreFov();
+                    ZoomController.Restore();
+                    ZoomController.ResetScrollZoom();
+                    ReticleRenderer.Cleanup();
+                    ScopeEffectsRenderer.Cleanup();
+                    LensTransparency.RestoreAll();
+                    CameraSettingsManager.Restore();
+                    PiPDisabler.RestoreAllCameras();
+                    Patches.WeaponScalingPatch.RestoreScale();
+                    if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                        MeshSurgeryManager.RestoreForScope(os.transform);
+                    PlaneVisualizer.Hide();
+                    ZeroingController.Reset();
+                    return;
+                }
+
                 _modBypassedForCurrentScope = false;
 
                 // Re-extract reticle from the NEW mode's linza
@@ -374,17 +399,25 @@ namespace ScopeHousingMeshSurgery
                 $"[ScopeLifecycle] ENTER: '{os.name}' root='{rootNameForBlacklist}' scopeItem='{whitelistName ?? ""}' " +
                 $"blacklisted={isBlacklisted} whitelisted={isWhitelisted} frame={Time.frameCount}");
 
-            bool bypassForWhitelist = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value && isWhitelisted;
+            bool bypassForWhitelist = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value && !isWhitelisted;
             bool suppressScopeFeatures = isBlacklisted || bypassForWhitelist;
 
             if (bypassForWhitelist)
             {
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    $"[ScopeLifecycle] Whitelist bypass for '{os.name}' (scopeItem='{whitelistName ?? ""}').");
+                    $"[ScopeLifecycle] Whitelist bypass for '{os.name}' (scopeItem='{whitelistName ?? ""}') — not in allowlist.");
 
+                RestoreFov();
+                ZoomController.Restore();
+                ZoomController.ResetScrollZoom();
+                ReticleRenderer.Cleanup();
+                ScopeEffectsRenderer.Cleanup();
                 LensTransparency.RestoreAll();
                 CameraSettingsManager.Restore();
                 PiPDisabler.RestoreAllCameras();
+                Patches.WeaponScalingPatch.RestoreScale();
+                if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                    MeshSurgeryManager.RestoreForScope(os.transform);
                 PlaneVisualizer.Hide();
                 ZeroingController.Reset();
                 _modBypassedForCurrentScope = true;
