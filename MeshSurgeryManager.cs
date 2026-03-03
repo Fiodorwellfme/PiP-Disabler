@@ -453,6 +453,20 @@ namespace ScopeHousingMeshSurgery
                 break;
             }
 
+            // Mirror the ExpandSearchToWeaponRoot expansion from FindTargetMeshFilters
+            // so weapon-body meshes that were cut can also be restored.
+            if (ScopeHousingMeshSurgeryPlugin.ExpandSearchToWeaponRoot.Value)
+            {
+                for (var p = searchRoot.parent; p != null; p = p.parent)
+                {
+                    if ((p.name ?? "").StartsWith("Weapon_root", StringComparison.OrdinalIgnoreCase))
+                    {
+                        searchRoot = p;
+                        break;
+                    }
+                }
+            }
+
             var toRestore = _tracked.Keys
                 .Where(mf => mf && mf.transform && mf.transform.IsChildOf(searchRoot))
                 .ToArray();
@@ -827,6 +841,25 @@ namespace ScopeHousingMeshSurgery
             if (searchRoot != scopeRoot)
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[ScopeHierarchy] Expanded search root: '{scopeRoot.name}' → '{searchRoot.name}'");
+
+            // Optional: climb further up to the Weapon_root node to include weapon body meshes.
+            // Normally the loop above stops at any parent whose name contains "weapon" or "anim".
+            // With ExpandSearchToWeaponRoot the search climbs through those intermediate nodes
+            // until it finds a transform whose name starts with "Weapon_root".
+            // Path example: Weapon_root/Weapon_root_anim/weapon/mod_scope/<scope>
+            if (ScopeHousingMeshSurgeryPlugin.ExpandSearchToWeaponRoot.Value)
+            {
+                for (var p = searchRoot.parent; p != null; p = p.parent)
+                {
+                    if ((p.name ?? "").StartsWith("Weapon_root", StringComparison.OrdinalIgnoreCase))
+                    {
+                        searchRoot = p;
+                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                            $"[ScopeHierarchy] ExpandSearchToWeaponRoot: climbed to '{searchRoot.name}'");
+                        break;
+                    }
+                }
+            }
 
             // Collect all OTHER scope roots under searchRoot so we can skip their subtrees
             var otherScopeRoots = new List<Transform>(4);

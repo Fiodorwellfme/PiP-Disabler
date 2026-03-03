@@ -115,6 +115,7 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> ForceManualKeepSide;
         internal static ConfigEntry<bool> ManualKeepPositive;
         internal static ConfigEntry<string> ExcludeNameContainsCsv;
+        internal static ConfigEntry<bool> ExpandSearchToWeaponRoot;
 
         // --- Scope Effects ---
         internal static ConfigEntry<bool>  VignetteEnabled;
@@ -424,6 +425,13 @@ namespace ScopeHousingMeshSurgery
             ExcludeNameContainsCsv = Config.Bind("3. Mesh Surgery", "ExcludeNameContainsCsv",
                 "linza,lens,glass,reticle,collider,trigger,shadow,backlens",
                 "Comma-separated substrings to exclude from mesh cutting.");
+            ExpandSearchToWeaponRoot = Config.Bind("3. Mesh Surgery", "ExpandSearchToWeaponRoot", false,
+                "Expand the mesh surgery search root all the way up to the Weapon_root node.\n" +
+                "When enabled, meshes on the weapon body under Weapon_root are also candidates\n" +
+                "for cutting — not just those in the scope sub-hierarchy.\n" +
+                "Use this when scope geometry blends into the weapon receiver and you need to cut\n" +
+                "the underlying weapon meshes as well.\n" +
+                "Example path: Weapon_root/Weapon_root_anim/weapon/mod_scope/...");
 
             // --- Scope Effects ---
             VignetteEnabled = Config.Bind("4. Scope Effects", "VignetteEnabled", true,
