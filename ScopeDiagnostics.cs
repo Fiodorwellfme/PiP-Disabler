@@ -50,6 +50,102 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
+        /// Returns true if whitelist is disabled OR the scope item name matches ScopeWhitelist entries.
+        /// Matching is case-insensitive substring.
+        /// </summary>
+        public static bool IsWhitelisted(string scopeItemName)
+        {
+            if (!ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value)
+                return true;
+
+            if (string.IsNullOrWhiteSpace(scopeItemName))
+                return false;
+
+            string csv = ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value;
+            if (string.IsNullOrWhiteSpace(csv))
+                return false;
+
+            string lower = scopeItemName.ToLowerInvariant();
+            foreach (var entry in csv.Split(','))
+            {
+                string e = entry.Trim().ToLowerInvariant();
+                if (e.Length > 0 && lower.Contains(e))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Finds the scope object name under mod_scope (typically scope_*).
+        /// Returns null when unavailable.
+        /// </summary>
+        public static string GetCurrentScopeWhitelistName(OpticSight os)
+        {
+            if (os == null) return null;
+
+            Transform modScope = null;
+            for (var t = os.transform; t != null; t = t.parent)
+            {
+                if (!string.IsNullOrEmpty(t.name) &&
+                    t.name.StartsWith("mod_scope", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    modScope = t;
+                    break;
+                }
+            }
+
+            if (modScope == null)
+                return null;
+
+            var stack = new System.Collections.Generic.Stack<Transform>();
+            stack.Push(modScope);
+            while (stack.Count > 0)
+            {
+                var t = stack.Pop();
+                if (t == null) continue;
+
+                if (!string.IsNullOrEmpty(t.name) &&
+                    t.name.StartsWith("scope_", System.StringComparison.OrdinalIgnoreCase))
+                    return t.name;
+
+                for (int i = 0; i < t.childCount; i++)
+                    stack.Push(t.GetChild(i));
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Adds/removes the current scope_* name to ScopeWhitelist. Returns status text.
+        /// </summary>
+        public static string ToggleCurrentScopeWhitelist(OpticSight os)
+        {
+            string currentScope = GetCurrentScopeWhitelistName(os);
+            if (string.IsNullOrWhiteSpace(currentScope))
+                return "Cannot toggle whitelist: no scope_* object found under mod_scope for current optic.";
+
+            var items = ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value
+                .Split(',')
+                .Select(x => x.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+
+            int existingIndex = items.FindIndex(x =>
+                string.Equals(x, currentScope, System.StringComparison.OrdinalIgnoreCase));
+
+            if (existingIndex >= 0)
+            {
+                items.RemoveAt(existingIndex);
+                ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value = string.Join(",", items);
+                return $"Removed '{currentScope}' from ScopeWhitelist.";
+            }
+
+            items.Add(currentScope);
+            ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value = string.Join(",", items);
+            return $"Added '{currentScope}' to ScopeWhitelist.";
+        }
+
+        /// <summary>
         /// Dump full diagnostics for the currently active optic.
         /// Logs to BepInEx LogInfo — visible in the console and BepInEx log file.
         /// </summary>
@@ -120,8 +216,12 @@ namespace ScopeHousingMeshSurgery
 
             var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
             string rootName = scopeRoot != null ? scopeRoot.name : "(NOT FOUND)";
+            string whitelistName = GetCurrentScopeWhitelistName(os) ?? "(NOT FOUND)";
             sb.AppendLine($"[Diagnostics] Scope root       : {rootName}");
+            sb.AppendLine($"[Diagnostics] Scope item       : {whitelistName}");
             sb.AppendLine($"[Diagnostics] Blacklisted      : {(IsBlacklisted(rootName) ? "YES (mesh surgery + reticle skipped)" : "no")}");
+            sb.AppendLine($"[Diagnostics] Whitelist active : {ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value}");
+            sb.AppendLine($"[Diagnostics] Whitelisted      : {(IsWhitelisted(whitelistName) ? "YES" : "no")}");
 
             // ── Magnification ─────────────────────────────────────────────────
             float mag = 1f;
@@ -223,6 +323,15 @@ namespace ScopeHousingMeshSurgery
             sb.AppendLine($"[Diagnostics]   FlipHorizontal   : {ScopeHousingMeshSurgeryPlugin.ReticleFlipHorizontal.Value}");
             sb.AppendLine($"[Diagnostics]   SmoothingFrames  : {ScopeHousingMeshSurgeryPlugin.ReticleSmoothingFrames.Value}");
             sb.AppendLine($"[Diagnostics]   JitterThreshold  : {ScopeHousingMeshSurgeryPlugin.ReticleJitterThreshold.Value:F5}");
+
+            // ── Whitelist hint ────────────────────────────────────────────────
+            sb.AppendLine("[Diagnostics] --- Whitelist ---");
+            string currentWhitelist = ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value;
+            sb.AppendLine($"[Diagnostics]   Enabled           : {ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value}");
+            sb.AppendLine($"[Diagnostics]   Current whitelist : {(string.IsNullOrWhiteSpace(currentWhitelist) ? "(empty)" : currentWhitelist)}");
+            sb.AppendLine($"[Diagnostics]   Current scope_*   : {whitelistName}");
+            if (!string.IsNullOrWhiteSpace(currentWhitelist) && whitelistName != "(NOT FOUND)")
+                sb.AppendLine($"[Diagnostics]   New value would be: {currentWhitelist},{whitelistName}");
 
             // ── Blacklist hint ────────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Blacklist ---");

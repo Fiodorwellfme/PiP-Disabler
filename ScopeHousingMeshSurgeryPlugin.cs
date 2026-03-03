@@ -129,6 +129,9 @@ namespace ScopeHousingMeshSurgery
 
         // --- Diagnostics ---
         internal static ConfigEntry<KeyCode> DiagnosticsKey;
+        internal static ConfigEntry<bool> ScopeWhitelistEnabled;
+        internal static ConfigEntry<string> ScopeWhitelist;
+        internal static ConfigEntry<KeyCode> ToggleCurrentScopeWhitelistKey;
         internal static ConfigEntry<string>  ScopeBlacklist;
 
         // --- Weapon Scaling ---
@@ -472,6 +475,18 @@ namespace ScopeHousingMeshSurgery
             DiagnosticsKey = Config.Bind("5. Diagnostics", "DiagnosticsKey", KeyCode.F8,
                 "Press to log full diagnostics for the currently active scope: name, hierarchy,\n" +
                 "magnification, cut-plane config, target mesh list, blacklist hint.");
+            ScopeWhitelistEnabled = Config.Bind("5. Diagnostics", "ScopeWhitelistEnabled", false,
+                "Only enable mesh surgery + reticle on scopes listed in ScopeWhitelist.\n" +
+                "Matching is case-insensitive substring against the scope object under mod_scope\n" +
+                "whose name starts with 'scope_'.");
+            ScopeWhitelist = Config.Bind("5. Diagnostics", "ScopeWhitelist", "",
+                "Comma-separated whitelist entries. When ScopeWhitelistEnabled=true,\n" +
+                "the mod only applies on scopes whose detected 'scope_*' object name\n" +
+                "contains at least one entry (case-insensitive).\n" +
+                "Example: 'scope_34mm_s&b_pm_ii_3_12x50'.");
+            ToggleCurrentScopeWhitelistKey = Config.Bind("5. Diagnostics", "ToggleCurrentScopeWhitelistKey", KeyCode.F7,
+                "Press while scoped to add/remove the currently used scope_* object\n" +
+                "name from ScopeWhitelist.");
             ScopeBlacklist = Config.Bind("5. Diagnostics", "ScopeBlacklist", "",
                 "Comma-separated list of scope root names to exclude from mesh surgery and reticle.\n" +
                 "Use the diagnostics key (F8) to find the root name and copy the hint at the bottom\n" +
@@ -593,6 +608,19 @@ namespace ScopeHousingMeshSurgery
             // --- Diagnostics dump ---
             if (DiagnosticsKey.Value != KeyCode.None && InputProxy.GetKeyDown(DiagnosticsKey.Value))
                 ScopeDiagnostics.Dump(ScopeLifecycle.ActiveOptic);
+
+            if (ToggleCurrentScopeWhitelistKey.Value != KeyCode.None && InputProxy.GetKeyDown(ToggleCurrentScopeWhitelistKey.Value))
+            {
+                string message = ScopeDiagnostics.ToggleCurrentScopeWhitelist(ScopeLifecycle.ActiveOptic);
+                Logger.LogInfo($"[Whitelist] {message}");
+
+                // Re-evaluate scoped state immediately so changes apply without ADS reset.
+                if (ScopeLifecycle.IsScoped)
+                {
+                    ScopeLifecycle.ForceExit();
+                    ScopeLifecycle.SyncState();
+                }
+            }
 
             // --- Scroll wheel zoom (only while scoped + modifier held) ---
             if (ScopeLifecycle.IsScoped && EnableScrollZoom.Value)

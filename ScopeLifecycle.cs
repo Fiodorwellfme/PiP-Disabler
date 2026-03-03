@@ -362,17 +362,37 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
-            // Check blacklist before doing anything — blacklisted scopes skip surgery + reticle
+            // Check blacklist and whitelist before doing anything.
             var scopeRootForBlacklist = ScopeHierarchy.FindScopeRoot(os.transform);
             string rootNameForBlacklist = scopeRootForBlacklist != null ? scopeRootForBlacklist.name : "";
             bool isBlacklisted = ScopeDiagnostics.IsBlacklisted(rootNameForBlacklist);
 
+            string whitelistName = ScopeDiagnostics.GetCurrentScopeWhitelistName(os);
+            bool isWhitelisted = ScopeDiagnostics.IsWhitelisted(whitelistName);
+
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                $"[ScopeLifecycle] ENTER: '{os.name}' root='{rootNameForBlacklist}' " +
-                $"blacklisted={isBlacklisted} frame={Time.frameCount}");
+                $"[ScopeLifecycle] ENTER: '{os.name}' root='{rootNameForBlacklist}' scopeItem='{whitelistName ?? ""}' " +
+                $"blacklisted={isBlacklisted} whitelisted={isWhitelisted} frame={Time.frameCount}");
+
+            bool bypassForWhitelist = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistEnabled.Value && !isWhitelisted;
+            bool suppressScopeFeatures = isBlacklisted || bypassForWhitelist;
+
+            if (bypassForWhitelist)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[ScopeLifecycle] Whitelist bypass for '{os.name}' (scopeItem='{whitelistName ?? ""}').");
+
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
+                _modBypassedForCurrentScope = true;
+                return;
+            }
 
             // 1. Extract reticle texture BEFORE destroying lens mesh
-            if (!isBlacklisted)
+            if (!suppressScopeFeatures)
                 ReticleRenderer.ExtractReticle(os);
 
             // 2. Hide ALL lens surfaces in the scope hierarchy (once)
@@ -382,7 +402,7 @@ namespace ScopeHousingMeshSurgery
             float mag = ZoomController.GetMagnification(os);
 
             // 4. Show reticle overlay at the lens position, scaled for magnification
-            if (!isBlacklisted)
+            if (!suppressScopeFeatures)
                 ReticleRenderer.Show(os, mag);
 
             // 4b. Show lens vignette + scope shadow effects (always shown, even for blacklisted scopes)
@@ -399,7 +419,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             // 5. Mesh surgery (once — skipped for blacklisted scopes)
-            if (!isBlacklisted && ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
+            if (!suppressScopeFeatures && ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
                 MeshSurgeryManager.ApplyForOptic(os);
 
             // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
