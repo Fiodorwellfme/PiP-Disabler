@@ -330,6 +330,81 @@ namespace ScopeHousingMeshSurgery
             CheckAndUpdate();
         }
 
+
+
+        private static bool IsWhitelistedScope(OpticSight os, out string scopeWhitelistName)
+        {
+            scopeWhitelistName = ScopeHierarchy.FindWhitelistScopeName(os != null ? os.transform : null);
+            if (string.IsNullOrWhiteSpace(scopeWhitelistName))
+                return false;
+
+            string csv = ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value;
+            if (string.IsNullOrWhiteSpace(csv))
+                return false;
+
+            foreach (var entry in csv.Split(','))
+            {
+                string e = entry.Trim();
+                if (e.Length == 0) continue;
+                if (string.Equals(e, scopeWhitelistName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        public static void ToggleCurrentScopeWhitelistEntry()
+        {
+            var os = _activeOptic ?? _lastEnabledOptic;
+            if (os == null)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogWarn("[Whitelist] No active scope to toggle.");
+                return;
+            }
+
+            string scopeName = ScopeHierarchy.FindWhitelistScopeName(os.transform);
+            if (string.IsNullOrWhiteSpace(scopeName))
+            {
+                ScopeHousingMeshSurgeryPlugin.LogWarn("[Whitelist] Could not resolve scope_* object under mod_scope for current optic.");
+                return;
+            }
+
+            var items = new System.Collections.Generic.List<string>();
+            var seen = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string csv = ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value;
+            if (!string.IsNullOrWhiteSpace(csv))
+            {
+                foreach (var token in csv.Split(','))
+                {
+                    string t = token.Trim();
+                    if (t.Length == 0) continue;
+                    if (seen.Add(t)) items.Add(t);
+                }
+            }
+
+            bool removed = false;
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(items[i], scopeName, StringComparison.OrdinalIgnoreCase))
+                {
+                    items.RemoveAt(i);
+                    removed = true;
+                }
+            }
+
+            if (!removed)
+                items.Add(scopeName);
+
+            ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value = string.Join(",", items);
+
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                $"[Whitelist] {(removed ? "Removed" : "Added")} '{scopeName}'. New whitelist: " +
+                (items.Count > 0 ? string.Join(",", items) : "(empty)"));
+
+            ForceExit();
+            CheckAndUpdate();
+        }
+
         // ===== State transitions =====
 
         private static void DoScopeEnter()
@@ -345,6 +420,21 @@ namespace ScopeHousingMeshSurgery
 
             _isScoped = true;
             _activeOptic = os;
+
+            bool isWhitelisted = IsWhitelistedScope(os, out var whitelistScopeName);
+            if (!isWhitelisted)
+            {
+                _modBypassedForCurrentScope = true;
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: scope='{(string.IsNullOrWhiteSpace(whitelistScopeName) ? "(unresolved)" : whitelistScopeName)}'");
+
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
+                return;
+            }
 
             float minFov = ZoomController.GetMinFov(os);
             _modBypassedForCurrentScope = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value

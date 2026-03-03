@@ -584,6 +584,41 @@ namespace ScopeHousingMeshSurgery
             return null;
         }
 
+
+
+        public static string FindWhitelistScopeName(Transform any)
+        {
+            if (any == null) return null;
+
+            Transform modScope = null;
+            for (var t = any; t != null; t = t.parent)
+            {
+                if (string.Equals(t.name, "mod_scope", StringComparison.OrdinalIgnoreCase))
+                {
+                    modScope = t;
+                    break;
+                }
+            }
+
+            if (modScope == null) return null;
+
+            for (var t = any; t != null && t != modScope; t = t.parent)
+            {
+                if (t.name != null && t.name.StartsWith("scope_", StringComparison.OrdinalIgnoreCase))
+                    return t.name;
+            }
+
+            for (int i = 0; i < modScope.childCount; i++)
+            {
+                var c = modScope.GetChild(i);
+                if (c != null && c.name != null && c.name.StartsWith("scope_", StringComparison.OrdinalIgnoreCase)
+                    && any.IsChildOf(c))
+                    return c.name;
+            }
+
+            return null;
+        }
+
         private static bool HasDirectChild(Transform t, string childName)
         {
             if (t == null) return false;

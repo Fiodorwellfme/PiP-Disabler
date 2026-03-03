@@ -69,6 +69,8 @@ namespace ScopeHousingMeshSurgery
         // --- 0. Global ---
         internal static ConfigEntry<bool> ModEnabled;
         internal static ConfigEntry<KeyCode> ModToggleKey;
+        internal static ConfigEntry<string> ScopeWhitelist;
+        internal static ConfigEntry<KeyCode> ScopeWhitelistToggleKey;
 
         // --- General ---
         internal static ConfigEntry<bool> DisablePiP;
@@ -162,11 +164,16 @@ namespace ScopeHousingMeshSurgery
             Instance = this;
 
             // --- 0. Global ---
-            ModEnabled = Config.Bind("0. Global", "ModEnabled", true,
+            ModEnabled = Config.Bind("0. Global", "ModEnabled", false,
                 "Master ON/OFF switch for the entire mod. When OFF, all effects are " +
                 "cleaned up and the game behaves as if the mod is not installed.");
             ModToggleKey = Config.Bind("0. Global", "ModToggleKey", KeyCode.Backspace,
                 "Toggle key for master mod enable/disable.");
+            ScopeWhitelist = Config.Bind("0. Global", "ScopeWhitelist", "",
+                "Comma-separated whitelist of scope object names (scope_*) under mod_scope. " +
+                "The mod only activates for scopes in this list.");
+            ScopeWhitelistToggleKey = Config.Bind("0. Global", "ScopeWhitelistToggleKey", KeyCode.F7,
+                "Toggle current scoped optic's scope_* object in ScopeWhitelist (adds if missing, removes if present).");
 
             // --- General ---
             DisablePiP = Config.Bind("1. General", "DisablePiP", true,
@@ -588,6 +595,11 @@ namespace ScopeHousingMeshSurgery
                 Logger.LogInfo($"Zoom toggled: {EnableZoom.Value}");
                 if (!EnableZoom.Value)
                     ZoomController.Restore();
+            }
+
+            if (ScopeWhitelistToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(ScopeWhitelistToggleKey.Value))
+            {
+                ScopeLifecycle.ToggleCurrentScopeWhitelistEntry();
             }
 
             // --- Diagnostics dump ---
