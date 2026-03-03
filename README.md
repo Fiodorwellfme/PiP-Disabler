@@ -8,3 +8,4 @@ Roadmap:
 -Improve weapon scaling offset/multiplier 
 -Remove useless options/code
 -Hide multiple options under advanced BepInEx settings
+-Support variable scopes
