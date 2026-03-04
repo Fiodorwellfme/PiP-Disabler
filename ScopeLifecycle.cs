@@ -125,91 +125,7 @@ namespace ScopeHousingMeshSurgery
             // would falsely trigger a restore+recut cycle and cause a 1-2 frame mesh flash.
             if (_isScoped && os != null && os != _activeOptic)
             {
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    $"[ScopeLifecycle] Mode switch while scoped: '{(_activeOptic != null ? _activeOptic.name : "?")}' → '{os.name}'");
-
-                // Update the active optic to the new mode
-                _activeOptic = os;
-                _currentScopeWhitelistName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
-
-                if (!ScopeDiagnostics.IsInScopeWhitelist(_currentScopeWhitelistName))
-                {
-                    _modBypassedForCurrentScope = true;
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
-                        $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{(_currentScopeWhitelistName ?? "(unknown)")}'");
-
-                    RestoreFov();
-                    ZoomController.Restore();
-                    ZoomController.ResetScrollZoom();
-                    ReticleRenderer.Cleanup();
-                    ScopeEffectsRenderer.Cleanup();
-                    LensTransparency.RestoreAll();
-                    CameraSettingsManager.Restore();
-                    PiPDisabler.RestoreAllCameras();
-                    Patches.WeaponScalingPatch.RestoreScale();
-                    if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
-                        MeshSurgeryManager.RestoreForScope(os.transform);
-                    PlaneVisualizer.Hide();
-                    ZeroingController.Reset();
-                    return;
-                }
-
-                float minFov = ZoomController.GetMinFov(os);
-                bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                    && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
-                if (bypassForMode)
-                {
-                    _modBypassedForCurrentScope = true;
-
-                    // Fully tear down our scoped state when switching into a bypassed mode.
-                    // Without this, a previously active zoom/FOV path can stay alive and hurt FPS.
-                    RestoreFov();
-                    ZoomController.Restore();
-                    ZoomController.ResetScrollZoom();
-                    ReticleRenderer.Cleanup();
-                    ScopeEffectsRenderer.Cleanup();
-                    LensTransparency.RestoreAll();
-                    CameraSettingsManager.Restore();
-                    PiPDisabler.RestoreAllCameras();
-                    Patches.WeaponScalingPatch.RestoreScale();
-                    if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
-                        MeshSurgeryManager.RestoreForScope(os.transform);
-                    PlaneVisualizer.Hide();
-                    ZeroingController.Reset();
-                    return;
-                }
-
-                _modBypassedForCurrentScope = false;
-
-                // Re-extract reticle from the NEW mode's linza
-                ReticleRenderer.Cleanup();
-                ReticleRenderer.ExtractReticle(os);
-
-                // Re-hide lenses (the new mode's lens might not be hidden yet)
-                LensTransparency.HideAllLensSurfaces(os);
-
-                // Show reticle for the new mode (with magnification scaling)
-                float modeMag = ZoomController.GetMagnification(os);
-                ReticleRenderer.Show(os, modeMag);
-
-                // Notify FOV controller the mode changed so it re-reads ScopeCameraData
-                FovController.OnModeSwitch();
-
-                // RESTORE all meshes first, then re-cut with new mode's plane position.
-                if (ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
-                {
-                    MeshSurgeryManager.RestoreForScope(os.transform);
-                    MeshSurgeryManager.ApplyForOptic(os);
-                }
-
-                // Re-apply camera settings for the new mode's FOV
-                CameraSettingsManager.ApplyForOptic(os);
-
-                // Capture weapon base scale/FOV before FOV changes
-                Patches.WeaponScalingPatch.CaptureBaseState();
-
-                // Animated FOV change for mode switch (uses configured duration)
-                ApplyFov(true);
+                HandleScopedModeSwitch(os, trigger: "OnEnable");
             }
 
             CheckAndUpdate();
@@ -281,10 +197,19 @@ namespace ScopeHousingMeshSurgery
                     goto evaluate;
                 }
 
+                var previousActiveOptic = _activeOptic;
+
                 _pendingOpticExitFrames = 0;
                 shouldBeScoped = true;
                 _activeOptic = enabledOs;
                 _lastEnabledOptic = enabledOs;
+
+                // Some sights keep both primary/secondary optics enabled and only move
+                // CurrentScope. Detect that change here too (without requiring OnEnable)
+                // so we can immediately re-hide the newly active lens.
+                if (_isScoped && enabledOs != null && enabledOs != previousActiveOptic)
+                    HandleScopedModeSwitch(enabledOs, trigger: "CheckAndUpdate");
+
                 reason = "aiming+optic+enabled OpticSight";
             }
             catch (Exception ex) { reason = $"exception: {ex.Message}"; }
@@ -390,6 +315,98 @@ namespace ScopeHousingMeshSurgery
         }
 
         // ===== State transitions =====
+
+        private static void HandleScopedModeSwitch(OpticSight os, string trigger)
+        {
+            if (os == null) return;
+
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                $"[ScopeLifecycle] Mode switch while scoped ({trigger}): '{(_activeOptic != null ? _activeOptic.name : "?")}' → '{os.name}'");
+
+            // Update the active optic to the new mode
+            _activeOptic = os;
+            _lastEnabledOptic = os;
+            _currentScopeWhitelistName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
+
+            if (!ScopeDiagnostics.IsInScopeWhitelist(_currentScopeWhitelistName))
+            {
+                _modBypassedForCurrentScope = true;
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{(_currentScopeWhitelistName ?? "(unknown)")}'");
+
+                RestoreFov();
+                ZoomController.Restore();
+                ZoomController.ResetScrollZoom();
+                ReticleRenderer.Cleanup();
+                ScopeEffectsRenderer.Cleanup();
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                Patches.WeaponScalingPatch.RestoreScale();
+                if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                    MeshSurgeryManager.RestoreForScope(os.transform);
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
+                return;
+            }
+
+            float minFov = ZoomController.GetMinFov(os);
+            bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
+                && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
+            if (bypassForMode)
+            {
+                _modBypassedForCurrentScope = true;
+
+                // Fully tear down our scoped state when switching into a bypassed mode.
+                // Without this, a previously active zoom/FOV path can stay alive and hurt FPS.
+                RestoreFov();
+                ZoomController.Restore();
+                ZoomController.ResetScrollZoom();
+                ReticleRenderer.Cleanup();
+                ScopeEffectsRenderer.Cleanup();
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                Patches.WeaponScalingPatch.RestoreScale();
+                if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                    MeshSurgeryManager.RestoreForScope(os.transform);
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
+                return;
+            }
+
+            _modBypassedForCurrentScope = false;
+
+            // Re-extract reticle from the NEW mode's linza
+            ReticleRenderer.Cleanup();
+            ReticleRenderer.ExtractReticle(os);
+
+            // Re-hide lenses (the new mode's lens might not be hidden yet)
+            LensTransparency.HideAllLensSurfaces(os);
+
+            // Show reticle for the new mode (with magnification scaling)
+            float modeMag = ZoomController.GetMagnification(os);
+            ReticleRenderer.Show(os, modeMag);
+
+            // Notify FOV controller the mode changed so it re-reads ScopeCameraData
+            FovController.OnModeSwitch();
+
+            // RESTORE all meshes first, then re-cut with new mode's plane position.
+            if (ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
+            {
+                MeshSurgeryManager.RestoreForScope(os.transform);
+                MeshSurgeryManager.ApplyForOptic(os);
+            }
+
+            // Re-apply camera settings for the new mode's FOV
+            CameraSettingsManager.ApplyForOptic(os);
+
+            // Capture weapon base scale/FOV before FOV changes
+            Patches.WeaponScalingPatch.CaptureBaseState();
+
+            // Animated FOV change for mode switch (uses configured duration)
+            ApplyFov(true);
+        }
 
         private static void DoScopeEnter()
         {
