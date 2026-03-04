@@ -45,6 +45,12 @@ namespace ScopeHousingMeshSurgery
         private static Transform _reticleAnchor;
         private static Renderer  _lensRenderer;
 
+        // The backLens child transform, used as the primary NDC anchor.
+        // Its world position projected to viewport space gives the true screen-space
+        // centre of the scope aperture — naturally tracking any weapon-scale shift,
+        // housing offset, or camera/scope misalignment without a separate code path.
+        private static Transform _backLensTransform;
+
         // CommandBuffer state
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
@@ -132,13 +138,20 @@ namespace ScopeHousingMeshSurgery
             {
                 _opticTransform = os.transform;
 
+                // Primary NDC anchor: the backLens child transform.
+                // Its world position is stable (survives mesh-killing by LensTransparency)
+                // and projects to the true aperture centre after camera alignment.
+                _backLensTransform = ScopeHierarchy.FindDeepChild(os.transform, "backLens")
+                                  ?? ScopeHierarchy.FindDeepChild(os.transform, "backlens");
 
-                // Weapon-scale offset should track the optic's visual center, not the optic root pivot.
-                // Prefer the optic camera transform (kept in sync by OpticComponentUpdater), else lens renderer,
-                // else the optic root.
+                // Fallback anchor chain: optic camera → lens renderer → optic root.
                 _lensRenderer = os.LensRenderer;
                 _reticleAnchor = _lensRenderer != null ? _lensRenderer.transform : null;
                 if (_reticleAnchor == null) _reticleAnchor = _opticTransform;
+
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[Reticle] backLensTransform={((_backLensTransform != null) ? _backLensTransform.name : "not found")}; " +
+                    $"fallback anchor={(_reticleAnchor != null ? _reticleAnchor.name : "null")}");
                 EnsureMeshAndMaterial();
 
                 _reticleMat.mainTexture = _savedMarkTex;
@@ -203,8 +216,9 @@ namespace ScopeHousingMeshSurgery
             _savedMarkTex      = null;
             _savedMaskTex      = null;
             _opticTransform    = null;
-            _reticleAnchor   = null;
-            _lensRenderer    = null;
+            _backLensTransform = null;
+            _reticleAnchor     = null;
+            _lensRenderer      = null;
             _lastMag           = 1f;
             _baseScale         = 0f;
             _settled           = false;
@@ -312,45 +326,37 @@ namespace ScopeHousingMeshSurgery
                     cam.transform.rotation = swaySource.rotation;
                 }
 
-                // ── Weapon-scale offset ──────────────────────────────────────
-                // When WeaponScalingPatch shrinks the ribcage, the scope housing
-                // shifts on screen because its vertices move toward the bone pivot.
-                // The camera is aligned to the scope's forward, so screen center
-                // is where the scope WOULD be at scale 1.0.  Project the optic's
-                // actual world position to viewport space; any offset from center
-                // IS the scale-induced displacement.  Apply the same offset to the
-                // reticle so it tracks the housing.
-                //
-                // When scaling is inactive (scale ≈ 1.0), the optic projects to
-                // center → offset is zero → reticle stays centered (preserving the
-                // original jitter-free behavior).
-                if (Patches.WeaponScalingPatch.IsScalingActive)
+                // ── Back-lens NDC anchor ─────────────────────────────────────
+                // Project the backLens transform (or best fallback) to viewport
+                // space every frame.  This is the world-space position of the
+                // actual scope aperture disc, so:
+                //   • When camera alignment is perfect and no scaling, vp ≈ (0.5, 0.5)
+                //     → offset ≈ (0, 0) → all overlays stay at screen centre.
+                //   • When WeaponScalingPatch shrinks the ribcage, the aperture
+                //     shifts in world space; vp moves from centre → offset tracks it.
+                //   • Any residual camera/scope misalignment is corrected implicitly.
+                // One code path covers all cases — no IsScalingActive guard needed.
                 {
-                    // Prefer the optic camera transform (most stable), else our cached lens/optic anchor.
-                    Transform anchor = PiPDisabler.OpticCameraTransform ?? _reticleAnchor ?? _opticTransform;
+                    // Priority: backLens transform > optic camera > lens renderer > optic root.
+                    // _backLensTransform.position survives LensTransparency (mesh is killed,
+                    // but Transform.position remains valid).
+                    Transform anchor = _backLensTransform
+                                    ?? PiPDisabler.OpticCameraTransform
+                                    ?? _reticleAnchor
+                                    ?? _opticTransform;
 
-                    // Best: use lens renderer bounds center (tracks the visible tube center even if pivots are off).
-                    Vector3 worldPoint;
-                    if (_lensRenderer != null) worldPoint = _lensRenderer.bounds.center;
-                    else if (anchor != null) worldPoint = anchor.position;
-                    else worldPoint = Vector3.zero;
-
+                    Vector3 worldPoint = anchor != null ? anchor.position : Vector3.zero;
                     Vector3 vp = cam.WorldToViewportPoint(worldPoint);
-                    if (vp.z > 0f) // in front of camera
+
+                    if (vp.z > 0f) // point is in front of camera
                     {
-                        Vector2 newOffset = new Vector2((vp.x - 0.5f) * 2f, (vp.y - 0.5f) * 2f);
-                        // No smoothing: reticle/vignette/shadow must follow the same
-                        // instantaneous offset each frame.
-                        _weaponScaleOffset = newOffset;
+                        // No smoothing: all overlays must share the same instantaneous offset.
+                        _weaponScaleOffset = new Vector2((vp.x - 0.5f) * 2f, (vp.y - 0.5f) * 2f);
                     }
                     else
                     {
                         _weaponScaleOffset = Vector2.zero;
                     }
-                }
-                else
-                {
-                    _weaponScaleOffset = Vector2.zero;
                 }
             }
 
