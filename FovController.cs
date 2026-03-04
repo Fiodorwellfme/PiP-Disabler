@@ -96,7 +96,7 @@ namespace ScopeHousingMeshSurgery
             var sightComp = GetCurrentSightComponent(pwa);
 
             // Priority 1: Template.Zooms (+ smooth interpolation)
-            if (TryGetTemplateZoomMagnification(sightComp, out magnification, out source))
+            if (TryGetTemplateZoomMagnification(pwa, sightComp, out magnification, out source))
                 return true;
 
             // Priority 2: SightComponent.GetCurrentOpticZoom()
@@ -149,7 +149,7 @@ namespace ScopeHousingMeshSurgery
             return false;
         }
 
-        private static bool TryGetTemplateZoomMagnification(object sightComp, out float magnification, out string source)
+        private static bool TryGetTemplateZoomMagnification(ProceduralWeaponAnimation pwa, object sightComp, out float magnification, out string source)
         {
             magnification = 0f;
             source = null;
@@ -164,13 +164,18 @@ namespace ScopeHousingMeshSurgery
                 var zooms = zoomsObj as Array;
                 if (zooms == null || zooms.Length == 0) return false;
 
-                int selectedScope = GetIntPropertyValue(sightComp, "SelectedScope", GetIntPropertyValue(sightComp, "SelectedScopeIndex", 0));
+                int selectedScope = GetCurrentScopeIndexFromPwa(pwa);
+                if (selectedScope < 0)
+                    selectedScope = GetIntPropertyValue(sightComp, "SelectedScope", GetIntPropertyValue(sightComp, "SelectedScopeIndex", 0));
                 if (selectedScope < 0 || selectedScope >= zooms.Length) return false;
 
                 var scopeModesArray = zooms.GetValue(selectedScope) as Array;
                 if (scopeModesArray == null || scopeModesArray.Length == 0) return false;
 
-                int selectedMode = GetSelectedScopeMode(sightComp, selectedScope);
+                int pwaScopeMode = GetCurrentScopeModeFromPwa(pwa);
+                int selectedMode = pwaScopeMode;
+                if (selectedMode < 0)
+                    selectedMode = GetSelectedScopeMode(sightComp, selectedScope);
                 if (selectedMode < 0 || selectedMode >= scopeModesArray.Length)
                 {
                     // Stepped edge-case handling: keep previous applied value if available.
@@ -194,7 +199,9 @@ namespace ScopeHousingMeshSurgery
                 }
 
                 magnification = modeZoom;
-                source = "Template.Zooms(selected-mode)";
+                source = selectedMode == pwaScopeMode
+                    ? "Template.Zooms(current-scope)"
+                    : "Template.Zooms(selected-mode)";
                 return true;
             }
             catch
@@ -288,6 +295,38 @@ namespace ScopeHousingMeshSurgery
             }
             catch { }
             return fallback;
+        }
+
+        private static int GetCurrentScopeIndexFromPwa(ProceduralWeaponAnimation pwa)
+        {
+            try
+            {
+                var currentScope = GetMemberValue<object>(pwa, "CurrentScope", null);
+                if (currentScope == null) return -1;
+
+                // SPT 4.x decomp refs: FirearmScopeStateStruct.ScopeIndexInsideSight
+                // and PWA.CurrentScope carries this runtime context.
+                int idx = GetIntPropertyValue(currentScope, "ScopeIndexInsideSight", -1);
+                if (idx >= 0) return idx;
+
+                return GetIntPropertyValue(currentScope, "ScopeIndex", -1);
+            }
+            catch { return -1; }
+        }
+
+        private static int GetCurrentScopeModeFromPwa(ProceduralWeaponAnimation pwa)
+        {
+            try
+            {
+                var currentScope = GetMemberValue<object>(pwa, "CurrentScope", null);
+                if (currentScope == null) return -1;
+
+                int mode = GetIntPropertyValue(currentScope, "ScopeMode", -1);
+                if (mode >= 0) return mode;
+
+                return GetIntPropertyValue(currentScope, "ScopeModeIndex", -1);
+            }
+            catch { return -1; }
         }
 
         private static T GetMemberValue<T>(object obj, string memberName, T fallback)
