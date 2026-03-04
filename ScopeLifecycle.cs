@@ -431,6 +431,7 @@ namespace ScopeHousingMeshSurgery
 
             // 1. Restore FOV INSTANTLY (duration=0, no sluggish exit feel)
             RestoreFov();
+            FovController.OnScopeExit();
 
             // 1b. Restore normal weapon model scaling (after FOV is back to normal)
             Patches.WeaponScalingPatch.RestoreScale();
@@ -483,11 +484,11 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Apply the FOV zoom for the current scope, with configurable animation duration.
-        /// isTransition=true uses FovAnimationDuration config (scope enter / mode switch).
+        /// Apply the FOV zoom for the current scope.
         /// </summary>
         private static void ApplyFov(bool isTransition)
         {
+            _ = isTransition;
             try
             {
                 if (_modBypassedForCurrentScope) return;
@@ -508,9 +509,7 @@ namespace ScopeHousingMeshSurgery
 
                 if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                 {
-                    float duration = isTransition
-                        ? ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value
-                        : 0.1f; // Short duration for variable zoom updates
+                    float duration = ComputeAdsFovDuration(zoomedFov);
 
                     CameraClass.Instance.SetFov(zoomedFov, duration, false);
                     ScopeHousingMeshSurgeryPlugin.LogInfo(
@@ -522,6 +521,19 @@ namespace ScopeHousingMeshSurgery
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[ScopeLifecycle] ApplyFov error: {ex.Message}");
             }
+        }
+
+        private static float ComputeAdsFovDuration(float targetFov)
+        {
+            float speed = ScopeHousingMeshSurgeryPlugin.AdsFovSmoothingSpeed.Value;
+            if (speed <= 0.001f) return 0f;
+
+            var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            if (cam == null) return 0f;
+
+            float delta = Mathf.Abs(cam.fieldOfView - targetFov);
+            if (delta <= 0.01f) return 0f;
+            return Mathf.Clamp(delta / speed, 0f, 1f);
         }
 
         /// <summary>

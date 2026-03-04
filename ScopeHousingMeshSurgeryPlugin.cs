@@ -142,6 +142,7 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> AutoFovFromScope;
         internal static ConfigEntry<float> ScopedFov;
         internal static ConfigEntry<float> FovAnimationDuration;
+        internal static ConfigEntry<float> AdsFovSmoothingSpeed;
         internal static ConfigEntry<KeyCode> ZoomToggleKey;
         internal static ConfigEntry<bool> EnableScrollZoom;
         internal static ConfigEntry<float> ScrollZoomSensitivity;
@@ -226,6 +227,11 @@ namespace ScopeHousingMeshSurgery
                     "0 = instant snap. 0.25 = smooth quarter-second transition.\n" +
                     "Scope exit always restores FOV instantly to avoid sluggish feel.",
                     new AcceptableValueRange<float>(0f, 2f)));
+            AdsFovSmoothingSpeed = Config.Bind("2. Zoom", "AdsFovSmoothingSpeed", 80f,
+                new ConfigDescription(
+                    "Main camera ADS FOV smoothing speed in degrees/second.\n" +
+                    "0 = instant FOV changes. Higher = faster snapping to target FOV.",
+                    new AcceptableValueRange<float>(0f, 720f)));
 
             // --- Scroll Zoom ---
             EnableScrollZoom = Config.Bind("2. Zoom", "EnableScrollZoom", true,
@@ -497,7 +503,7 @@ namespace ScopeHousingMeshSurgery
             Logger.LogInfo("ScopeHousingMeshSurgery v4.7.0 loaded.");
             Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
             Logger.LogInfo($"  EnableZoom={EnableZoom.Value}  ShaderZoom={EnableShaderZoom.Value} (available={ZoomController.ShaderAvailable})");
-            Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
+            Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s  AdsFovSpeed={AdsFovSmoothingSpeed.Value}deg/s");
             Logger.LogInfo($"  ScrollZoom={EnableScrollZoom.Value}  ScrollSens={ScrollZoomSensitivity.Value}  ModifierKey={ScrollZoomModifierKey.Value}  Min={ScrollZoomMin.Value}  Max={ScrollZoomMax.Value}");
             Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
         }

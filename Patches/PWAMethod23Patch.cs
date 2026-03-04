@@ -71,9 +71,7 @@ namespace ScopeHousingMeshSurgery.Patches
 
                 if (zoomedFov < 0.5f || zoomedFov >= zoomBaseFov) return;
 
-                // Use FovAnimationDuration for smooth animated transition into zoom.
-                // EFT's own SetFov starts a coroutine that smoothly animates to the target.
-                float duration = ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value;
+                float duration = ComputeAdsFovDuration(zoomedFov);
                 CameraClass.Instance.SetFov(zoomedFov, duration, false);
 
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
@@ -84,6 +82,19 @@ namespace ScopeHousingMeshSurgery.Patches
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
                     $"[PWAPatch] Error: {ex.Message}");
             }
+        }
+
+        private static float ComputeAdsFovDuration(float targetFov)
+        {
+            float speed = ScopeHousingMeshSurgeryPlugin.AdsFovSmoothingSpeed.Value;
+            if (speed <= 0.001f) return 0f;
+
+            var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            if (cam == null) return 0f;
+
+            float delta = Mathf.Abs(cam.fieldOfView - targetFov);
+            if (delta <= 0.01f) return 0f;
+            return Mathf.Clamp(delta / speed, 0f, 1f);
         }
     }
 }

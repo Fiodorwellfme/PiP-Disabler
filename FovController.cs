@@ -13,11 +13,11 @@ namespace ScopeHousingMeshSurgery
     /// Zoom calculation (physically correct):
     ///   resultFov = 2 * atan(tan(baseFov/2) / magnification)
     ///
-    /// FOV sources (in priority order):
-    ///   1. ScopeZoomHandler.FiledOfView — runtime, variable zoom scopes
-    ///   2. ScopeCameraData.FieldOfView — baked in prefab, discovered by assembly scan
-    ///   3. Brute-force scan for any MonoBehaviour with FieldOfView field
-    ///   4. Config ScopedFov — manual fallback
+    /// Magnification sources (in priority order):
+    ///   1. SightComponent.Template.Zooms (+ smooth interpolation when possible)
+    ///   2. SightComponent.GetCurrentOpticZoom()
+    ///   3. ScopeCameraData.FieldOfView / ScopeZoomHandler as last resort
+    ///   4. Keep previous applied value
     /// </summary>
     internal static class FovController
     {
@@ -29,8 +29,10 @@ namespace ScopeHousingMeshSurgery
         private static FieldInfo _scopeCamDataFovField;
         private static bool _scopeCamDataSearched;
 
-        // Cache the last computed scope FOV for logging
-        private static float _lastScopeFov;
+        // Cache last applied values; used for "keep previous" behavior on bad data.
+        private static float _lastAppliedMagnification;
+        private static float _lastAppliedAdsFov;
+        private static string _lastSource;
 
         /// <summary>
         /// Computes the zoomed FOV from a fixed baseline FOV (50°).
@@ -38,35 +40,34 @@ namespace ScopeHousingMeshSurgery
         public static float ComputeZoomedFov(float baseFov, ProceduralWeaponAnimation pwa)
         {
             _ = baseFov;
-            _ = pwa;
-
             float effectiveBaseFov = ZoomBaselineFov;
 
             if (ScopeHousingMeshSurgeryPlugin.AutoFovFromScope.Value)
             {
-                // Check scroll zoom override first — keeps FOV and reticle in sync
-                float overrideFov = ZoomController.GetEffectiveScopeFov();
-                float scopeFov = overrideFov > 0.1f ? overrideFov : GetScopeFov();
-
-                if (scopeFov > 0.1f)
+                if (TryGetMagnification(pwa, out float magnification, out string source))
                 {
-                    float magnification = 35f / scopeFov;
                     float baseFovRad = effectiveBaseFov * Mathf.Deg2Rad;
                     float resultFovRad = 2f * Mathf.Atan2(Mathf.Tan(baseFovRad * 0.5f), magnification);
                     float resultFov = resultFovRad * Mathf.Rad2Deg;
 
-                    // Only log when value actually changes
-                    if (Mathf.Abs(scopeFov - _lastScopeFov) > 0.01f)
+                    bool changed = Mathf.Abs(resultFov - _lastAppliedAdsFov) > 0.01f
+                                || Mathf.Abs(magnification - _lastAppliedMagnification) > 0.01f
+                                || !string.Equals(source, _lastSource, StringComparison.Ordinal);
+                    if (changed)
                     {
-                        _lastScopeFov = scopeFov;
+                        _lastAppliedMagnification = magnification;
+                        _lastAppliedAdsFov = resultFov;
+                        _lastSource = source;
                         ScopeHousingMeshSurgeryPlugin.LogInfo(
-                            $"[FovController] scopeFov={scopeFov:F2} → mag={magnification:F2}x → " +
-                            $"mainFov={resultFov:F1} (baseFov={effectiveBaseFov:F0})" +
-                            (overrideFov > 0.1f ? " [SCROLL OVERRIDE]" : ""));
+                            $"[FovController] src={source} mag={magnification:F3}x → mainFov={resultFov:F2}° (base={effectiveBaseFov:F0}°)");
                     }
 
                     return resultFov;
                 }
+
+                // Keep previous applied ADS FOV if we temporarily fail to resolve zoom.
+                if (_lastAppliedAdsFov > 0.5f)
+                    return _lastAppliedAdsFov;
             }
 
             return ScopeHousingMeshSurgeryPlugin.ScopedFov.Value;
@@ -77,7 +78,226 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void OnModeSwitch()
         {
-            _lastScopeFov = 0f;
+            _lastSource = null;
+        }
+
+        public static void OnScopeExit()
+        {
+            _lastAppliedMagnification = 0f;
+            _lastAppliedAdsFov = 0f;
+            _lastSource = null;
+        }
+
+        private static bool TryGetMagnification(ProceduralWeaponAnimation pwa, out float magnification, out string source)
+        {
+            magnification = 0f;
+            source = null;
+
+            var sightComp = GetCurrentSightComponent(pwa);
+
+            // Priority 1: Template.Zooms (+ smooth interpolation)
+            if (TryGetTemplateZoomMagnification(sightComp, out magnification, out source))
+                return true;
+
+            // Priority 2: SightComponent.GetCurrentOpticZoom()
+            if (TryGetSightComponentCurrentZoom(sightComp, out magnification))
+            {
+                source = "SightComponent.GetCurrentOpticZoom";
+                return true;
+            }
+
+            // Priority 3: Scope camera FOV-derived magnification fallback
+            float overrideFov = ZoomController.GetEffectiveScopeFov();
+            float scopeFov = overrideFov > 0.1f ? overrideFov : GetScopeFov();
+            if (scopeFov > 0.1f)
+            {
+                magnification = 35f / scopeFov;
+                source = overrideFov > 0.1f ? "ScrollOverrideScopeFov" : "ScopeCameraData.FieldOfView";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static object GetCurrentSightComponent(ProceduralWeaponAnimation pwa)
+        {
+            try
+            {
+                if (pwa == null) return null;
+                var prop = pwa.GetType().GetProperty("CurrentAimingMod", BindingFlags.Public | BindingFlags.Instance);
+                return prop?.GetValue(pwa, null);
+            }
+            catch { return null; }
+        }
+
+        private static bool TryGetSightComponentCurrentZoom(object sightComp, out float magnification)
+        {
+            magnification = 0f;
+            if (sightComp == null) return false;
+            try
+            {
+                var method = sightComp.GetType().GetMethod("GetCurrentOpticZoom", BindingFlags.Public | BindingFlags.Instance);
+                if (method == null) return false;
+                float value = (float)method.Invoke(sightComp, null);
+                if (value > 0.01f)
+                {
+                    magnification = value;
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private static bool TryGetTemplateZoomMagnification(object sightComp, out float magnification, out string source)
+        {
+            magnification = 0f;
+            source = null;
+            if (sightComp == null) return false;
+
+            try
+            {
+                var scType = sightComp.GetType();
+                var templateObj = scType.GetProperty("Template", BindingFlags.Public | BindingFlags.Instance)?.GetValue(sightComp, null);
+                if (templateObj == null) return false;
+
+                var zoomsObj = templateObj.GetType().GetProperty("Zooms", BindingFlags.Public | BindingFlags.Instance)?.GetValue(templateObj, null);
+                var zooms = zoomsObj as Array;
+                if (zooms == null || zooms.Length == 0) return false;
+
+                int selectedScope = GetIntPropertyValue(sightComp, "SelectedScope", GetIntPropertyValue(sightComp, "SelectedScopeIndex", 0));
+                if (selectedScope < 0 || selectedScope >= zooms.Length) return false;
+
+                var scopeModesArray = zooms.GetValue(selectedScope) as Array;
+                if (scopeModesArray == null || scopeModesArray.Length == 0) return false;
+
+                int selectedMode = GetSelectedScopeMode(sightComp, selectedScope);
+                if (selectedMode < 0 || selectedMode >= scopeModesArray.Length)
+                {
+                    // Stepped edge-case handling: keep previous applied value if available.
+                    if (_lastAppliedMagnification > 0.01f)
+                    {
+                        magnification = _lastAppliedMagnification;
+                        source = "Template.Zooms(previous-mode-keep)";
+                        return true;
+                    }
+                    return false;
+                }
+
+                float modeZoom = Convert.ToSingle(scopeModesArray.GetValue(selectedMode));
+                if (modeZoom <= 0.01f) return false;
+
+                if (TryGetSmoothInterpolatedZoom(sightComp, templateObj, scopeModesArray, out float smoothMag))
+                {
+                    magnification = smoothMag;
+                    source = "Template.Zooms(interpolated)";
+                    return true;
+                }
+
+                magnification = modeZoom;
+                source = "Template.Zooms(selected-mode)";
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryGetSmoothInterpolatedZoom(object sightComp, object templateObj, Array scopeModesArray, out float smoothMag)
+        {
+            smoothMag = 0f;
+            if (scopeModesArray == null || scopeModesArray.Length < 2) return false;
+
+            try
+            {
+                bool isAdjustable = GetBoolPropertyValue(templateObj, "IsAdjustableOptic", false);
+                if (!isAdjustable) return false;
+
+                float minZoom = float.MaxValue;
+                float maxZoom = float.MinValue;
+                for (int i = 0; i < scopeModesArray.Length; i++)
+                {
+                    float z = Convert.ToSingle(scopeModesArray.GetValue(i));
+                    if (z <= 0.01f) continue;
+                    if (z < minZoom) minZoom = z;
+                    if (z > maxZoom) maxZoom = z;
+                }
+                if (minZoom == float.MaxValue || maxZoom == float.MinValue || maxZoom <= minZoom)
+                    return false;
+
+                var mmfProp = templateObj.GetType().GetProperty("MinMaxFov", BindingFlags.Public | BindingFlags.Instance);
+                if (mmfProp == null || mmfProp.PropertyType != typeof(Vector3)) return false;
+                Vector3 minMaxFov = (Vector3)mmfProp.GetValue(templateObj, null);
+                if (minMaxFov.x <= 0.01f || minMaxFov.y <= 0.01f || Mathf.Abs(minMaxFov.y - minMaxFov.x) < 0.0001f)
+                    return false;
+
+                float scopeZoomValue = GetFloatPropertyValue(sightComp, "ScopeZoomValue", float.NaN);
+                if (float.IsNaN(scopeZoomValue) || scopeZoomValue <= 0.01f)
+                    return false;
+
+                // FOV gets smaller as magnification increases.
+                float t = Mathf.InverseLerp(minMaxFov.x, minMaxFov.y, scopeZoomValue);
+                smoothMag = Mathf.Lerp(minZoom, maxZoom, t);
+                return smoothMag > 0.01f;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static int GetSelectedScopeMode(object sightComp, int selectedScope)
+        {
+            try
+            {
+                var modesProp = sightComp.GetType().GetProperty("ScopesSelectedModes", BindingFlags.Public | BindingFlags.Instance);
+                if (modesProp != null)
+                {
+                    var arr = modesProp.GetValue(sightComp, null) as int[];
+                    if (arr != null && selectedScope >= 0 && selectedScope < arr.Length)
+                        return arr[selectedScope];
+                }
+
+                return GetIntPropertyValue(sightComp, "SelectedScopeMode", 0);
+            }
+            catch { return 0; }
+        }
+
+        private static int GetIntPropertyValue(object obj, string propertyName, int fallback)
+        {
+            try
+            {
+                var prop = obj.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                if (prop != null)
+                    return Convert.ToInt32(prop.GetValue(obj, null));
+            }
+            catch { }
+            return fallback;
+        }
+
+        private static float GetFloatPropertyValue(object obj, string propertyName, float fallback)
+        {
+            try
+            {
+                var prop = obj.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                if (prop != null)
+                    return Convert.ToSingle(prop.GetValue(obj, null));
+            }
+            catch { }
+            return fallback;
+        }
+
+        private static bool GetBoolPropertyValue(object obj, string propertyName, bool fallback)
+        {
+            try
+            {
+                var prop = obj.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                if (prop != null)
+                    return Convert.ToBoolean(prop.GetValue(obj, null));
+            }
+            catch { }
+            return fallback;
         }
 
         /// <summary>
