@@ -70,6 +70,17 @@ namespace ScopeHousingMeshSurgery
         // is unavailable.
         private static bool _worldSpaceMode;
 
+        // Temporally-smoothed world-space position of the back lens.
+        // The housing mesh benefits from TAA (temporal AA blends current + previous
+        // frames → high-frequency float-precision noise is filtered out).  Our
+        // CommandBuffer runs at AfterEverything, *after* TAA, so the raw
+        // _backLensTransform.position would jitter more than the TAA-smoothed
+        // housing.  A short exponential moving average (tau ≈ 50 ms) replicates
+        // what TAA does, filtering ~60 Hz precision noise while leaving scope
+        // sway (0.5–2 Hz) unaffected.
+        private static Vector3 _smoothedBackLensPos;
+        private static bool    _smoothedPosValid;
+
         // Camera alignment state
         private static bool _alignmentActive;
 
@@ -228,9 +239,11 @@ namespace ScopeHousingMeshSurgery
             _lensRenderer      = null;
             _lastMag           = 1f;
             _baseScale         = 0f;
-            _settled           = false;
-            _worldSpaceMode    = false;
-            _weaponScaleOffset = Vector2.zero;
+            _settled            = false;
+            _worldSpaceMode     = false;
+            _smoothedBackLensPos = Vector3.zero;
+            _smoothedPosValid   = false;
+            _weaponScaleOffset  = Vector2.zero;
         }
 
         /// <summary>
@@ -405,7 +418,31 @@ namespace ScopeHousingMeshSurgery
             if (_backLensTransform != null)
             {
                 // ── World-space mode ──────────────────────────────────────
-                Vector3 worldPos = _backLensTransform.position;
+
+                // Temporally smooth the back-lens world position to replicate
+                // what TAA does for the housing mesh.  The housing renders through
+                // the TAA pass (frame blending → high-frequency precision noise
+                // filtered out); our CommandBuffer runs after TAA and gets no
+                // such treatment.  A ~50 ms exponential moving average matches
+                // TAA's smoothing effect at typical frame rates, filtering the
+                // ~60 Hz float-precision jitter while leaving scope sway (0.5–2 Hz)
+                // effectively unchanged (< 0.5° phase lag at 1 Hz sway).
+                {
+                    Vector3 raw = _backLensTransform.position;
+                    if (!_smoothedPosValid)
+                    {
+                        _smoothedBackLensPos = raw;
+                        _smoothedPosValid    = true;
+                    }
+                    else
+                    {
+                        // Framerate-independent EMA: tau = 50 ms.
+                        float alpha = 1f - Mathf.Exp(-Time.deltaTime / 0.05f);
+                        _smoothedBackLensPos = Vector3.Lerp(_smoothedBackLensPos, raw, alpha);
+                    }
+                }
+
+                Vector3 worldPos = _smoothedBackLensPos;
                 float dist = Vector3.Distance(cam.transform.position, worldPos);
                 dist = Mathf.Max(0.05f, dist);
 
