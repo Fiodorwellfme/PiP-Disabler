@@ -30,6 +30,9 @@ namespace ScopeHousingMeshSurgery
         private static PropertyInfo _isAimingProp;
         private static PropertyInfo _currentScopeProp;
         private static PropertyInfo _isOpticProp;
+        private static Func<ProceduralWeaponAnimation, bool> _isAimingGetter;
+        private static Func<ProceduralWeaponAnimation, object> _currentScopeGetter;
+        private static Func<object, bool> _isOpticGetter;
         private static bool _reflectionReady;
 
         // State
@@ -37,10 +40,22 @@ namespace ScopeHousingMeshSurgery
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
+        private static string _currentScopeWhitelistName;
+        private static int _pendingOpticExitFrames;
 
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
         public static OpticSight ActiveOptic => _activeOptic;
+        public static string CurrentScopeWhitelistName => _currentScopeWhitelistName;
+
+        public static bool IsCurrentScopeWhitelisted
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(_currentScopeWhitelistName)) return false;
+                return ScopeDiagnostics.IsInScopeWhitelist(_currentScopeWhitelistName);
+            }
+        }
 
         /// <summary>
         /// One-time reflection setup. Call from plugin Awake.
@@ -63,6 +78,27 @@ namespace ScopeHousingMeshSurgery
                                 && _currentScopeProp != null
                                 && _isOpticProp != null;
 
+                if (_reflectionReady)
+                {
+                    _isAimingGetter = (Func<ProceduralWeaponAnimation, bool>)Delegate.CreateDelegate(
+                        typeof(Func<ProceduralWeaponAnimation, bool>),
+                        null,
+                        _isAimingProp.GetGetMethod(true));
+
+                    _currentScopeGetter = (Func<ProceduralWeaponAnimation, object>)Delegate.CreateDelegate(
+                        typeof(Func<ProceduralWeaponAnimation, object>),
+                        null,
+                        _currentScopeProp.GetGetMethod(true));
+
+                    var scopeType = _currentScopeProp.PropertyType;
+                    var objectParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "o");
+                    var castScope = System.Linq.Expressions.Expression.Convert(objectParam, scopeType);
+                    var isOpticCall = System.Linq.Expressions.Expression.Call(castScope, _isOpticProp.GetGetMethod(true));
+                    _isOpticGetter = System.Linq.Expressions.Expression
+                        .Lambda<Func<object, bool>>(isOpticCall, objectParam)
+                        .Compile();
+                }
+
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[ScopeLifecycle] Reflection: IsAiming={_isAimingProp != null}, " +
                     $"CurrentScope={_currentScopeProp != null}, IsOptic={_isOpticProp != null}");
@@ -79,69 +115,17 @@ namespace ScopeHousingMeshSurgery
         public static void OnOpticEnabled(OpticSight os)
         {
             if (os != null)
+            {
                 _lastEnabledOptic = os;
+                _currentScopeWhitelistName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
+            }
 
             // If already scoped and a DIFFERENT optic enables → genuine mode switch.
             // Guard against sibling mode_000/mode_001 co-activating on scope enter, which
             // would falsely trigger a restore+recut cycle and cause a 1-2 frame mesh flash.
             if (_isScoped && os != null && os != _activeOptic)
             {
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    $"[ScopeLifecycle] Mode switch while scoped: '{(_activeOptic != null ? _activeOptic.name : "?")}' → '{os.name}'");
-
-                // Update the active optic to the new mode
-                _activeOptic = os;
-
-                float minFov = ZoomController.GetMinFov(os);
-                bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                    && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
-                if (bypassForMode)
-                {
-                    _modBypassedForCurrentScope = true;
-                    ReticleRenderer.Cleanup();
-                    ScopeEffectsRenderer.Cleanup();
-                    LensTransparency.RestoreAll();
-                    CameraSettingsManager.Restore();
-                    PiPDisabler.RestoreAllCameras();
-                    Patches.WeaponScalingPatch.RestoreScale();
-                    if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
-                        MeshSurgeryManager.RestoreForScope(os.transform);
-                    PlaneVisualizer.Hide();
-                    ZeroingController.Reset();
-                    return;
-                }
-
-                _modBypassedForCurrentScope = false;
-
-                // Re-extract reticle from the NEW mode's linza
-                ReticleRenderer.Cleanup();
-                ReticleRenderer.ExtractReticle(os);
-
-                // Re-hide lenses (the new mode's lens might not be hidden yet)
-                LensTransparency.HideAllLensSurfaces(os);
-
-                // Show reticle for the new mode (with magnification scaling)
-                float modeMag = ZoomController.GetMagnification(os);
-                ReticleRenderer.Show(os, modeMag);
-
-                // Notify FOV controller the mode changed so it re-reads ScopeCameraData
-                FovController.OnModeSwitch();
-
-                // RESTORE all meshes first, then re-cut with new mode's plane position.
-                if (ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
-                {
-                    MeshSurgeryManager.RestoreForScope(os.transform);
-                    MeshSurgeryManager.ApplyForOptic(os);
-                }
-
-                // Re-apply camera settings for the new mode's FOV
-                CameraSettingsManager.ApplyForOptic(os);
-
-                // Capture weapon base scale/FOV before FOV changes
-                Patches.WeaponScalingPatch.CaptureBaseState();
-
-                // Animated FOV change for mode switch (uses configured duration)
-                ApplyFov(true);
+                HandleScopedModeSwitch(os, trigger: "OnEnable");
             }
 
             CheckAndUpdate();
@@ -169,35 +153,63 @@ namespace ScopeHousingMeshSurgery
             try
             {
                 var player = GetLocalPlayer();
-                if (player == null) { reason = "no player"; goto evaluate; }
+                if (player == null) { _pendingOpticExitFrames = 0; reason = "no player"; goto evaluate; }
 
                 var pwa = player.ProceduralWeaponAnimation;
-                if (pwa == null) { reason = "no PWA"; goto evaluate; }
+                if (pwa == null) { _pendingOpticExitFrames = 0; reason = "no PWA"; goto evaluate; }
 
-                bool isAiming = (bool)_isAimingProp.GetValue(pwa);
-                if (!isAiming) { reason = "not aiming"; goto evaluate; }
+                bool isAiming = _isAimingGetter != null ? _isAimingGetter(pwa) : (bool)_isAimingProp.GetValue(pwa);
+                if (!isAiming) { _pendingOpticExitFrames = 0; reason = "not aiming"; goto evaluate; }
 
-                object currentScope = _currentScopeProp.GetValue(pwa);
-                if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
+                object currentScope = _currentScopeGetter != null ? _currentScopeGetter(pwa) : _currentScopeProp.GetValue(pwa);
+                if (currentScope == null) { _pendingOpticExitFrames = 0; reason = "no CurrentScope"; goto evaluate; }
 
-                bool isOptic = (bool)_isOpticProp.GetValue(currentScope);
-                if (!isOptic) { reason = "not optic"; goto evaluate; }
+                bool isOptic = _isOpticGetter != null ? _isOpticGetter(currentScope) : (bool)_isOpticProp.GetValue(currentScope);
+                if (!isOptic) { _pendingOpticExitFrames = 0; reason = "not optic"; goto evaluate; }
 
                 var enabledOs = FindEnabledOpticFromPWA();
                 if (enabledOs == null)
                 {
-                    // Hybrid toggle case: CurrentScope may still report optic while the
-                    // enabled OpticSight switched off (e.g., now in collimator mode).
-                    // Force scope exit immediately so RestoreAll runs without waiting for
-                    // a full ADS exit.
+                    if (_isScoped)
+                    {
+                        int debounceFrames = 3;
+                        if (ScopeHousingMeshSurgeryPlugin.OpticModeSwitchDebounceFrames != null)
+                            debounceFrames = Mathf.Clamp(
+                                ScopeHousingMeshSurgeryPlugin.OpticModeSwitchDebounceFrames.Value,
+                                1,
+                                120);
+
+                        _pendingOpticExitFrames++;
+                        if (_pendingOpticExitFrames < debounceFrames)
+                        {
+                            shouldBeScoped = true;
+                            reason = $"optic handoff pending ({_pendingOpticExitFrames}/{debounceFrames})";
+                            goto evaluate;
+                        }
+
+                        shouldBeScoped = false;
+                        reason = $"optic handoff timeout ({_pendingOpticExitFrames}/{debounceFrames})";
+                        goto evaluate;
+                    }
+
                     shouldBeScoped = false;
                     reason = "optic flag true but no enabled OpticSight";
                     goto evaluate;
                 }
 
+                var previousActiveOptic = _activeOptic;
+
+                _pendingOpticExitFrames = 0;
                 shouldBeScoped = true;
                 _activeOptic = enabledOs;
                 _lastEnabledOptic = enabledOs;
+
+                // Some sights keep both primary/secondary optics enabled and only move
+                // CurrentScope. Detect that change here too (without requiring OnEnable)
+                // so we can immediately re-hide the newly active lens.
+                if (_isScoped && enabledOs != null && enabledOs != previousActiveOptic)
+                    HandleScopedModeSwitch(enabledOs, trigger: "CheckAndUpdate");
+
                 reason = "aiming+optic+enabled OpticSight";
             }
             catch (Exception ex) { reason = $"exception: {ex.Message}"; }
@@ -210,7 +222,7 @@ namespace ScopeHousingMeshSurgery
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[ScopeLifecycle] State change: {(_isScoped ? "SCOPED" : "NOT_SCOPED")} → " +
                     $"{(shouldBeScoped ? "SCOPED" : "NOT_SCOPED")} reason='{reason}' " +
-                    $"caller={GetCaller()} frame={Time.frameCount}");
+                    $"frame={Time.frameCount}");
             }
 
             if (shouldBeScoped && !_isScoped)
@@ -221,23 +233,6 @@ namespace ScopeHousingMeshSurgery
             {
                 DoScopeExit();
             }
-        }
-
-        /// <summary>Identifies what called CheckAndUpdate for debugging.</summary>
-        private static string GetCaller()
-        {
-            try
-            {
-                var st = new System.Diagnostics.StackTrace(2, false);
-                if (st.FrameCount > 0)
-                {
-                    var method = st.GetFrame(0)?.GetMethod();
-                    if (method != null)
-                        return $"{method.DeclaringType?.Name}.{method.Name}";
-                }
-            }
-            catch { }
-            return "?";
         }
 
         /// <summary>
@@ -299,9 +294,11 @@ namespace ScopeHousingMeshSurgery
             if (_isScoped)
                 DoScopeExit();
             _modBypassedForCurrentScope = false;
+            _currentScopeWhitelistName = null;
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
             _lastEnabledOptic = null;
+            _pendingOpticExitFrames = 0;
         }
 
         /// <summary>
@@ -312,19 +309,109 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void SyncState()
         {
-            // _lastEnabledOptic was cleared by ForceExit; if we're already scoped
-            // FindOpticFromPWA() will locate the active one when DoScopeEnter fires.
+            // _lastEnabledOptic was cleared by ForceExit; if we're already scoped,
+            // OnOpticEnabled/CheckAndUpdate will repopulate it on the next optic event.
             CheckAndUpdate();
         }
 
         // ===== State transitions =====
 
+        private static void HandleScopedModeSwitch(OpticSight os, string trigger)
+        {
+            if (os == null) return;
+
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                $"[ScopeLifecycle] Mode switch while scoped ({trigger}): '{(_activeOptic != null ? _activeOptic.name : "?")}' → '{os.name}'");
+
+            // Update the active optic to the new mode
+            _activeOptic = os;
+            _lastEnabledOptic = os;
+            _currentScopeWhitelistName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
+
+            if (!ScopeDiagnostics.IsInScopeWhitelist(_currentScopeWhitelistName))
+            {
+                _modBypassedForCurrentScope = true;
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{(_currentScopeWhitelistName ?? "(unknown)")}'");
+
+                RestoreFov();
+                ZoomController.Restore();
+                ZoomController.ResetScrollZoom();
+                ReticleRenderer.Cleanup();
+                ScopeEffectsRenderer.Cleanup();
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                Patches.WeaponScalingPatch.RestoreScale();
+                if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                    MeshSurgeryManager.RestoreForScope(os.transform);
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
+                return;
+            }
+
+            float minFov = ZoomController.GetMinFov(os);
+            bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
+                && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
+            if (bypassForMode)
+            {
+                _modBypassedForCurrentScope = true;
+
+                // Fully tear down our scoped state when switching into a bypassed mode.
+                // Without this, a previously active zoom/FOV path can stay alive and hurt FPS.
+                RestoreFov();
+                ZoomController.Restore();
+                ZoomController.ResetScrollZoom();
+                ReticleRenderer.Cleanup();
+                ScopeEffectsRenderer.Cleanup();
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                Patches.WeaponScalingPatch.RestoreScale();
+                if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                    MeshSurgeryManager.RestoreForScope(os.transform);
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
+                return;
+            }
+
+            _modBypassedForCurrentScope = false;
+
+            // Re-extract reticle from the NEW mode's linza
+            ReticleRenderer.Cleanup();
+            ReticleRenderer.ExtractReticle(os);
+
+            // Re-hide lenses (the new mode's lens might not be hidden yet)
+            LensTransparency.HideAllLensSurfaces(os);
+
+            // Show reticle for the new mode (with magnification scaling)
+            float modeMag = ZoomController.GetMagnification(os);
+            ReticleRenderer.Show(os, modeMag);
+
+            // Notify FOV controller the mode changed so it re-reads ScopeCameraData
+            FovController.OnModeSwitch();
+
+            // RESTORE all meshes first, then re-cut with new mode's plane position.
+            if (ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
+            {
+                MeshSurgeryManager.RestoreForScope(os.transform);
+                MeshSurgeryManager.ApplyForOptic(os);
+            }
+
+            // Re-apply camera settings for the new mode's FOV
+            CameraSettingsManager.ApplyForOptic(os);
+
+            // Capture weapon base scale/FOV before FOV changes
+            Patches.WeaponScalingPatch.CaptureBaseState();
+
+            // Animated FOV change for mode switch (uses configured duration)
+            ApplyFov(true);
+        }
+
         private static void DoScopeEnter()
         {
             // Get the OpticSight — cached from OnEnable, or find from pwa
             var os = _lastEnabledOptic;
-            if (os == null)
-                os = FindOpticFromPWA();
             if (os == null)
             {
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
@@ -332,8 +419,24 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
+            _pendingOpticExitFrames = 0;
             _isScoped = true;
             _activeOptic = os;
+            _currentScopeWhitelistName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
+
+            if (!ScopeDiagnostics.IsInScopeWhitelist(_currentScopeWhitelistName))
+            {
+                _modBypassedForCurrentScope = true;
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{(_currentScopeWhitelistName ?? "(unknown)")}'");
+
+                LensTransparency.RestoreAll();
+                CameraSettingsManager.Restore();
+                PiPDisabler.RestoreAllCameras();
+                PlaneVisualizer.Hide();
+                ZeroingController.Reset();
+                return;
+            }
 
             float minFov = ZoomController.GetMinFov(os);
             _modBypassedForCurrentScope = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
@@ -419,15 +522,10 @@ namespace ScopeHousingMeshSurgery
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[ScopeLifecycle] EXIT: '{(prevOptic != null ? prevOptic.name : "null")}' frame={Time.frameCount}");
 
+            _pendingOpticExitFrames = 0;
             _isScoped = false;
             _activeOptic = null;
-
-            // If this scope was bypassed (high magnification), skip mod cleanup paths.
-            if (_modBypassedForCurrentScope)
-            {
-                _modBypassedForCurrentScope = false;
-                return;
-            }
+            _currentScopeWhitelistName = null;
 
             // 1. Restore FOV INSTANTLY (duration=0, no sluggish exit feel)
             RestoreFov();
@@ -465,6 +563,35 @@ namespace ScopeHousingMeshSurgery
 
             // 8. Reset zeroing state
             ZeroingController.Reset();
+
+            // ADS exit should always clear bypass state.
+            _modBypassedForCurrentScope = false;
+
+        }
+
+        public static void ToggleCurrentScopeWhitelist()
+        {
+            string scopeName = _currentScopeWhitelistName;
+
+            if (string.IsNullOrWhiteSpace(scopeName) && _lastEnabledOptic != null)
+                scopeName = ScopeDiagnostics.GetScopeWhitelistName(_lastEnabledOptic.transform);
+
+            if (string.IsNullOrWhiteSpace(scopeName))
+            {
+                ScopeHousingMeshSurgeryPlugin.LogWarn("[Whitelist] No active scope to toggle.");
+                return;
+            }
+
+            bool added = ScopeDiagnostics.ToggleScopeWhitelistEntry(scopeName, out var newCsv);
+            ScopeHousingMeshSurgeryPlugin.ScopeWhitelist.Value = newCsv;
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                $"[Whitelist] {(added ? "Added" : "Removed")} '{scopeName}'. List: {(string.IsNullOrWhiteSpace(newCsv) ? "(empty)" : newCsv)}");
+
+            if (_isScoped)
+            {
+                DoScopeExit();
+                CheckAndUpdate();
+            }
         }
 
         // ===== FOV Helpers =====
@@ -590,32 +717,8 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Fallback: find OpticSight if _lastEnabledOptic wasn't cached.
-        /// Uses FindObjectsOfType as last resort.
-        /// </summary>
-        private static OpticSight FindOpticFromPWA()
-        {
-            try
-            {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
-                foreach (var os in all)
-                {
-                    if (os != null && os.isActiveAndEnabled)
-                        return os;
-                }
-                foreach (var os in all)
-                {
-                    if (os != null) return os;
-                }
-            }
-            catch { }
-
-            return null;
-        }
-
-        /// <summary>
         /// Finds an enabled OpticSight, preferring active and cached instances before
-        /// a global search.
+        /// fallback behavior.
         /// </summary>
         private static OpticSight FindEnabledOpticFromPWA()
         {
@@ -624,17 +727,6 @@ namespace ScopeHousingMeshSurgery
 
             if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled)
                 return _lastEnabledOptic;
-
-            try
-            {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
-                foreach (var os in all)
-                {
-                    if (os != null && os.isActiveAndEnabled)
-                        return os;
-                }
-            }
-            catch { }
 
             return null;
         }

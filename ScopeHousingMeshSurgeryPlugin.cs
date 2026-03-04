@@ -75,7 +75,11 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> AutoDisableForHighMagnificationScopes;
         internal static ConfigEntry<float> HighMagnificationFovThreshold;
         internal static ConfigEntry<KeyCode> DisablePiPToggleKey;
+        internal static ConfigEntry<KeyCode> ScopeWhitelistToggleKey;
+        internal static ConfigEntry<string> ScopeWhitelist;
+        internal static ConfigEntry<int> OpticModeSwitchDebounceFrames;
         internal static ConfigEntry<bool> MakeLensesTransparent;
+        internal static ConfigEntry<bool> EnableLensMaterialFallback;
         internal static ConfigEntry<KeyCode> LensesTransparentToggleKey;
 
         // --- Mesh Surgery ---
@@ -115,6 +119,7 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> ForceManualKeepSide;
         internal static ConfigEntry<bool> ManualKeepPositive;
         internal static ConfigEntry<string> ExcludeNameContainsCsv;
+        internal static ConfigEntry<bool> ExpandSearchToWeaponRoot;
 
         // --- Scope Effects ---
         internal static ConfigEntry<bool>  VignetteEnabled;
@@ -164,7 +169,7 @@ namespace ScopeHousingMeshSurgery
             ModEnabled = Config.Bind("0. Global", "ModEnabled", true,
                 "Master ON/OFF switch for the entire mod. When OFF, all effects are " +
                 "cleaned up and the game behaves as if the mod is not installed.");
-            ModToggleKey = Config.Bind("0. Global", "ModToggleKey", KeyCode.F12,
+            ModToggleKey = Config.Bind("0. Global", "ModToggleKey", KeyCode.Backspace,
                 "Toggle key for master mod enable/disable.");
 
             // --- General ---
@@ -180,23 +185,38 @@ namespace ScopeHousingMeshSurgery
                     new AcceptableValueRange<float>(0.5f, 15f)));
             DisablePiPToggleKey = Config.Bind("1. General", "DisablePiPToggleKey", KeyCode.F10,
                 "Toggle key for PiP disable.");
+            ScopeWhitelistToggleKey = Config.Bind("1. General", "ScopeWhitelistToggleKey", KeyCode.F7,
+                "Toggle the currently used scope in ScopeWhitelist (adds it if missing, removes it if present).");
+            ScopeWhitelist = Config.Bind("1. General", "ScopeWhitelist", "",
+                "Comma-separated list of allowed scope object names (scope_... under mod_scope).\n" +
+                "The mod only activates for scopes in this list. Use ScopeWhitelistToggleKey while ADS\n" +
+                "to quickly add/remove the currently active scope.");
+            OpticModeSwitchDebounceFrames = Config.Bind("1. General", "OpticModeSwitchDebounceFrames", 3,
+                new ConfigDescription(
+                    "Debounce window (frames) for optic mode switches while ADS.\n" +
+                    "When IsAiming + CurrentScope.IsOptic are true but no OpticSight is enabled yet,\n" +
+                    "ScopeLifecycle waits this many frames before forcing scope exit.\n" +
+                    "Prevents enter/exit thrash during 1-2 frame mode handoffs.",
+                    new AcceptableValueRange<int>(1, 120)));
 
             MakeLensesTransparent = Config.Bind("1. General", "MakeLensesTransparent", true,
                 "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.");
+            EnableLensMaterialFallback = Config.Bind("1. General", "EnableLensMaterialFallback", false,
+                "Also force lens materials to transparent as a fallback. Disabled by default to avoid material-clone GC/CPU overhead.");
             LensesTransparentToggleKey = Config.Bind("1. General", "LensesTransparentToggleKey", KeyCode.F11,
                 "Toggle key for lens transparency.");
 
             // --- Weapon Scaling ---
-            EnableWeaponScaling = Config.Bind("2. Zoom", "EnableWeaponScaling", true,
+            EnableWeaponScaling = Config.Bind("2. Zoom", "EnableWeaponScaling", false,
                 "Compensate weapon/arms model scale across magnification levels.\n" +
                 "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
                 "With this enabled, the weapon shrinks proportionally as you zoom in so it\n" +
                 "always occupies the same screen space at every magnification level.");
-            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 0.00f,
+            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 1.031455f,
                 new ConfigDescription(
                     "Placeholder text\n",
                     new AcceptableValueRange<float>(0.00f, 2.00f)));
-            WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.00f,
+            WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.3051643f,
                 new ConfigDescription(
                     "Placeholder text\n",
                     new AcceptableValueRange<float>(0.00f, 1.00f)));
@@ -204,7 +224,7 @@ namespace ScopeHousingMeshSurgery
             // --- Zoom ---
             EnableZoom = Config.Bind("2. Zoom", "EnableZoom", true,
                 "Enable scope magnification (either shader zoom or FOV zoom fallback).");
-            EnableShaderZoom = Config.Bind("2. Zoom", "EnableShaderZoom", true,
+            EnableShaderZoom = Config.Bind("2. Zoom", "EnableShaderZoom", false,
                 "Use GrabPass shader zoom on the lens surface (best quality, weapon stays normal size). " +
                 "Requires scopezoom.bundle in assets/ folder. Falls back to FOV zoom if not available.");
             DefaultZoom = Config.Bind("2. Zoom", "DefaultZoom", 4f,
@@ -219,7 +239,7 @@ namespace ScopeHousingMeshSurgery
                     "FOV (degrees) for FOV zoom fallback mode. Lower = more zoom. " +
                     "Only used when shader zoom is unavailable.",
                     new AcceptableValueRange<float>(5f, 75f)));
-            FovAnimationDuration = Config.Bind("2. Zoom", "FovAnimationDuration", 0f,
+            FovAnimationDuration = Config.Bind("2. Zoom", "FovAnimationDuration", 0.08450704f,
                 new ConfigDescription(
                     "Duration (seconds) of the FOV zoom-in animation when entering ADS.\n" +
                     "0 = instant snap. 0.25 = smooth quarter-second transition.\n" +
@@ -362,13 +382,13 @@ namespace ScopeHousingMeshSurgery
                     "0 = starts exactly at the backLens. 0.05 = 5cm behind it (catches interior tube geometry).\n" +
                     "Changing CutLength does NOT move this plane.",
                     new AcceptableValueRange<float>(0f, 0.3f)));
-            CutLength = Config.Bind("3. Mesh Surgery", "CutLength", 0.755493f,
+            CutLength = Config.Bind("3. Mesh Surgery", "CutLength", 1f,
                 new ConfigDescription(
                     "How far forward from the near plane the cut extends (toward the objective).\n" +
                     "The far plane is at: nearPlane + (length × boreAxis).\n" +
                     "Only the far plane moves when you change this value.",
                     new AcceptableValueRange<float>(0.01f, 1f)));
-            NearPreserveDepth = Config.Bind("3. Mesh Surgery", "NearPreserveDepth", 0.03042253f,
+            NearPreserveDepth = Config.Bind("3. Mesh Surgery", "NearPreserveDepth", 0.01492957f,
                 new ConfigDescription(
                     "Depth (meters) from the near cut plane where NO geometry is cut.\n" +
                     "Preserves the eyepiece housing closest to the camera so you\n" +
@@ -405,7 +425,7 @@ namespace ScopeHousingMeshSurgery
                     "0 = Unity default.  -1 = subtle sharpening.  -2 = very crisp at the cost\n" +
                     "of slight shimmering.  Adjust to taste with your scope.",
                     new AcceptableValueRange<float>(-4f, 0f)));
-            AdsSettledThreshold = Config.Bind("3. Mesh Surgery", "AdsSettledThreshold", 0.006244131f,
+            AdsSettledThreshold = Config.Bind("3. Mesh Surgery", "AdsSettledThreshold", 0.01f,
                 new ConfigDescription(
                     "Lens movement threshold (units/frame) below which the weapon is\n" +
                     "considered settled after ADS-in.  The reticle/vignette/shadow are\n" +
@@ -422,17 +442,24 @@ namespace ScopeHousingMeshSurgery
             ManualKeepPositive = Config.Bind("3. Mesh Surgery", "ManualKeepPositive", true,
                 "Only used when ForceManualKeepSide=true.");
             ExcludeNameContainsCsv = Config.Bind("3. Mesh Surgery", "ExcludeNameContainsCsv",
-                "linza,lens,glass,reticle,collider,trigger,shadow,backlens",
+                "",
                 "Comma-separated substrings to exclude from mesh cutting.");
+            ExpandSearchToWeaponRoot = Config.Bind("3. Mesh Surgery", "ExpandSearchToWeaponRoot", true,
+                "Expand the mesh surgery search root all the way up to the Weapon_root node.\n" +
+                "When enabled, meshes on the weapon body under Weapon_root are also candidates\n" +
+                "for cutting — not just those in the scope sub-hierarchy.\n" +
+                "Use this when scope geometry blends into the weapon receiver and you need to cut\n" +
+                "the underlying weapon meshes as well.\n" +
+                "Example path: Weapon_root/Weapon_root_anim/weapon/mod_scope/...");
 
             // --- Scope Effects ---
-            VignetteEnabled = Config.Bind("4. Scope Effects", "VignetteEnabled", true,
+            VignetteEnabled = Config.Bind("4. Scope Effects", "VignetteEnabled", false,
                 "Render a circular vignette ring around the scope aperture.\n" +
                 "A world-space quad at the lens position fading from transparent centre to black edge.");
-            VignetteOpacity = Config.Bind("4. Scope Effects", "VignetteOpacity", 0.5823944f,
+            VignetteOpacity = Config.Bind("4. Scope Effects", "VignetteOpacity", 0.8922536f,
                 new ConfigDescription("Maximum opacity of the lens vignette ring (0=invisible, 1=full black).",
                     new AcceptableValueRange<float>(0f, 1f)));
-            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 0.2730047f,
+            VignetteSizeMult = Config.Bind("4. Scope Effects", "VignetteSizeMult", 0.6110329f,
                 new ConfigDescription(
                     "Vignette quad diameter as a multiplier of ReticleBaseSize.\n" +
                     "1.0 = same size as reticle.  1.5 gives a visible border ring.\n" +
@@ -487,7 +514,7 @@ namespace ScopeHousingMeshSurgery
             EnableWeaponScaling.SettingChanged += OnWeaponScalingToggled;
 
             Logger.LogInfo("ScopeHousingMeshSurgery v4.7.0 loaded.");
-            Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
+            Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}  EnableLensMaterialFallback={EnableLensMaterialFallback.Value}");
             Logger.LogInfo($"  EnableZoom={EnableZoom.Value}  ShaderZoom={EnableShaderZoom.Value} (available={ZoomController.ShaderAvailable})");
             Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
             Logger.LogInfo($"  ScrollZoom={EnableScrollZoom.Value}  ScrollSens={ScrollZoomSensitivity.Value}  ModifierKey={ScrollZoomModifierKey.Value}  Min={ScrollZoomMin.Value}  Max={ScrollZoomMax.Value}");
@@ -564,6 +591,11 @@ namespace ScopeHousingMeshSurgery
                 Logger.LogInfo($"Disable PiP toggled: {DisablePiP.Value}");
                 if (!DisablePiP.Value)
                     PiPDisabler.RestoreAllCameras();
+            }
+
+            if (ScopeWhitelistToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(ScopeWhitelistToggleKey.Value))
+            {
+                ScopeLifecycle.ToggleCurrentScopeWhitelist();
             }
 
             if (InputProxy.GetKeyDown(LensesTransparentToggleKey.Value))

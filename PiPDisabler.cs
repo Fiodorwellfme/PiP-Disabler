@@ -37,6 +37,7 @@ namespace ScopeHousingMeshSurgery
 
         private static int _nextBaseScanFrame = -1;
         private static bool _loggedBase;
+        private static bool _triedBaseFindByName;
 
         /// <summary>
         /// The optic camera's Transform — synced to the scope's look direction
@@ -57,12 +58,24 @@ namespace ScopeHousingMeshSurgery
         private static readonly System.Collections.Generic.Dictionary<OpticSight, int> _ignoreOnDisableFrame =
             new System.Collections.Generic.Dictionary<OpticSight, int>(32);
 
-internal static void TickBaseOpticCamera()
+        internal static void TickBaseOpticCamera()
         {
             if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
 
-            // Auto-bypass for high-mag scopes must re-enable vanilla PiP.
-            if (ScopeLifecycle.IsModBypassedForCurrentScope)
+            // When not ADS-scoped, don't keep touching optic cameras every frame.
+            // This mirrors the observed behavior where fully disabling the mod restores FPS.
+            // If we have tracked camera/optic state, restore once and exit.
+            if (!ScopeLifecycle.IsScoped)
+            {
+                if (_cams.Count > 0 || _baseOpticCams.Count > 0 || _opticOrigEnabled.Count > 0)
+                    RestoreAllCameras();
+                return;
+            }
+
+            // Auto-bypass for high-mag/non-whitelisted scopes must re-enable vanilla PiP,
+            // but only while we're actually scoped. If a bypass flag lingers for a frame
+            // during ADS exit, keeping PiP enabled can tank FPS until the next scope enter.
+            if (ScopeLifecycle.IsModBypassedForCurrentScope && ScopeLifecycle.IsScoped)
             {
                 RestoreAllCameras();
                 return;
@@ -140,53 +153,52 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
         private static void TryFindBaseOpticCameras()
         {
-            _baseOpticCams.Clear();
-
             try
             {
-                var cams = Resources.FindObjectsOfTypeAll<Camera>();
-                for (int i = 0; i < cams.Length; i++)
+                // Cheap scene-only lookup first; avoid Resources.FindObjectsOfTypeAll hitch.
+                if (!_triedBaseFindByName || _baseOpticCams.Count == 0)
                 {
-                    var cam = cams[i];
-                    if (cam == null) continue;
-
-                    var go = cam.gameObject;
-                    if (go == null) continue;
-
-                    // Skip prefabs/assets.
-                    if (!go.scene.IsValid()) continue;
-
-                    var n = go.name;
-                    if (n == "BaseOpticCamera(Clone)" || n == "BaseOpticCamera")
-                    {
-                        // Collect this camera and any child cameras.
-                        var all = go.GetComponentsInChildren<Camera>(true);
-                        for (int c = 0; c < all.Length; c++)
-                        {
-                            var cc = all[c];
-                            if (cc != null && !_baseOpticCams.Contains(cc))
-                                _baseOpticCams.Add(cc);
-                        }
-
-                        if (!_baseOpticCams.Contains(cam))
-                            _baseOpticCams.Add(cam);
-
-                        if (!_loggedBase)
-                        {
-                            _loggedBase = true;
-                            ScopeHousingMeshSurgeryPlugin.LogInfo(
-                                $"[PiPDisabler] Found BaseOpticCamera: {n} (cameras: {_baseOpticCams.Count})");
-                        }
-                        break;
-                    }
+                    RegisterBaseOpticByName("BaseOpticCamera(Clone)");
+                    RegisterBaseOpticByName("BaseOpticCamera");
+                    _triedBaseFindByName = true;
                 }
             }
             catch { /* ignore */ }
         }
 
-        private static bool ShouldSkipPiPDisableForHighMagnification(OpticComponentUpdater updater)
+        private static void RegisterBaseOpticByName(string name)
         {
-            if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value) return false;
+            var go = GameObject.Find(name);
+            if (go == null) return;
+            RegisterBaseOpticCameraRoot(go);
+        }
+
+        private static void RegisterBaseOpticCameraRoot(GameObject root)
+        {
+            if (root == null) return;
+
+            var all = root.GetComponentsInChildren<Camera>(true);
+            for (int c = 0; c < all.Length; c++)
+            {
+                var cc = all[c];
+                if (cc != null && !_baseOpticCams.Contains(cc))
+                    _baseOpticCams.Add(cc);
+            }
+
+            var rootCam = root.GetComponent<Camera>();
+            if (rootCam != null && !_baseOpticCams.Contains(rootCam))
+                _baseOpticCams.Add(rootCam);
+
+            if (!_loggedBase && _baseOpticCams.Count > 0)
+            {
+                _loggedBase = true;
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[PiPDisabler] Found BaseOpticCamera: {root.name} (cameras: {_baseOpticCams.Count})");
+            }
+        }
+
+        private static bool ShouldSkipPiPDisableForBypassedScope(OpticComponentUpdater updater)
+        {
             if (updater == null) return false;
 
             try
@@ -196,6 +208,15 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
                 var os = field.GetValue(updater) as OpticSight;
                 if (os == null) return false;
+
+                // Non-whitelisted scopes should behave exactly like high-mag bypass scopes:
+                // keep vanilla PiP by skipping our PiP disable patches.
+                string scopeName = ScopeDiagnostics.GetScopeWhitelistName(os.transform);
+                if (!ScopeDiagnostics.IsInScopeWhitelist(scopeName))
+                    return true;
+
+                if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value)
+                    return false;
 
                 return ZoomController.GetMinFov(os) < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
             }
@@ -265,6 +286,7 @@ _ignoreOnDisableFrame.Clear();
 
             _baseOpticCams.Clear();
             _loggedBase = false;
+            _triedBaseFindByName = false;
             _nextBaseScanFrame = -1;
             OpticCameraTransform = null;
             Debug_LastOpticCameraTransform = null;
@@ -312,7 +334,7 @@ _ignoreOnDisableFrame.Clear();
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
                 if (__instance == null) return;
-                if (ShouldSkipPiPDisableForHighMagnification(__instance)) return;
+                if (ShouldSkipPiPDisableForBypassedScope(__instance)) return;
 
                 // Cache the optic camera transform for ReticleRenderer camera alignment
                 OpticCameraTransform = __instance.transform;
@@ -322,6 +344,14 @@ _ignoreOnDisableFrame.Clear();
 
                 var cam = __instance.GetComponent<Camera>();
                 ForceDisable(cam);
+
+                // Capture global base optic camera hierarchy from this updater when available.
+                if (__instance != null)
+                {
+                    var root = __instance.transform.root;
+                    if (root != null)
+                        RegisterBaseOpticCameraRoot(root.gameObject);
+                }
             }
         }
 
@@ -350,7 +380,7 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return true;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
-                if (ShouldSkipPiPDisableForHighMagnification(__instance)) return true;
+                if (ShouldSkipPiPDisableForBypassedScope(__instance)) return true;
 
                 // Ensure the camera can't render, but let LateUpdate run for transforms.
                 var cam = __instance != null ? __instance.GetComponent<Camera>() : null;
