@@ -137,8 +137,6 @@ namespace ScopeHousingMeshSurgery
 
         // --- Weapon Scaling ---
         internal static ConfigEntry<bool> EnableWeaponScaling;
-        internal static ConfigEntry<float> WeaponScaleOffset;
-        internal static ConfigEntry<float> WeaponScaleMultiplier;
         // --- Zoom / FOV ---
         internal static ConfigEntry<bool> EnableZoom;
         internal static ConfigEntry<bool> EnableShaderZoom;
@@ -212,14 +210,6 @@ namespace ScopeHousingMeshSurgery
                 "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
                 "With this enabled, the weapon shrinks proportionally as you zoom in so it\n" +
                 "always occupies the same screen space at every magnification level.");
-            WeaponScaleMultiplier = Config.Bind("2. Zoom", "WeaponScaleMultiplier", 1.031455f,
-                new ConfigDescription(
-                    "Placeholder text\n",
-                    new AcceptableValueRange<float>(0.00f, 2.00f)));
-            WeaponScaleOffset = Config.Bind("2. Zoom", "WeaponScaleOffset", 0.3051643f,
-                new ConfigDescription(
-                    "Placeholder text\n",
-                    new AcceptableValueRange<float>(0.00f, 1.00f)));
 
             // --- Zoom ---
             EnableZoom = Config.Bind("2. Zoom", "EnableZoom", true,

@@ -82,7 +82,7 @@ namespace ScopeHousingMeshSurgery.Patches
                 if (!CameraClass.Exist) return;
 
                 float currentFov = CameraClass.Instance.Fov;
-                float scale = ComputeCompensatedScale(currentFov);
+                float scale = ComputeCompensatedScale(currentFov, player);
 
                 // Override ONLY visual fields — aim math (_compensatoryScale etc.) untouched
                 player.RibcageScaleCurrentTarget = scale;
@@ -125,19 +125,31 @@ namespace ScopeHousingMeshSurgery.Patches
 
         /// <summary>
         /// Compute the compensated ribcage scale for a given main camera FOV.
-        /// User's formula: (1 / (ratio + offset)) * multiplier
-        /// where ratio = tan(currentFov/2) / tan(50°/2)
+        ///
+        /// baselineScale uses EFT's own Player.CalculateScaleValueByFov curve at the
+        /// player's settings FOV, then we apply projection-correct zoom compensation:
+        /// baselineScale * tan(currentFov/2) / tan(50°/2).
         /// </summary>
-        private static float ComputeCompensatedScale(float currentFov)
+        private static float ComputeCompensatedScale(float currentFov, Player player)
         {
+            float settingsFov = 50f;
+            try
+            {
+                var pwa = player?.ProceduralWeaponAnimation;
+                if (pwa != null) settingsFov = pwa.Single_2;
+            }
+            catch { }
+
+            float t = Mathf.InverseLerp(50f, 75f, settingsFov);
+            float baselineScale = Mathf.Lerp(1f, 0.65f, t);
+
             float halfRefRad = ZoomBaseline * 0.5f * Mathf.Deg2Rad;
             float halfCurRad = currentFov * 0.5f * Mathf.Deg2Rad;
-            float multiplier = ScopeHousingMeshSurgeryPlugin.WeaponScaleMultiplier.Value;
-            float offset = ScopeHousingMeshSurgeryPlugin.WeaponScaleOffset.Value;
             float tanRef = Mathf.Tan(halfRefRad);
+            if (tanRef <= 0.0001f) return baselineScale;
             float ratio = Mathf.Tan(halfCurRad) / tanRef;
 
-            return (1 / (ratio + offset)) * multiplier;
+            return baselineScale * ratio;
         }
 
         /// <summary>
@@ -163,7 +175,7 @@ namespace ScopeHousingMeshSurgery.Patches
                 if (!CameraClass.Exist) return;
 
                 float currentFov = CameraClass.Instance.Fov;
-                float scale = ComputeCompensatedScale(currentFov);
+                float scale = ComputeCompensatedScale(currentFov, __instance);
 
                 // Override visual scale AFTER EFT has finished all aim math
                 __instance.RibcageScaleCurrentTarget = scale;
