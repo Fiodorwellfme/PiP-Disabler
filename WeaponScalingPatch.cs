@@ -10,8 +10,8 @@ using UnityEngine;
 namespace ScopeHousingMeshSurgery.Patches
 {
     /// <summary>
-    /// Patches Player.SetCompensationScale to override the VISUAL ribcage scale
-    /// without touching aim math.
+    /// Patches Player.SetCompensationScale to keep scoped compensation scale
+    /// consistent between visual ribcage scale and PWA aim/camera math.
     ///
     /// === EFT's ribcage pipeline (from decompiled source) ===
     ///
@@ -174,21 +174,23 @@ namespace ScopeHousingMeshSurgery.Patches
 
         private static void ApplyScale(Player player, float scale)
         {
-            // Keep visual rig and aim/camera math on the same compensation value.
+            // Visual override remains immediate and frame-stable.
             player.RibcageScaleCurrentTarget = scale;
             player.RibcageScaleCurrent = scale;
 
             var pwa = player.ProceduralWeaponAnimation;
             if (pwa == null) return;
 
-            pwa.SetFovParams(scale);
+            // Avoid re-pushing PWA params every frame: only propagate when scale
+            // actually changes, to preserve stable visuals while still keeping
+            // aim/camera/ballistics coupled to the same compensation value.
+            if (Mathf.Abs(_lastAppliedScale - scale) <= ScaleEpsilon)
+                return;
 
-            if (!Mathf.Approximately(_lastAppliedScale, scale) && Mathf.Abs(_lastAppliedScale - scale) > ScaleEpsilon)
-            {
-                // Force calibration refresh even when scale > 1f.
-                pwa.method_2();
-                _lastAppliedScale = scale;
-            }
+            pwa.SetFovParams(scale);
+            // Force calibration refresh even when scale > 1f.
+            pwa.method_2();
+            _lastAppliedScale = scale;
         }
 
         private static Player GetMainPlayer()
