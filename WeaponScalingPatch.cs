@@ -45,6 +45,8 @@ namespace ScopeHousingMeshSurgery.Patches
     internal sealed class WeaponScalingPatch : ModulePatch
     {
         private static bool _isActive;
+        private static float _lastAppliedScale = 1f;
+        private const float ScaleEpsilon = 0.0005f;
 
         // Zoom formula baseline (must match FovController.ZoomBaselineFov)
         private const float ZoomBaseline = 50f;
@@ -63,6 +65,7 @@ namespace ScopeHousingMeshSurgery.Patches
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) { _isActive = false; return; }
             _isActive = true;
+            _lastAppliedScale = 1f;
         }
 
         /// <summary>
@@ -84,9 +87,7 @@ namespace ScopeHousingMeshSurgery.Patches
                 float currentFov = CameraClass.Instance.Fov;
                 float scale = ComputeCompensatedScale(currentFov);
 
-                // Override ONLY visual fields — aim math (_compensatoryScale etc.) untouched
-                player.RibcageScaleCurrentTarget = scale;
-                player.RibcageScaleCurrent = scale; // instant snap
+                ApplyScale(player, scale);
             }
             catch { }
         }
@@ -98,6 +99,7 @@ namespace ScopeHousingMeshSurgery.Patches
         public static void RestoreScale()
         {
             _isActive = false;
+            _lastAppliedScale = 1f;
 
             try
             {
@@ -165,11 +167,28 @@ namespace ScopeHousingMeshSurgery.Patches
                 float currentFov = CameraClass.Instance.Fov;
                 float scale = ComputeCompensatedScale(currentFov);
 
-                // Override visual scale AFTER EFT has finished all aim math
-                __instance.RibcageScaleCurrentTarget = scale;
-                __instance.RibcageScaleCurrent = scale; // instant snap
+                ApplyScale(__instance, scale);
             }
             catch { }
+        }
+
+        private static void ApplyScale(Player player, float scale)
+        {
+            // Keep visual rig and aim/camera math on the same compensation value.
+            player.RibcageScaleCurrentTarget = scale;
+            player.RibcageScaleCurrent = scale;
+
+            var pwa = player.ProceduralWeaponAnimation;
+            if (pwa == null) return;
+
+            pwa.SetFovParams(scale);
+
+            if (!Mathf.Approximately(_lastAppliedScale, scale) && Mathf.Abs(_lastAppliedScale - scale) > ScaleEpsilon)
+            {
+                // Force calibration refresh even when scale > 1f.
+                pwa.method_2();
+                _lastAppliedScale = scale;
+            }
         }
 
         private static Player GetMainPlayer()
