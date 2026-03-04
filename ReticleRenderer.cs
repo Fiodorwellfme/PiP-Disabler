@@ -62,6 +62,13 @@ namespace ScopeHousingMeshSurgery
         // Rendering state
         private static bool _settled;
 
+        // When true, the reticle quad is positioned in world space and rendered
+        // with cam.worldToCameraMatrix + cam.nonJitteredProjectionMatrix.
+        // This shares the same float-precision path as the scope housing mesh,
+        // so on big maps both jitter identically → no visible relative jitter.
+        // Falls back to clip-space (identity matrices) when _backLensTransform
+        // is unavailable.
+        private static bool _worldSpaceMode;
 
         // Camera alignment state
         private static bool _alignmentActive;
@@ -222,6 +229,7 @@ namespace ScopeHousingMeshSurgery
             _lastMag           = 1f;
             _baseScale         = 0f;
             _settled           = false;
+            _worldSpaceMode    = false;
             _weaponScaleOffset = Vector2.zero;
         }
 
@@ -366,24 +374,27 @@ namespace ScopeHousingMeshSurgery
             RebuildCommandBuffer(cam);
         }
 
-        // ── Centered quad matrix ─────────────────────────────────────────────
+        // ── Reticle quad matrix ──────────────────────────────────────────────
 
         /// <summary>
-        /// Place the reticle quad at screen center: a fixed distance along
-        /// the camera's (now scope-aligned) forward.  Since the camera is
-        /// aligned with the scope, this is always dead center.
+        /// Build the reticle quad's transform matrix.
         ///
-        /// Size is computed directly in screen-space from FOV and magnification.
+        /// Preferred path (world-space): place the quad at backLens.position in
+        /// world space, oriented to face the camera, sized by FOV.  Both the
+        /// housing mesh and the reticle go through cam.worldToCameraMatrix on
+        /// the GPU, so they share the same float-precision errors on big maps
+        /// and jitter identically → no visible relative jitter.
+        ///
+        /// Fallback (clip-space): when _backLensTransform is unavailable, draw
+        /// a clip-space quad at screen center with an optional weapon-scale
+        /// offset.  Stable but decoupled from the housing's precision path.
         /// </summary>
         private static void RebuildMatrix(Camera cam)
         {
             if (cam == null) return;
 
-            // Clip-space centered quad: independent of world/lens transforms.
-            // Convert physical reticle size into an angular screen size using a
-            // reference eye-relief distance, then project to NDC by camera FOV.
             float mag = Mathf.Max(1f, _lastMag);
-            float fovRad = (cam != null ? cam.fieldOfView : 35f) * Mathf.Deg2Rad;
+            float fovRad = cam.fieldOfView * Mathf.Deg2Rad;
             float tanHalfFov = Mathf.Max(0.01f, Mathf.Tan(fovRad * 0.5f));
             const float referenceLensDistance = 0.075f;
 
@@ -391,17 +402,50 @@ namespace ScopeHousingMeshSurgery
             float ndcSize = angularSize / tanHalfFov;
             ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
-            // Offset from center to track weapon-scale-induced housing shift.
-            // _weaponScaleOffset is in NDC (-1..1), computed in OnPreCullCallback.
-            Vector3 pos = new Vector3(_weaponScaleOffset.x, _weaponScaleOffset.y, 0.5f);
-            float aspect = GetDisplayAspect(cam);
-            Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
-            _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
+            if (_backLensTransform != null)
+            {
+                // ── World-space mode ──────────────────────────────────────
+                Vector3 worldPos = _backLensTransform.position;
+                float dist = Vector3.Distance(cam.transform.position, worldPos);
+                dist = Mathf.Max(0.05f, dist);
+
+                // Convert ndcSize (clip-space fraction) to a world-space size
+                // at the back-lens distance.
+                //   clip height range = 2.0  →  ndcSize covers ndcSize/2 of screen.
+                //   screen height at dist d  = 2 * d * tan(fovV/2).
+                //   world size = ndcSize * d * tan(fovV/2).
+                // Equal X/Y: the projection matrix handles aspect correction.
+                float worldSize = ndcSize * dist * tanHalfFov;
+
+                _reticleMatrix = Matrix4x4.TRS(
+                    worldPos,
+                    cam.transform.rotation,
+                    new Vector3(worldSize, worldSize, 1f));
+
+                _worldSpaceMode = true;
+            }
+            else
+            {
+                // ── Clip-space fallback ───────────────────────────────────
+                float aspect = GetDisplayAspect(cam);
+                Vector3 pos   = new Vector3(_weaponScaleOffset.x, _weaponScaleOffset.y, 0.5f);
+                Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
+                _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
+
+                _worldSpaceMode = false;
+            }
         }
 
         /// <summary>
-        /// Rebuild the CommandBuffer.  Standard world-space rendering with
-        /// non-jittered projection — same proven path as ScopeEffectsRenderer.
+        /// Rebuild the CommandBuffer.
+        ///
+        /// World-space mode:  worldToCameraMatrix + nonJitteredProjectionMatrix.
+        ///   The reticle goes through the same view transform as the scope housing
+        ///   → identical float-precision errors on big maps → locked together.
+        ///   nonJitteredProjectionMatrix avoids TAA sub-pixel edge flickering
+        ///   (the reticle draws at AfterEverything, outside the TAA pipeline).
+        ///
+        /// Clip-space fallback:  identity view + identity projection.
         /// </summary>
         private static void RebuildCommandBuffer(Camera cam)
         {
@@ -411,9 +455,20 @@ namespace ScopeHousingMeshSurgery
             _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
             _cmdBuffer.SetViewport(GetDisplayViewport(cam));
 
-            // Pure screen-space draw (clip-space matrices).
-            _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+            if (_worldSpaceMode)
+            {
+                _cmdBuffer.SetViewProjectionMatrices(
+                    cam.worldToCameraMatrix,
+                    cam.nonJitteredProjectionMatrix);
+            }
+            else
+            {
+                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+            }
+
             _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+
+            // Restore original matrices for any subsequent rendering.
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
         }
 
