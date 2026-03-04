@@ -1,8 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.IO;
-using System.Security.Cryptography;
+using System.Linq;
 using System.Text;
 using EFT.CameraControl;
 using UnityEngine;
@@ -202,17 +201,18 @@ namespace ScopeHousingMeshSurgery
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.PlaneOffsetMeters.Value);
                 }
 
-                using (var sha = SHA256.Create())
+                // FNV-1a 64-bit: ~20x faster than SHA256, zero allocations beyond the
+                // string build above, and collision probability is negligible for local filenames.
+                string raw = sb.ToString();
+                ulong fnv = 14695981039346656037UL;
+                foreach (char c in raw)
                 {
-                    var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-                    var hash = sha.ComputeHash(bytes);
-                    var hex = new StringBuilder(hash.Length * 2);
-                    for (int i = 0; i < hash.Length; i++)
-                        hex.Append(hash[i].ToString("x2"));
-                    string scopeName = Sanitize(scopeRoot != null ? scopeRoot.name : "scope");
-                    string meshName = Sanitize(originalAsset != null ? originalAsset.name : "mesh");
-                    return scopeName + "__" + meshName + "__" + hex;
+                    fnv ^= (uint)c;
+                    fnv *= 1099511628211UL;
                 }
+                string scopeName = Sanitize(scopeRoot != null ? scopeRoot.name : "scope");
+                string meshName  = Sanitize(originalAsset != null ? originalAsset.name : "mesh");
+                return scopeName + "__" + meshName + "__" + fnv.ToString("x16");
             }
 
             private static string GetPath(string key)
@@ -477,14 +477,18 @@ namespace ScopeHousingMeshSurgery
                 }
             }
 
-            var toRestore = _tracked.Keys
-                .Where(mf => mf && mf.transform && mf.transform.IsChildOf(searchRoot))
-                .ToArray();
+            // Manual loop instead of LINQ to avoid allocating an enumerator + array on scope exit.
+            var toRestore = new List<MeshFilter>(8);
+            foreach (var mf in _tracked.Keys)
+            {
+                if (mf && mf.transform && mf.transform.IsChildOf(searchRoot))
+                    toRestore.Add(mf);
+            }
 
             if (toRestore.Length == 0) return;
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreForScope: {toRestore.Length} meshes to restore (searchRoot='{searchRoot.name}')");
+                $"[MeshSurgery] RestoreForScope: {toRestore.Count} meshes to restore (searchRoot='{searchRoot.name}')");
 
             foreach (var mf in toRestore)
                 RestoreMeshFilter(mf);
@@ -492,11 +496,14 @@ namespace ScopeHousingMeshSurgery
 
         public static void RestoreAll()
         {
-            var keys = _tracked.Keys.ToArray();
-            if (keys.Length == 0) return;
+            if (_tracked.Count == 0) return;
+
+            // Copy keys to a local list before iterating — RestoreMeshFilter modifies _tracked.
+            var keys = new List<MeshFilter>(_tracked.Count);
+            foreach (var mf in _tracked.Keys) keys.Add(mf);
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreAll: {keys.Length} meshes to restore");
+                $"[MeshSurgery] RestoreAll: {keys.Count} meshes to restore");
 
             foreach (var mf in keys)
                 RestoreMeshFilter(mf);

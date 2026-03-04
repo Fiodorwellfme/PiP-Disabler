@@ -48,6 +48,12 @@ namespace ScopeHousingMeshSurgery
         public static OpticSight ActiveOptic => _activeOptic;
         public static string CurrentScopeWhitelistName => _currentScopeWhitelistName;
 
+        /// <summary>
+        /// True while a debounced optic mode handoff is in progress.
+        /// Used by the Update() safety net to skip throttling during active transitions.
+        /// </summary>
+        public static bool IsPendingTransition => _pendingOpticExitFrames > 0;
+
         public static bool IsCurrentScopeWhitelisted
         {
             get
@@ -137,20 +143,7 @@ namespace ScopeHousingMeshSurgery
                     _modBypassedForCurrentScope = true;
                     ScopeHousingMeshSurgeryPlugin.LogInfo(
                         $"[ScopeLifecycle] Bypassing mod for non-whitelisted scope: '{(_currentScopeWhitelistName ?? "(unknown)")}'");
-
-                    RestoreFov();
-                    ZoomController.Restore();
-                    ZoomController.ResetScrollZoom();
-                    ReticleRenderer.Cleanup();
-                    ScopeEffectsRenderer.Cleanup();
-                    LensTransparency.RestoreAll();
-                    CameraSettingsManager.Restore();
-                    PiPDisabler.RestoreAllCameras();
-                    Patches.WeaponScalingPatch.RestoreScale();
-                    if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
-                        MeshSurgeryManager.RestoreForScope(os.transform);
-                    PlaneVisualizer.Hide();
-                    ZeroingController.Reset();
+                    DoBypassCleanup(os);
                     return;
                 }
 
@@ -160,22 +153,9 @@ namespace ScopeHousingMeshSurgery
                 if (bypassForMode)
                 {
                     _modBypassedForCurrentScope = true;
-
                     // Fully tear down our scoped state when switching into a bypassed mode.
                     // Without this, a previously active zoom/FOV path can stay alive and hurt FPS.
-                    RestoreFov();
-                    ZoomController.Restore();
-                    ZoomController.ResetScrollZoom();
-                    ReticleRenderer.Cleanup();
-                    ScopeEffectsRenderer.Cleanup();
-                    LensTransparency.RestoreAll();
-                    CameraSettingsManager.Restore();
-                    PiPDisabler.RestoreAllCameras();
-                    Patches.WeaponScalingPatch.RestoreScale();
-                    if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
-                        MeshSurgeryManager.RestoreForScope(os.transform);
-                    PlaneVisualizer.Hide();
-                    ZeroingController.Reset();
+                    DoBypassCleanup(os);
                     return;
                 }
 
@@ -390,6 +370,28 @@ namespace ScopeHousingMeshSurgery
         }
 
         // ===== State transitions =====
+
+        /// <summary>
+        /// Tears down all mod effects when the mod is bypassed for the current scope
+        /// (non-whitelisted or high-magnification auto-bypass). Shared by OnOpticEnabled
+        /// mode-switch bypass and DoScopeEnter bypass paths to avoid duplication.
+        /// </summary>
+        private static void DoBypassCleanup(OpticSight os)
+        {
+            RestoreFov();
+            ZoomController.Restore();
+            ZoomController.ResetScrollZoom();
+            ReticleRenderer.Cleanup();
+            ScopeEffectsRenderer.Cleanup();
+            LensTransparency.RestoreAll();
+            CameraSettingsManager.Restore();
+            PiPDisabler.RestoreAllCameras();
+            Patches.WeaponScalingPatch.RestoreScale();
+            if (ScopeHousingMeshSurgeryPlugin.RestoreOnUnscope.Value)
+                MeshSurgeryManager.RestoreForScope(os.transform);
+            PlaneVisualizer.Hide();
+            ZeroingController.Reset();
+        }
 
         private static void DoScopeEnter()
         {

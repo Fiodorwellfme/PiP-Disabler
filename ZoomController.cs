@@ -28,6 +28,11 @@ namespace ScopeHousingMeshSurgery
         private static bool  _isVariableZoom;      // true if ScopeZoomHandler was found (has zoom ring)
         private static float _scrollStartNativeFov; // native FOV when scroll zoom first activated
 
+        // Per-session ScopeZoomHandler cache — avoids GetComponentInParent every frame.
+        // Reset in ResetScrollZoom() (called on scope exit).
+        private static ScopeZoomHandler _cachedSzh;
+        private static bool             _szhSearchDone;
+
         /// <summary>Shader zoom is disabled permanently.</summary>
         public static bool ShaderAvailable => false;
 
@@ -139,10 +144,21 @@ namespace ScopeHousingMeshSurgery
         {
             if (os == null) return 35f / ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
+            // Fast path: FOV range already discovered this session.
+            if (_fovRangeDiscovered && _nativeMinFov > 0.1f)
+                return _nativeMinFov;
+
             try
             {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>();
-                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
+                // Reuse cached SZH when available.
+                ScopeZoomHandler szh = _szhSearchDone ? _cachedSzh : null;
+                if (szh == null && !_szhSearchDone)
+                {
+                    szh = os.GetComponentInParent<ScopeZoomHandler>();
+                    if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
+                    _cachedSzh = szh;
+                    _szhSearchDone = true;
+                }
                 if (szh != null)
                 {
                     var szhType = szh.GetType();
@@ -200,11 +216,17 @@ namespace ScopeHousingMeshSurgery
             if (_fovRangeDiscovered && _nativeMaxFov > 0.1f)
                 return 35f / _nativeMaxFov;
 
-            // Range not yet discovered — try to discover it now
+            // Range not yet discovered — try to discover it now, reusing cached SZH when available.
             try
             {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>();
-                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
+                ScopeZoomHandler szh = _szhSearchDone ? _cachedSzh : null;
+                if (szh == null && !_szhSearchDone)
+                {
+                    szh = os.GetComponentInParent<ScopeZoomHandler>();
+                    if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
+                    _cachedSzh = szh;
+                    _szhSearchDone = true;
+                }
                 if (szh != null)
                 {
                     var szhType = szh.GetType();
@@ -329,6 +351,8 @@ namespace ScopeHousingMeshSurgery
             _scrollStartNativeFov = 0f;
             _fovRangeDiscovered = false;
             _isVariableZoom = false;
+            _cachedSzh = null;
+            _szhSearchDone = false;
         }
 
         /// <summary>
@@ -346,8 +370,15 @@ namespace ScopeHousingMeshSurgery
 
             try
             {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>();
-                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
+                // Reuse the per-session cached reference populated by GetScopeFov().
+                ScopeZoomHandler szh = _szhSearchDone ? _cachedSzh : null;
+                if (szh == null && !_szhSearchDone)
+                {
+                    szh = os.GetComponentInParent<ScopeZoomHandler>();
+                    if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
+                    _cachedSzh = szh;
+                    _szhSearchDone = true;
+                }
                 if (szh == null)
                 {
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
@@ -429,17 +460,24 @@ namespace ScopeHousingMeshSurgery
         private static float GetScopeFov(OpticSight os)
         {
             // === Try 1: ScopeZoomHandler.FiledOfView (runtime, variable zoom) ===
+            // ScopeZoomHandler is cached after the first search to avoid a
+            // GetComponentInParent hierarchy walk on every frame while scoped.
             try
             {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>();
-                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
-                if (szh != null)
+                if (!_szhSearchDone)
                 {
-                    float fov = szh.FiledOfView; // Note: EFT typo "Filed" not "Field"
+                    var szh = os.GetComponentInParent<ScopeZoomHandler>();
+                    if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
+                    _cachedSzh = szh;
+                    _szhSearchDone = true;
+                }
+                if (_cachedSzh != null)
+                {
+                    float fov = _cachedSzh.FiledOfView; // Note: EFT typo "Filed" not "Field"
                     if (fov > 0.1f) return fov;
                 }
             }
-            catch { }
+            catch { _cachedSzh = null; _szhSearchDone = false; }
 
             // === Try 2: ScopeCameraData via FovController (cached type discovery) ===
             // FovController already has the full assembly-scan + brute-force logic.

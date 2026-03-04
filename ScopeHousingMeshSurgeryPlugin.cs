@@ -506,6 +506,10 @@ namespace ScopeHousingMeshSurgery
             // Initialize scope detection via PWA reflection
             ScopeLifecycle.Init();
 
+            // Pre-discover ScopeCameraData type in the background so the first scope-enter
+            // never has to pay for a synchronous assembly scan on the game thread.
+            FovController.StartBackgroundDiscovery();
+
             // Load shader zoom AssetBundle (optional — falls back to FOV zoom if missing)
             ZoomController.LoadShader();
 
@@ -636,8 +640,12 @@ namespace ScopeHousingMeshSurgery
             // --- Per-frame logic ---
             PiPDisabler.TickBaseOpticCamera();
 
-            // Safety-net: re-check scope state every frame in case we missed an event.
-            ScopeLifecycle.CheckAndUpdate();
+            // Safety-net: re-check scope state in case we missed an event.
+            // Run every frame during active transitions (debounce window) for responsiveness;
+            // otherwise throttle to every 8 frames — the event-driven patches already
+            // handle real-time transitions, so the safety net only needs to catch rare misses.
+            if (ScopeLifecycle.IsPendingTransition || (Time.frameCount & 7) == 0)
+                ScopeLifecycle.CheckAndUpdate();
 
             // Per-frame maintenance (ensure lens hidden, update variable zoom, etc.)
             ScopeLifecycle.Tick();
@@ -646,42 +654,52 @@ namespace ScopeHousingMeshSurgery
 
     internal static class InputProxy
     {
-        private static System.Type _inputType;
-        private static System.Reflection.MethodInfo _getKeyDown;
-        private static System.Reflection.MethodInfo _getKey;
-        private static System.Reflection.PropertyInfo _mouseScrollDelta;
+        // Compiled delegates — zero allocation per call (no boxing, no object[]).
+        private static Func<KeyCode, bool> _getKeyDownDelegate;
+        private static Func<KeyCode, bool> _getKeyDelegate;
+        private static Func<Vector2>       _scrollDeltaDelegate;
 
         static InputProxy()
         {
-            _inputType = System.Type.GetType("UnityEngine.Input, UnityEngine.InputLegacyModule")
-                      ?? System.Type.GetType("UnityEngine.Input, UnityEngine");
-            if (_inputType != null)
+            try
             {
-                _getKeyDown = _inputType.GetMethod("GetKeyDown", new[] { typeof(KeyCode) });
-                _getKey = _inputType.GetMethod("GetKey", new[] { typeof(KeyCode) });
-                _mouseScrollDelta = _inputType.GetProperty("mouseScrollDelta",
+                var inputType = System.Type.GetType("UnityEngine.Input, UnityEngine.InputLegacyModule")
+                             ?? System.Type.GetType("UnityEngine.Input, UnityEngine");
+                if (inputType == null) return;
+
+                var miKeyDown = inputType.GetMethod("GetKeyDown", new[] { typeof(KeyCode) });
+                if (miKeyDown != null)
+                    _getKeyDownDelegate = (Func<KeyCode, bool>)System.Delegate.CreateDelegate(
+                        typeof(Func<KeyCode, bool>), miKeyDown);
+
+                var miKey = inputType.GetMethod("GetKey", new[] { typeof(KeyCode) });
+                if (miKey != null)
+                    _getKeyDelegate = (Func<KeyCode, bool>)System.Delegate.CreateDelegate(
+                        typeof(Func<KeyCode, bool>), miKey);
+
+                var piScroll = inputType.GetProperty("mouseScrollDelta",
                     System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (piScroll != null)
+                {
+                    var miGet = piScroll.GetGetMethod();
+                    if (miGet != null)
+                        _scrollDeltaDelegate = (Func<Vector2>)System.Delegate.CreateDelegate(
+                            typeof(Func<Vector2>), miGet);
+                }
             }
+            catch { /* InputProxy unavailable — all methods return safe defaults */ }
         }
 
         public static bool GetKeyDown(KeyCode key)
         {
-            try
-            {
-                if (_getKeyDown == null) return false;
-                return (bool)_getKeyDown.Invoke(null, new object[] { key });
-            }
+            try   { return _getKeyDownDelegate != null && _getKeyDownDelegate(key); }
             catch { return false; }
         }
 
         /// <summary>Returns true while the key is held down.</summary>
         public static bool GetKey(KeyCode key)
         {
-            try
-            {
-                if (_getKey == null) return false;
-                return (bool)_getKey.Invoke(null, new object[] { key });
-            }
+            try   { return _getKeyDelegate != null && _getKeyDelegate(key); }
             catch { return false; }
         }
 
@@ -691,12 +709,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static float GetScrollDelta()
         {
-            try
-            {
-                if (_mouseScrollDelta == null) return 0f;
-                var vec = (Vector2)_mouseScrollDelta.GetValue(null);
-                return vec.y;
-            }
+            try   { return _scrollDeltaDelegate != null ? _scrollDeltaDelegate().y : 0f; }
             catch { return 0f; }
         }
     }

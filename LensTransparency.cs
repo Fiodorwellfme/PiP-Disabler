@@ -153,9 +153,11 @@ namespace ScopeHousingMeshSurgery
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
                         $"[LensTransparency] Re-emptied mesh on '{e.Filter.gameObject.name}'");
                 }
-                if (e.Renderer != null)
+                if (e.Renderer != null && ScopeHousingMeshSurgeryPlugin.EnableLensMaterialFallback.Value)
                 {
-                    // Re-force material properties (EFT can reset these via CommandBuffer)
+                    // Re-force material properties (EFT can reset these via CommandBuffer).
+                    // Only runs when the user enables the material fallback — the primary
+                    // defence (empty mesh) already makes geometry unrenderable.
                     ForceMaterialTransparent(e.Renderer);
                 }
             }
@@ -330,9 +332,7 @@ namespace ScopeHousingMeshSurgery
                     if (m == null) continue;
 
                     if (m.HasProperty(_propColor))
-                    {
-                        m.SetColor(_propColor, new Color(0, 0, 0, 0));
-                    }
+                        m.SetColor(_propColor, Color.clear);
 
                     if (m.HasProperty(_propSwitchToSight))
                     {

@@ -88,12 +88,16 @@ namespace ScopeHousingMeshSurgery
                 _nextBaseScanFrame = Time.frameCount + 60; // ~1s @ 60fps
             }
 
-            // Re-apply disable every frame for the cached cameras (cheap).
+            // Re-apply disable every frame for the cached cameras.
+            // ForceDisable() stores state on first encounter; the extra cam.enabled
+            // check catches the conflict case where EFT re-enables the camera after
+            // our initial disable (e.g. scope re-initialisation, weapon swap).
             for (int i = 0; i < _baseOpticCams.Count; i++)
             {
                 var cam = _baseOpticCams[i];
                 if (cam == null) continue;
                 ForceDisable(cam);
+                if (cam.enabled) cam.enabled = false;
             }
         }
 

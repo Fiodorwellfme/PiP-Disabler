@@ -25,9 +25,23 @@ namespace ScopeHousingMeshSurgery
         public const float ZoomBaselineFov = 50f;
 
         // Cache the discovered ScopeCameraData type and field
-        private static Type _scopeCamDataType;
+        private static Type      _scopeCamDataType;
         private static FieldInfo _scopeCamDataFovField;
-        private static bool _scopeCamDataSearched;
+        private static bool      _scopeCamDataSearched;
+
+        // Background discovery state — populated by StartBackgroundDiscovery() which is
+        // called from Awake() so the slow assembly scan completes long before the player
+        // ever scopes a weapon, eliminating the first-scope-enter stutter.
+        private static volatile Type      _bgType;
+        private static volatile FieldInfo _bgFovField;
+        private static volatile bool      _bgComplete;
+
+        private static readonly string[] _knownTypeNames =
+        {
+            "EFT.CameraControl.ScopeCameraData",
+            "ScopeCameraData",
+            "EFT.ScopeCameraData",
+        };
 
         // Cache the last computed scope FOV for logging
         private static float _lastScopeFov;
@@ -81,6 +95,84 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
+        /// Kick off ScopeCameraData type discovery on a ThreadPool thread so the
+        /// potentially slow assembly scan (obfuscated builds) runs during loading,
+        /// not on the first scope-enter event.
+        ///
+        /// Named lookups (fast, ~µs) are attempted synchronously first; only the
+        /// full assembly scan is offloaded to a background thread.
+        /// </summary>
+        public static void StartBackgroundDiscovery()
+        {
+            if (_scopeCamDataSearched) return; // already found synchronously
+
+            // Fast path: try known type names on the calling thread (~µs per attempt).
+            foreach (var name in _knownTypeNames)
+            {
+                try
+                {
+                    var t = AccessTools.TypeByName(name);
+                    if (t != null && typeof(MonoBehaviour).IsAssignableFrom(t))
+                    {
+                        var f = t.GetField("FieldOfView", BindingFlags.Public | BindingFlags.Instance);
+                        if (f != null && f.FieldType == typeof(float))
+                        {
+                            _scopeCamDataType    = t;
+                            _scopeCamDataFovField = f;
+                            _scopeCamDataSearched = true;
+                            _bgComplete = true;
+                            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                                $"[FovController] Found ScopeCameraData eagerly: {t.FullName}");
+                            return;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // Slow path: full assembly scan — run on ThreadPool to avoid blocking Awake().
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                "[FovController] ScopeCameraData named lookup failed — starting background assembly scan");
+
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                    {
+                        try
+                        {
+                            foreach (var type in assembly.GetTypes())
+                            {
+                                if (!typeof(MonoBehaviour).IsAssignableFrom(type)) continue;
+
+                                var fovF = type.GetField("FieldOfView", BindingFlags.Public | BindingFlags.Instance);
+                                if (fovF == null || fovF.FieldType != typeof(float)) continue;
+
+                                var ncpF = type.GetField("NearClipPlane", BindingFlags.Public | BindingFlags.Instance);
+                                if (ncpF == null || ncpF.FieldType != typeof(float)) continue;
+
+                                var fcpF = type.GetField("FarClipPlane", BindingFlags.Public | BindingFlags.Instance);
+                                if (fcpF == null) continue;
+
+                                _bgType    = type;
+                                _bgFovField = fovF;
+                                _bgComplete = true;
+                                return;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+                finally
+                {
+                    _bgComplete = true; // always signal completion even if nothing found
+                }
+            });
+        }
+
+        /// <summary>
         /// Gets the scope's optic camera FOV. Searches multiple sources.
         /// </summary>
         private static float GetScopeFov()
@@ -113,14 +205,36 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Find ScopeCameraData by cached type. Discovers type on first call.
+        /// Find ScopeCameraData by cached type.
+        /// Harvests the background discovery result if available; falls back to
+        /// the synchronous scan only if the background thread hasn't finished yet
+        /// (e.g. player scoped before the loading screen even started — very unlikely).
         /// </summary>
         private static float GetFovFromScopeCameraData(OpticSight os)
         {
             if (!_scopeCamDataSearched)
             {
                 _scopeCamDataSearched = true;
-                DiscoverScopeCameraDataType();
+                if (_bgComplete)
+                {
+                    // Background scan finished — harvest result onto game thread.
+                    _scopeCamDataType    = _bgType;
+                    _scopeCamDataFovField = _bgFovField;
+                    if (_scopeCamDataType != null)
+                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            $"[FovController] Harvested background ScopeCameraData: {_scopeCamDataType.FullName}");
+                    else
+                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            "[FovController] Background scan complete — ScopeCameraData not found");
+                }
+                else
+                {
+                    // Background scan still running (extremely fast machine / immediate scope enter).
+                    // Fall back to synchronous discovery this one time.
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        "[FovController] Background scan not yet complete — running sync discovery");
+                    DiscoverScopeCameraDataType();
+                }
             }
 
             if (_scopeCamDataType == null || _scopeCamDataFovField == null) return 0f;
@@ -199,17 +313,11 @@ namespace ScopeHousingMeshSurgery
         /// <summary>
         /// Discover the ScopeCameraData type by trying known names, then scanning assemblies.
         /// Matches any MonoBehaviour with FieldOfView + NearClipPlane + FarClipPlane fields.
+        /// Runs synchronously — only called as a fallback when the background scan is not done.
         /// </summary>
         private static void DiscoverScopeCameraDataType()
         {
-            // Try known type names first
-            string[] typeNames = {
-                "EFT.CameraControl.ScopeCameraData",
-                "ScopeCameraData",
-                "EFT.ScopeCameraData",
-            };
-
-            foreach (var name in typeNames)
+            foreach (var name in _knownTypeNames)
             {
                 try
                 {

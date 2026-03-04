@@ -360,8 +360,11 @@ namespace ScopeHousingMeshSurgery
 
             var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
             Rect viewport = GetDisplayViewport(cam);
-            int texW = Mathf.Clamp(Mathf.RoundToInt(viewport.width), 64, 4096);
-            int texH = Mathf.Clamp(Mathf.RoundToInt(viewport.height), 64, 4096);
+            // The shadow is a smooth radial gradient — bilinear filtering on a 512×512
+            // texture is visually identical to full-resolution at any normal display size,
+            // while costing 16× less CPU fill work when the texture needs to be rebuilt.
+            int texW = Mathf.Clamp(Mathf.RoundToInt(viewport.width), 64, 512);
+            int texH = Mathf.Clamp(Mathf.RoundToInt(viewport.height), 64, 512);
             float aspect = texW / Mathf.Max(1f, (float)texH);
 
             bool sizeChanged = texW != _lastShadowTexWidth || texH != _lastShadowTexHeight;
