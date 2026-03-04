@@ -42,26 +42,19 @@ namespace ScopeHousingMeshSurgery
         }
 
         private static readonly List<HiddenEntry> _hidden = new List<HiddenEntry>(16);
-        private static readonly Dictionary<Transform, List<Renderer>> _cachedLensByRoot =
-            new Dictionary<Transform, List<Renderer>>(8);
-        private static readonly Dictionary<Renderer, Material[]> _forcedTransparentMatsByRenderer =
-            new Dictionary<Renderer, Material[]>(16);
-        private static readonly List<Renderer> _rendererBuffer = new List<Renderer>(128);
-        private static readonly Mesh EmptyMesh = CreateEmptyMesh();
-        private static int _lastSceneHandle = int.MinValue;
-        private static int _lastWeaponContextId = int.MinValue;
+        private static Mesh _emptyMesh;
 
         // Shader property IDs (cached for perf)
         private static readonly int _propColor = Shader.PropertyToID("_Color");
         private static readonly int _propSwitchToSight = Shader.PropertyToID("_SwitchToSight");
 
-        private static Mesh CreateEmptyMesh()
+        private static Mesh GetEmptyMesh()
         {
-            var mesh = new Mesh();
-            mesh.name = "EmptyLensMesh";
-            mesh.hideFlags = HideFlags.HideAndDontSave;
+            if (_emptyMesh != null) return _emptyMesh;
+            _emptyMesh = new Mesh();
+            _emptyMesh.name = "EmptyLensMesh";
             // Zero vertices, zero triangles. Nothing to render.
-            return mesh;
+            return _emptyMesh;
         }
 
         /// <summary>
@@ -78,18 +71,18 @@ namespace ScopeHousingMeshSurgery
             if (!shouldHide) return;
 
             Transform searchRoot = FindScopeSearchRoot(os.transform);
-            InvalidateLensCacheIfContextChanged(searchRoot);
 
             // Always dump hierarchy on first enter
             DumpHierarchy(searchRoot);
 
-            var lensCandidates = GetOrBuildLensCandidates(searchRoot);
+            // Kill only ACTIVE lens renderers (prevents nuking inactive sibling modes on hybrids)
+            var allRenderers = searchRoot.GetComponentsInChildren<Renderer>(true);
             int killed = 0;
-            foreach (var r in lensCandidates)
+            foreach (var r in allRenderers)
             {
                 if (r == null) continue;
                 if (!r.gameObject.activeInHierarchy) continue;
-                if (!ShouldSkipForCollimator(r))
+                if (IsLensSurface(r) && !ShouldSkipForCollimator(r))
                 {
                     KillMesh(r);
                     killed++;
@@ -133,6 +126,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void EnsureHidden(Renderer excludeRenderer = null)
         {
+            var emptyMesh = GetEmptyMesh();
             for (int i = 0; i < _hidden.Count; i++)
             {
                 var e = _hidden[i];
@@ -141,15 +135,15 @@ namespace ScopeHousingMeshSurgery
                 if (excludeRenderer != null && e.Renderer == excludeRenderer)
                     continue;
 
-                if (e.Skinned != null && e.Skinned.sharedMesh != EmptyMesh)
+                if (e.Skinned != null && e.Skinned.sharedMesh != emptyMesh)
                 {
-                    e.Skinned.sharedMesh = EmptyMesh;
+                    e.Skinned.sharedMesh = emptyMesh;
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
                         $"[LensTransparency] Re-emptied skinned mesh on '{e.Skinned.gameObject.name}'");
                 }
-                else if (e.Filter != null && e.Filter.sharedMesh != EmptyMesh)
+                else if (e.Filter != null && e.Filter.sharedMesh != emptyMesh)
                 {
-                    e.Filter.sharedMesh = EmptyMesh;
+                    e.Filter.sharedMesh = emptyMesh;
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
                         $"[LensTransparency] Re-emptied mesh on '{e.Filter.gameObject.name}'");
                 }
@@ -195,7 +189,6 @@ namespace ScopeHousingMeshSurgery
                             try { e.Renderer.sharedMaterials = e.OriginalMaterials; }
                             catch { }
                         }
-                        DestroyForcedTransparentMaterials(e.Renderer);
 
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
                             $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' forceOff={e.WasForceOff}");
@@ -207,32 +200,6 @@ namespace ScopeHousingMeshSurgery
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[LensTransparency] Restored {_hidden.Count} lens meshes");
             _hidden.Clear();
-        }
-
-        private static List<Renderer> GetOrBuildLensCandidates(Transform searchRoot)
-        {
-            if (searchRoot == null)
-                return new List<Renderer>(0);
-
-            CleanupDeadLensRootCacheEntries();
-
-            if (_cachedLensByRoot.TryGetValue(searchRoot, out var cached) && cached != null)
-                return cached;
-
-            _rendererBuffer.Clear();
-            searchRoot.GetComponentsInChildren(true, _rendererBuffer);
-
-            var lens = new List<Renderer>(Mathf.Max(4, _rendererBuffer.Count / 2));
-            for (int i = 0; i < _rendererBuffer.Count; i++)
-            {
-                var r = _rendererBuffer[i];
-                if (r == null) continue;
-                if (IsLensSurface(r))
-                    lens.Add(r);
-            }
-
-            _cachedLensByRoot[searchRoot] = lens;
-            return lens;
         }
 
         // ===== Core =====
@@ -252,12 +219,12 @@ namespace ScopeHousingMeshSurgery
             if (smr != null)
             {
                 origMesh = smr.sharedMesh;
-                smr.sharedMesh = EmptyMesh;
+                smr.sharedMesh = GetEmptyMesh();
             }
             else if (mf != null)
             {
                 origMesh = mf.sharedMesh;
-                mf.sharedMesh = EmptyMesh;
+                mf.sharedMesh = GetEmptyMesh();
             }
 
             // Save original shared materials for restore
@@ -283,8 +250,7 @@ namespace ScopeHousingMeshSurgery
             // Force material properties to transparent as tertiary kill switch.
             // This catches cases where EFT uses Graphics.DrawMesh with the material
             // reference — even with empty mesh, the material state gets cleaned up.
-            if (ScopeHousingMeshSurgeryPlugin.EnableLensMaterialFallback.Value)
-                ForceMaterialTransparent(r);
+            ForceMaterialTransparent(r);
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[LensTransparency] MESH DESTROYED: '{r.gameObject.name}' " +
@@ -302,28 +268,8 @@ namespace ScopeHousingMeshSurgery
             if (r == null) return;
             try
             {
-                if (!_forcedTransparentMatsByRenderer.TryGetValue(r, out var mats) || mats == null || mats.Length == 0)
-                {
-                    var shared = r.sharedMaterials;
-                    if (shared == null || shared.Length == 0) return;
-
-                    mats = new Material[shared.Length];
-                    for (int i = 0; i < shared.Length; i++)
-                    {
-                        var src = shared[i];
-                        if (src == null) continue;
-
-                        var inst = new Material(src)
-                        {
-                            name = src.name + " (LensFallback)"
-                        };
-                        mats[i] = inst;
-                    }
-
-                    _forcedTransparentMatsByRenderer[r] = mats;
-                    r.sharedMaterials = mats;
-                }
-
+                var mats = r.materials; // creates instances (safe to modify)
+                bool changed = false;
                 for (int i = 0; i < mats.Length; i++)
                 {
                     var m = mats[i];
@@ -332,80 +278,22 @@ namespace ScopeHousingMeshSurgery
                     if (m.HasProperty(_propColor))
                     {
                         m.SetColor(_propColor, new Color(0, 0, 0, 0));
+                        changed = true;
                     }
 
                     if (m.HasProperty(_propSwitchToSight))
                     {
                         m.SetFloat(_propSwitchToSight, 0f);
+                        changed = true;
                     }
 
                     // Force transparent render queue so it can't occlude anything
                     m.renderQueue = 4000;
                 }
+                if (changed)
+                    r.materials = mats;
             }
             catch { }
-        }
-
-        private static void DestroyForcedTransparentMaterials(Renderer renderer)
-        {
-            if (renderer == null) return;
-            if (!_forcedTransparentMatsByRenderer.TryGetValue(renderer, out var mats) || mats == null)
-                return;
-
-            for (int i = 0; i < mats.Length; i++)
-            {
-                var m = mats[i];
-                if (m != null)
-                    UnityEngine.Object.Destroy(m);
-            }
-
-            _forcedTransparentMatsByRenderer.Remove(renderer);
-        }
-
-        private static void CleanupDeadLensRootCacheEntries()
-        {
-            if (_cachedLensByRoot.Count == 0) return;
-
-            List<Transform> deadRoots = null;
-            foreach (var kvp in _cachedLensByRoot)
-            {
-                if (kvp.Key != null) continue;
-                if (deadRoots == null) deadRoots = new List<Transform>(4);
-                deadRoots.Add(kvp.Key);
-            }
-
-            if (deadRoots == null) return;
-            for (int i = 0; i < deadRoots.Count; i++)
-                _cachedLensByRoot.Remove(deadRoots[i]);
-        }
-
-        private static void InvalidateLensCacheIfContextChanged(Transform searchRoot)
-        {
-            if (searchRoot == null) return;
-
-            int sceneHandle = searchRoot.gameObject.scene.handle;
-            int weaponContextId = FindWeaponContext(searchRoot)?.GetInstanceID() ?? 0;
-            if (sceneHandle == _lastSceneHandle && weaponContextId == _lastWeaponContextId)
-                return;
-
-            _cachedLensByRoot.Clear();
-            _lastSceneHandle = sceneHandle;
-            _lastWeaponContextId = weaponContextId;
-        }
-
-        private static Transform FindWeaponContext(Transform start)
-        {
-            Transform fallback = start != null ? start.root : null;
-            for (var cur = start; cur != null; cur = cur.parent)
-            {
-                var n = cur.name ?? string.Empty;
-                if (n.IndexOf("weapon", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    n.IndexOf("hands", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    n.IndexOf("item", StringComparison.OrdinalIgnoreCase) >= 0)
-                    return cur;
-            }
-
-            return fallback;
         }
 
         /// <summary>
@@ -423,16 +311,16 @@ namespace ScopeHousingMeshSurgery
             var goName = r.gameObject.name;
             if (!string.IsNullOrEmpty(goName))
             {
-                if (ContainsIgnoreCase(goName, "linza") ||
-                    ContainsIgnoreCase(goName, "backlens") || ContainsIgnoreCase(goName, "back_lens") ||
-                    ContainsIgnoreCase(goName, "frontlens") || ContainsIgnoreCase(goName, "front_lens") ||
-                    ContainsIgnoreCase(goName, "front_linza"))
+                var lo = goName.ToLowerInvariant();
+                if (lo.Contains("linza") ||
+                    lo.Contains("backlens") || lo.Contains("back_lens") ||
+                    lo.Contains("frontlens") || lo.Contains("front_lens") ||
+                    lo.Contains("front_linza"))
                     return true;
 
                 // "glass" only when it looks like a scope lens (not "fiberglass" etc.)
                 // Match: *_glass_LOD*, *glass*lod*, scope*glass*
-                if (ContainsIgnoreCase(goName, "glass") &&
-                    (ContainsIgnoreCase(goName, "lod") || ContainsIgnoreCase(goName, "scope") || ContainsIgnoreCase(goName, "optic")))
+                if (lo.Contains("glass") && (lo.Contains("lod") || lo.Contains("scope") || lo.Contains("optic")))
                     return true;
             }
 
@@ -443,7 +331,8 @@ namespace ScopeHousingMeshSurgery
                 var meshName = mf.sharedMesh.name;
                 if (!string.IsNullOrEmpty(meshName))
                 {
-                    if (ContainsIgnoreCase(meshName, "linza") || ContainsIgnoreCase(meshName, "_glass_") || ContainsIgnoreCase(meshName, "_glass_lod"))
+                    var mlo = meshName.ToLowerInvariant();
+                    if (mlo.Contains("linza") || mlo.Contains("_glass_") || mlo.Contains("_glass_lod"))
                         return true;
                 }
             }
@@ -470,7 +359,8 @@ namespace ScopeHousingMeshSurgery
                         var matName = m.name ?? "";
                         if (!string.IsNullOrEmpty(matName))
                         {
-                            if (ContainsIgnoreCase(matName, "linza") || ContainsIgnoreCase(matName, "_lens"))
+                            var matLo = matName.ToLowerInvariant();
+                            if (matLo.Contains("linza") || matLo.Contains("_lens"))
                                 return true;
                         }
                     }
@@ -559,11 +449,9 @@ namespace ScopeHousingMeshSurgery
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[LensTransparency] === SCOPE HIERARCHY DUMP: '{root.name}' ===");
 
-            _rendererBuffer.Clear();
-            root.GetComponentsInChildren(true, _rendererBuffer);
-            for (int idx = 0; idx < _rendererBuffer.Count; idx++)
+            var allRenderers = root.GetComponentsInChildren<Renderer>(true);
+            foreach (var r in allRenderers)
             {
-                var r = _rendererBuffer[idx];
                 if (r == null) continue;
 
                 string matInfo = "";
@@ -604,7 +492,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                $"[LensTransparency] === END DUMP ({_rendererBuffer.Count} renderers) ===");
+                $"[LensTransparency] === END DUMP ({allRenderers.Length} renderers) ===");
         }
 
         private static string GetRelativePath(Transform t, Transform root)
@@ -614,13 +502,6 @@ namespace ScopeHousingMeshSurgery
                 parts.Add(cur.name ?? "?");
             parts.Reverse();
             return string.Join("/", parts);
-        }
-
-        private static bool ContainsIgnoreCase(string source, string value)
-        {
-            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(value))
-                return false;
-            return source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

@@ -8,15 +8,16 @@ using UnityEngine;
 namespace ScopeHousingMeshSurgery
 {
     /// <summary>
-    /// Computes the ADS FOV for the MAIN player camera from optic template zoom data.
+    /// Computes the zoomed FOV for the main camera (FOV zoom fallback mode).
     ///
     /// Zoom calculation (physically correct):
     ///   resultFov = 2 * atan(tan(baseFov/2) / magnification)
     ///
-    /// Magnification sources (priority):
-    ///   1. SightComponent/template zoom state (ground truth used by HUD xN)
-    ///   2. Scope camera FOV-derived magnification fallback (only when template zoom is unavailable)
-    ///   3. Config ScopedFov fallback
+    /// FOV sources (in priority order):
+    ///   1. ScopeZoomHandler.FiledOfView — runtime, variable zoom scopes
+    ///   2. ScopeCameraData.FieldOfView — baked in prefab, discovered by assembly scan
+    ///   3. Brute-force scan for any MonoBehaviour with FieldOfView field
+    ///   4. Config ScopedFov — manual fallback
     /// </summary>
     internal static class FovController
     {
@@ -28,9 +29,8 @@ namespace ScopeHousingMeshSurgery
         private static FieldInfo _scopeCamDataFovField;
         private static bool _scopeCamDataSearched;
 
-        // Cache last values so logs are readable (only when values/source change)
-        private static float _lastLoggedMagnification;
-        private static string _lastLoggedSource;
+        // Cache the last computed scope FOV for logging
+        private static float _lastScopeFov;
 
         /// <summary>
         /// Computes the zoomed FOV from a fixed baseline FOV (50°).
@@ -38,306 +38,46 @@ namespace ScopeHousingMeshSurgery
         public static float ComputeZoomedFov(float baseFov, ProceduralWeaponAnimation pwa)
         {
             _ = baseFov;
+            _ = pwa;
+
             float effectiveBaseFov = ZoomBaselineFov;
 
             if (ScopeHousingMeshSurgeryPlugin.AutoFovFromScope.Value)
             {
-                float magnification = GetTemplateMagnification(pwa, out string magSource);
+                // Check scroll zoom override first — keeps FOV and reticle in sync
+                float overrideFov = ZoomController.GetEffectiveScopeFov();
+                float scopeFov = overrideFov > 0.1f ? overrideFov : GetScopeFov();
 
-                // Fallback allowed only if template-based magnification isn't available.
-                if (magnification <= 0.01f)
+                if (scopeFov > 0.1f)
                 {
-                    float overrideFov = ZoomController.GetEffectiveScopeFov();
-                    float scopeFov = overrideFov > 0.1f ? overrideFov : GetScopeFov();
-                    if (scopeFov > 0.1f)
-                    {
-                        magnification = 35f / scopeFov;
-                        magSource = overrideFov > 0.1f
-                            ? "Fallback ScopeFOV (scroll override)"
-                            : "Fallback ScopeFOV (scope camera)";
-                    }
-                }
-
-                if (magnification > 0.01f)
-                {
-                    float baseHalfRad = (effectiveBaseFov * Mathf.Deg2Rad) * 0.5f;
-                    float resultFovRad = 2f * Mathf.Atan(Mathf.Tan(baseHalfRad) / magnification);
+                    float magnification = 35f / scopeFov;
+                    float baseFovRad = effectiveBaseFov * Mathf.Deg2Rad;
+                    float resultFovRad = 2f * Mathf.Atan2(Mathf.Tan(baseFovRad * 0.5f), magnification);
                     float resultFov = resultFovRad * Mathf.Rad2Deg;
 
-                    if (Mathf.Abs(magnification - _lastLoggedMagnification) > 0.005f ||
-                        !string.Equals(_lastLoggedSource, magSource, StringComparison.Ordinal))
+                    // Only log when value actually changes
+                    if (Mathf.Abs(scopeFov - _lastScopeFov) > 0.01f)
                     {
-                        _lastLoggedMagnification = magnification;
-                        _lastLoggedSource = magSource;
+                        _lastScopeFov = scopeFov;
                         ScopeHousingMeshSurgeryPlugin.LogInfo(
-                            $"[FovController] mag={magnification:F3}x source={magSource} -> mainFov={resultFov:F3} (baseline={effectiveBaseFov:F1})");
+                            $"[FovController] scopeFov={scopeFov:F2} → mag={magnification:F2}x → " +
+                            $"mainFov={resultFov:F1} (baseFov={effectiveBaseFov:F0})" +
+                            (overrideFov > 0.1f ? " [SCROLL OVERRIDE]" : ""));
                     }
 
                     return resultFov;
                 }
-
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    "[FovController] Failed to resolve template magnification and scope FOV fallback; using config ScopedFov");
             }
 
             return ScopeHousingMeshSurgeryPlugin.ScopedFov.Value;
         }
 
         /// <summary>
-        /// Called on mode switch to reset cached logging so next computation logs.
+        /// Called on mode switch to reset the cached FOV so the next computation logs.
         /// </summary>
         public static void OnModeSwitch()
         {
-            _lastLoggedMagnification = 0f;
-            _lastLoggedSource = null;
-        }
-
-        private static float GetTemplateMagnification(ProceduralWeaponAnimation pwa, out string source)
-        {
-            source = "none";
-
-            if (pwa == null)
-            {
-                source = "PWA null";
-                return 0f;
-            }
-
-            object sightComponent = null;
-            try
-            {
-                sightComponent = pwa.CurrentAimingMod;
-            }
-            catch (Exception ex)
-            {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[FovController] Failed to access pwa.CurrentAimingMod: {ex.Message}");
-            }
-
-            if (sightComponent == null)
-            {
-                source = "CurrentAimingMod null";
-                return 0f;
-            }
-
-            try
-            {
-                var sightType = sightComponent.GetType();
-
-                float directZoom = InvokeFloatMethod(sightComponent, "GetCurrentOpticZoom");
-                if (directZoom > 0.01f)
-                {
-                    float smoothZoom = ReadFloatMember(sightComponent, "ScopeZoomValue");
-                    float minZoom = InvokeFloatMethod(sightComponent, "GetMinOpticZoom");
-                    float maxZoom = InvokeFloatMethod(sightComponent, "GetMaxOpticZoom");
-
-                    if (smoothZoom > 0.01f)
-                    {
-                        if (minZoom > 0.01f && maxZoom > 0.01f)
-                        {
-                            float low = Mathf.Min(minZoom, maxZoom);
-                            float high = Mathf.Max(minZoom, maxZoom);
-
-                            // If ScopeZoomValue itself is already in zoom units, use it directly.
-                            if (smoothZoom >= low - 0.001f && smoothZoom <= high + 0.001f)
-                            {
-                                source = $"SightComponent.ScopeZoomValue direct [{sightType.Name}]";
-                                ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                                    $"[FovController] smooth direct zoom={smoothZoom:F3} range=[{low:F3},{high:F3}] currentStep={directZoom:F3}");
-                                return smoothZoom;
-                            }
-
-                            // Common alt representation: normalized [0..1].
-                            if (smoothZoom >= -0.001f && smoothZoom <= 1.001f)
-                            {
-                                float lerped = Mathf.Lerp(low, high, Mathf.Clamp01(smoothZoom));
-                                source = $"SightComponent.ScopeZoomValue normalized [{sightType.Name}]";
-                                ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                                    $"[FovController] smooth normalized={smoothZoom:F3} -> zoom={lerped:F3} range=[{low:F3},{high:F3}] currentStep={directZoom:F3}");
-                                return lerped;
-                            }
-                        }
-
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[FovController] ScopeZoomValue present but not mappable: {smoothZoom:F3} (min={minZoom:F3}, max={maxZoom:F3})");
-                    }
-
-                    source = $"SightComponent.GetCurrentOpticZoom [{sightType.Name}]";
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[FovController] using GetCurrentOpticZoom={directZoom:F3}");
-                    return directZoom;
-                }
-
-                float templateZoom = TryGetTemplateZoomFromArrays(sightComponent, out string templateDetails);
-                if (templateZoom > 0.01f)
-                {
-                    source = $"Template.Zooms {templateDetails}";
-                    return templateZoom;
-                }
-
-                source = $"SightComponent no zoom data [{sightType.Name}]";
-                return 0f;
-            }
-            catch (Exception ex)
-            {
-                source = $"Exception resolving template magnification: {ex.Message}";
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[FovController] GetTemplateMagnification exception: {ex}");
-                return 0f;
-            }
-        }
-
-        private static float InvokeFloatMethod(object instance, string methodName)
-        {
-            if (instance == null) return 0f;
-            try
-            {
-                var m = instance.GetType().GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
-                if (m == null || m.ReturnType != typeof(float)) return 0f;
-                return (float)m.Invoke(instance, null);
-            }
-            catch
-            {
-                return 0f;
-            }
-        }
-
-        private static float ReadFloatMember(object instance, string memberName)
-        {
-            if (instance == null) return 0f;
-            try
-            {
-                var t = instance.GetType();
-                var p = t.GetProperty(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (p != null && p.PropertyType == typeof(float))
-                    return (float)p.GetValue(instance);
-
-                var f = t.GetField(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (f != null && f.FieldType == typeof(float))
-                    return (float)f.GetValue(instance);
-            }
-            catch { }
-            return 0f;
-        }
-
-        private static int ReadIntMember(object instance, string memberName)
-        {
-            if (instance == null) return -1;
-            try
-            {
-                var t = instance.GetType();
-                var p = t.GetProperty(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (p != null && p.PropertyType == typeof(int))
-                    return (int)p.GetValue(instance);
-
-                var f = t.GetField(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (f != null && f.FieldType == typeof(int))
-                    return (int)f.GetValue(instance);
-            }
-            catch { }
-            return -1;
-        }
-
-        private static float TryGetTemplateZoomFromArrays(object sightComponent, out string details)
-        {
-            details = "";
-            if (sightComponent == null) return 0f;
-
-            try
-            {
-                var t = sightComponent.GetType();
-                object template = null;
-
-                var templateProp = t.GetProperty("Template", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (templateProp != null)
-                    template = templateProp.GetValue(sightComponent);
-
-                if (template == null)
-                {
-                    var templateField = t.GetField("Template", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (templateField != null)
-                        template = templateField.GetValue(sightComponent);
-                }
-
-                if (template == null)
-                {
-                    details = "(template null)";
-                    return 0f;
-                }
-
-                var templateType = template.GetType();
-                var zoomsProp = templateType.GetProperty("Zooms", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (zoomsProp == null)
-                {
-                    details = "(template missing Zooms)";
-                    return 0f;
-                }
-
-                var zooms = zoomsProp.GetValue(template) as Array;
-                if (zooms == null || zooms.Length == 0)
-                {
-                    details = "(template Zooms empty)";
-                    return 0f;
-                }
-
-                int scopeIndex = ReadIntMember(sightComponent, "SelectedScope");
-                if (scopeIndex < 0)
-                    scopeIndex = ReadIntMember(sightComponent, "SelectedScopeIndex");
-                if (scopeIndex < 0)
-                    scopeIndex = 0;
-
-                scopeIndex = Mathf.Clamp(scopeIndex, 0, zooms.Length - 1);
-
-                object scopeModesObj = zooms.GetValue(scopeIndex);
-                var scopeModes = scopeModesObj as Array;
-                if (scopeModes == null || scopeModes.Length == 0)
-                {
-                    details = $"(Zooms[{scopeIndex}] empty)";
-                    return 0f;
-                }
-
-                int modeIndex = ReadIntMember(sightComponent, "SelectedScopeMode");
-                if (modeIndex < 0)
-                {
-                    // fallback: ScopesSelectedModes[selectedScope]
-                    var modesProp = t.GetProperty("ScopesSelectedModes", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    int[] modes = null;
-                    if (modesProp != null)
-                        modes = modesProp.GetValue(sightComponent) as int[];
-                    if (modes == null)
-                    {
-                        var modesField = t.GetField("ScopesSelectedModes", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (modesField != null)
-                            modes = modesField.GetValue(sightComponent) as int[];
-                    }
-
-                    if (modes != null && scopeIndex >= 0 && scopeIndex < modes.Length)
-                        modeIndex = modes[scopeIndex];
-                }
-
-                if (modeIndex < 0)
-                    modeIndex = 0;
-
-                modeIndex = Mathf.Clamp(modeIndex, 0, scopeModes.Length - 1);
-                object zoomObj = scopeModes.GetValue(modeIndex);
-
-                if (zoomObj is float zoom && zoom > 0.01f)
-                {
-                    details = $"[{templateType.Name}] scope={scopeIndex} mode={modeIndex}";
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[FovController] Template.Zooms scope={scopeIndex} mode={modeIndex} -> {zoom:F3}");
-                    return zoom;
-                }
-
-                details = $"(Zooms[{scopeIndex}][{modeIndex}] invalid)";
-            }
-            catch (Exception ex)
-            {
-                details = $"(template reflection error: {ex.Message})";
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[FovController] TryGetTemplateZoomFromArrays failed: {ex.Message}");
-            }
-
-            return 0f;
+            _lastScopeFov = 0f;
         }
 
         /// <summary>

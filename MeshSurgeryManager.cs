@@ -321,14 +321,12 @@ namespace ScopeHousingMeshSurgery
                     }
                 }
 
-                // If this mesh was already cut (e.g. magnification mode switch),
-                // re-cut from the ORIGINAL asset and hot-swap directly to avoid
-                // flashing a restored uncut mesh for a frame.
-                _tracked.TryGetValue(mf, out var existing);
-                Mesh originalAsset = (existing != null && existing.OriginalAssetMesh != null)
-                    ? existing.OriginalAssetMesh
-                    : mf.sharedMesh;
-                Mesh previousCutMesh = existing != null ? existing.CutMesh : null;
+                // Already applied? Skip.
+                if (_tracked.TryGetValue(mf, out var existing) && existing.Applied)
+                    continue;
+
+                // First time: save original and create cut mesh.
+                Mesh originalAsset = mf.sharedMesh;
 
                 try
                 {
@@ -427,14 +425,6 @@ namespace ScopeHousingMeshSurgery
                         CutMesh = readable,
                         Applied = true
                     };
-
-                    // If this was a re-cut, free the old generated mesh now that
-                    // the replacement is assigned.
-                    if (previousCutMesh != null && previousCutMesh != readable)
-                    {
-                        try { UnityEngine.Object.Destroy(previousCutMesh); }
-                        catch { }
-                    }
                 }
                 catch (Exception ex)
                 {
