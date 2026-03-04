@@ -350,14 +350,17 @@ namespace ScopeHousingMeshSurgery
                 //   lateral shift (weapon-scale induced housing displacement,
                 //   optical misalignment) still produces a non-zero offset.
                 {
-                    Transform opticCam = PiPDisabler.OpticCameraTransform;
+                    // Always compute the aperture offset in the same local space
+                    // that drives camera alignment for this frame.
+                    // This keeps reticle placement relative to the camera/scope rig
+                    // and avoids the world-space projection jitter path.
+                    Transform anchorSpace = PiPDisabler.OpticCameraTransform ?? _opticTransform;
 
-                    if (_backLensTransform != null && opticCam != null)
+                    if (_backLensTransform != null && anchorSpace != null)
                     {
                         // Rigid-body vector from optic-camera to back-lens aperture,
                         // expressed in camera-aligned local space.
-                        Vector3 scopeToLens = _backLensTransform.position - opticCam.position;
-                        Vector3 local       = cam.transform.InverseTransformDirection(scopeToLens);
+                        Vector3 local = anchorSpace.InverseTransformPoint(_backLensTransform.position);
 
                         if (local.z > 0.0001f)
                         {
@@ -373,15 +376,6 @@ namespace ScopeHousingMeshSurgery
                         {
                             _weaponScaleOffset = Vector2.zero;
                         }
-                    }
-                    else if (_backLensTransform != null)
-                    {
-                        // Optic camera not cached yet — fall back to world-space projection.
-                        // This may jitter slightly but is better than zero.
-                        Vector3 vp = cam.WorldToViewportPoint(_backLensTransform.position);
-                        _weaponScaleOffset = vp.z > 0f
-                            ? new Vector2((vp.x - 0.5f) * 2f, (vp.y - 0.5f) * 2f)
-                            : Vector2.zero;
                     }
                     else
                     {
