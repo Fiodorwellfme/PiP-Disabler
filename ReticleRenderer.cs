@@ -307,8 +307,11 @@ namespace ScopeHousingMeshSurgery
             // Convert physical reticle size into an angular screen size using a
             // reference eye-relief distance, then project to NDC by camera FOV.
             float mag = Mathf.Max(1f, _lastMag);
-            float fovRad = (cam != null ? cam.fieldOfView : 35f) * Mathf.Deg2Rad;
-            float tanHalfFov = Mathf.Max(0.01f, Mathf.Tan(fovRad * 0.5f));
+            // Keep reticle size independent from the active camera FOV.
+            // Using a fixed reference FOV prevents the reticle from growing/
+            // shrinking on screen when ADS FOV is changed by zoom logic.
+            float referenceFovRad = FovController.ZoomBaselineFov * Mathf.Deg2Rad;
+            float tanHalfFov = Mathf.Max(0.01f, Mathf.Tan(referenceFovRad * 0.5f));
             const float referenceLensDistance = 0.075f;
 
             float angularSize = (_baseScale / mag) / referenceLensDistance;
