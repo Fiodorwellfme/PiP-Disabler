@@ -326,67 +326,39 @@ namespace ScopeHousingMeshSurgery
                     cam.transform.rotation = swaySource.rotation;
                 }
 
-                // ── Back-lens NDC anchor (camera-relative) ───────────────────
-                // Compute the offset of the back lens FROM the optic camera in
-                // camera-local angular space, instead of projecting from the main
-                // camera position in world space.
+                // ── Weapon-scale offset ──────────────────────────────────────
+                // The camera alignment above (cam.rotation = opticCam.rotation) already
+                // makes the scope aperture appear at screen centre — zero offset is the
+                // correct resting state and is jitter-free.
                 //
-                // Why this eliminates jitter:
-                //   WorldToViewportPoint uses cam.transform.position (stationary)
-                //   as the projection origin, while backLens.position moves every
-                //   frame with weapon sway/animation → their world-space vector
-                //   changes → reticle jitters.
+                // The ONLY case that needs a non-zero offset: WeaponScalingPatch is
+                // actively rescaling the weapon ribcage, which moves the scope housing
+                // laterally in world space.  The camera still looks along the scope's
+                // forward (rotation unchanged by scale), but the aperture has shifted
+                // on screen.  We project the backLens world position to find that shift.
                 //
-                //   InverseTransformDirection uses rotation ONLY (not position), so
-                //   it converts the vector (backLens − opticCam) into the camera's
-                //   local frame.  Both backLens and opticCam are in the same rigid
-                //   scope hierarchy; any world-space translation of the scope moves
-                //   them equally, so their difference is a stable rigid-body offset.
-                //   In camera-local space (= optic-camera space after alignment) this
-                //   offset is constant → no jitter, even during weapon sway.
-                //
-                //   For a well-centred scope the lateral components are ~0,
-                //   giving _weaponScaleOffset ≈ (0, 0) at rest.  Any genuine
-                //   lateral shift (weapon-scale induced housing displacement,
-                //   optical misalignment) still produces a non-zero offset.
+                // We use _backLensTransform rather than _lensRenderer.bounds.center
+                // because LensTransparency clears the mesh — after that, bounds.center
+                // returns (0,0,0) and breaks the projection.  Transform.position is
+                // unaffected by mesh operations.
+                if (Patches.WeaponScalingPatch.IsScalingActive)
                 {
-                    Transform opticCam = PiPDisabler.OpticCameraTransform;
+                    // Best stable anchor: backLens (survives mesh-kill), then optic cam,
+                    // then the cached lens anchor, then the optic root.
+                    Transform anchor = (_backLensTransform as Transform)
+                                    ?? PiPDisabler.OpticCameraTransform
+                                    ?? _reticleAnchor
+                                    ?? _opticTransform;
 
-                    if (_backLensTransform != null && opticCam != null)
-                    {
-                        // Rigid-body vector from optic-camera to back-lens aperture,
-                        // expressed in camera-aligned local space.
-                        Vector3 scopeToLens = _backLensTransform.position - opticCam.position;
-                        Vector3 local       = cam.transform.InverseTransformDirection(scopeToLens);
-
-                        if (local.z > 0.0001f)
-                        {
-                            // Project to NDC using the camera's FOV.
-                            // Unity fieldOfView is vertical; horizontal = vertical * aspect.
-                            float tanHalfFovV = Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
-                            float tanHalfFovH = tanHalfFovV * cam.aspect;
-                            _weaponScaleOffset = new Vector2(
-                                local.x / (local.z * tanHalfFovH),
-                                local.y / (local.z * tanHalfFovV));
-                        }
-                        else
-                        {
-                            _weaponScaleOffset = Vector2.zero;
-                        }
-                    }
-                    else if (_backLensTransform != null)
-                    {
-                        // Optic camera not cached yet — fall back to world-space projection.
-                        // This may jitter slightly but is better than zero.
-                        Vector3 vp = cam.WorldToViewportPoint(_backLensTransform.position);
-                        _weaponScaleOffset = vp.z > 0f
-                            ? new Vector2((vp.x - 0.5f) * 2f, (vp.y - 0.5f) * 2f)
-                            : Vector2.zero;
-                    }
-                    else
-                    {
-                        _weaponScaleOffset = Vector2.zero;
-                    }
+                    Vector3 worldPoint = anchor != null ? anchor.position : Vector3.zero;
+                    Vector3 vp = cam.WorldToViewportPoint(worldPoint);
+                    _weaponScaleOffset = vp.z > 0f
+                        ? new Vector2((vp.x - 0.5f) * 2f, (vp.y - 0.5f) * 2f)
+                        : Vector2.zero;
+                }
+                else
+                {
+                    _weaponScaleOffset = Vector2.zero;
                 }
             }
 
