@@ -485,7 +485,7 @@ namespace ScopeHousingMeshSurgery
                     toRestore.Add(mf);
             }
 
-            if (toRestore.Length == 0) return;
+            if (toRestore.Count == 0) return;
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[MeshSurgery] RestoreForScope: {toRestore.Count} meshes to restore (searchRoot='{searchRoot.name}')");
