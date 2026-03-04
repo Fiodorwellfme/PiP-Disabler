@@ -12,12 +12,12 @@ namespace ScopeHousingMeshSurgery
     /// eliminating edge flickering from TAA's jittered projection.
     ///
     /// ── VIGNETTE ───────────────────────────────────────────────────────────────
-    /// Screen-space quad centred in view, scaled by FOV.
+    /// Screen-space quad anchored to lens projection (or centred when reticle alignment is active), scaled by FOV.
     /// Circular feather: transparent centre → smooth darkening at aperture,
     /// then softly fades back out so the overlay never reads as a rectangle.
     ///
     /// ── SHADOW ─────────────────────────────────────────────────────────────────
-    /// Screen-filling quad in front of the camera.  Circular hole in the centre
+    /// Screen-filling quad in front of the camera.  Circular hole around the lens anchor
     /// with aspect-ratio correction so it appears round on non-square viewports.
     ///
     /// Both textures are generated at runtime and only rebuilt when config changes.
@@ -53,13 +53,19 @@ namespace ScopeHousingMeshSurgery
         private static Camera        _attachedCamera;
         private static bool          _preCullRegistered;
 
+        // Lens-anchored placement (screen-space with temporal stabilization)
+        private static Transform     _lensTransform;
+        private static Vector2       _smoothedAnchorNdc;
+        private static bool          _hasSmoothedAnchor;
+
         // ─────────────────────────────────────────────────────────────────────
         // Public API
         // ─────────────────────────────────────────────────────────────────────
 
         public static void Show(Transform lensTransform, float baseSize, float magnification)
         {
-            _ = lensTransform;
+            _lensTransform = lensTransform;
+            _hasSmoothedAnchor = false;
             _ = baseSize;
             _ = magnification;
 
@@ -103,6 +109,8 @@ namespace ScopeHousingMeshSurgery
         {
             _vigActive = false;
             _shadowActive = false;
+            _lensTransform = null;
+            _hasSmoothedAnchor = false;
             DetachFromCamera();
         }
 
@@ -175,43 +183,88 @@ namespace ScopeHousingMeshSurgery
             if (_cmdBuffer == null) return;
             if (!_vigActive && !_shadowActive) return;
 
+            Vector2 anchorNdc = ComputeAnchoredNdc(cam);
+
             // Rebuild matrices in pure screen-space
             if (_vigActive)
-                RebuildVignetteMatrix(cam);
+                RebuildVignetteMatrix(cam, anchorNdc);
             if (_shadowActive)
-                RebuildShadowMatrix(cam);
+                RebuildShadowMatrix(cam, anchorNdc);
 
             RebuildCommandBuffer(cam);
         }
 
-        private static void RebuildVignetteMatrix(Camera cam)
+        private static void RebuildVignetteMatrix(Camera cam, Vector2 anchorNdc)
         {
             if (cam == null) return;
 
-            // Clip-space centered overlay, independent of world/lens transforms.
+            // Clip-space overlay anchored in NDC.
             float screenScale = GetScreenSpaceScale(cam);
             float ndcScale = Mathf.Clamp(3.2f * screenScale, 0.8f, 6f);
 
             _vigMatrix = Matrix4x4.TRS(
-                new Vector3(0f, 0f, 0.6f),
+                new Vector3(anchorNdc.x, anchorNdc.y, 0.6f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
         }
 
-        private static void RebuildShadowMatrix(Camera cam)
+        private static void RebuildShadowMatrix(Camera cam, Vector2 anchorNdc)
         {
             if (cam == null) return;
 
-            // Clip-space centered overlay, independent of world/lens transforms.
+            // Clip-space overlay anchored in NDC.
             // A quad scale of 2 fills the entire viewport in clip-space; keep a
             // floor above that so FOV scaling can never leave uncovered edges.
             float screenScale = GetScreenSpaceScale(cam);
             float ndcScale = Mathf.Max(2.25f, Mathf.Clamp(3.2f * screenScale, 0.8f, 6f));
 
             _shadowMatrix = Matrix4x4.TRS(
-                new Vector3(0f, 0f, 0.7f),
+                new Vector3(anchorNdc.x, anchorNdc.y, 0.7f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
+        }
+
+        private static Vector2 ComputeAnchoredNdc(Camera cam)
+        {
+            // When reticle camera-alignment is active, overlays should remain centered.
+            if (ReticleRenderer.IsAlignmentActive)
+                return Vector2.zero;
+
+            if (cam == null || _lensTransform == null)
+            {
+                _hasSmoothedAnchor = false;
+                return Vector2.zero;
+            }
+
+            Vector3 viewport = cam.WorldToViewportPoint(_lensTransform.position);
+            if (viewport.z <= 0f || float.IsNaN(viewport.x) || float.IsNaN(viewport.y) ||
+                float.IsInfinity(viewport.x) || float.IsInfinity(viewport.y))
+            {
+                _hasSmoothedAnchor = false;
+                return Vector2.zero;
+            }
+
+            Vector2 target = new Vector2(
+                Mathf.Clamp(viewport.x * 2f - 1f, -0.95f, 0.95f),
+                Mathf.Clamp(viewport.y * 2f - 1f, -0.95f, 0.95f));
+
+            if (!_hasSmoothedAnchor)
+            {
+                _smoothedAnchorNdc = target;
+                _hasSmoothedAnchor = true;
+                return target;
+            }
+
+            // Damped lens following: keeps effects inside the tube while preventing
+            // high-frequency micro-jitter from animation + TAA jitter interplay.
+            float dt = Mathf.Max(0.001f, Time.unscaledDeltaTime);
+            float lerp = 1f - Mathf.Exp(-22f * dt);
+            _smoothedAnchorNdc = Vector2.Lerp(_smoothedAnchorNdc, target, lerp);
+
+            if ((_smoothedAnchorNdc - target).sqrMagnitude < 0.0000008f)
+                _smoothedAnchorNdc = target;
+
+            return _smoothedAnchorNdc;
         }
 
         private static void RebuildCommandBuffer(Camera cam)
