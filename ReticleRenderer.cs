@@ -17,8 +17,8 @@ namespace ScopeHousingMeshSurgery
     /// amplifies that difference at high magnification.
     ///
     /// The fix: in onPreCull (after all game systems have run), override the
-    /// main camera's rotation to match the scope's forward direction.  This
-    /// makes the rendered frame look exactly where the scope points.  The
+    /// main camera's full pose (position + rotation) to match the scope camera.
+    /// This makes the rendered frame look exactly where the scope points.  The
     /// reticle becomes a simple fixed quad at screen center — zero jitter
     /// by definition.
     ///
@@ -264,7 +264,7 @@ namespace ScopeHousingMeshSurgery
             if (_cmdBuffer == null || _reticleMat == null || !_settled) return;
 
             // ── Camera alignment ─────────────────────────────────────────
-            // Override the camera's rotation to look exactly where the scope
+            // Override the camera's pose to look exactly where the scope
             // points.  This happens in onPreCull — after all game systems
             // (PWA, animation, IK) and OpticComponentUpdater.LateUpdate()
             // have updated transforms, but before Unity starts rendering.
@@ -282,7 +282,7 @@ namespace ScopeHousingMeshSurgery
                 Transform swaySource = PiPDisabler.OpticCameraTransform ?? _opticTransform;
                 if (swaySource != null)
                 {
-                    cam.transform.rotation = swaySource.rotation;
+                    cam.transform.SetPositionAndRotation(swaySource.position, swaySource.rotation);
                 }
             }
 
