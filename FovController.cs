@@ -157,11 +157,10 @@ namespace ScopeHousingMeshSurgery
 
             try
             {
-                var scType = sightComp.GetType();
-                var templateObj = scType.GetProperty("Template", BindingFlags.Public | BindingFlags.Instance)?.GetValue(sightComp, null);
+                var templateObj = GetMemberValue<object>(sightComp, "Template", null);
                 if (templateObj == null) return false;
 
-                var zoomsObj = templateObj.GetType().GetProperty("Zooms", BindingFlags.Public | BindingFlags.Instance)?.GetValue(templateObj, null);
+                var zoomsObj = GetMemberValue<object>(templateObj, "Zooms", null);
                 var zooms = zoomsObj as Array;
                 if (zooms == null || zooms.Length == 0) return false;
 
@@ -226,9 +225,7 @@ namespace ScopeHousingMeshSurgery
                 if (minZoom == float.MaxValue || maxZoom == float.MinValue || maxZoom <= minZoom)
                     return false;
 
-                var mmfProp = templateObj.GetType().GetProperty("MinMaxFov", BindingFlags.Public | BindingFlags.Instance);
-                if (mmfProp == null || mmfProp.PropertyType != typeof(Vector3)) return false;
-                Vector3 minMaxFov = (Vector3)mmfProp.GetValue(templateObj, null);
+                Vector3 minMaxFov = GetMemberValue(templateObj, "MinMaxFov", Vector3.zero);
                 if (minMaxFov.x <= 0.01f || minMaxFov.y <= 0.01f || Mathf.Abs(minMaxFov.y - minMaxFov.x) < 0.0001f)
                     return false;
 
@@ -251,11 +248,10 @@ namespace ScopeHousingMeshSurgery
         {
             try
             {
-                var modesProp = sightComp.GetType().GetProperty("ScopesSelectedModes", BindingFlags.Public | BindingFlags.Instance);
-                if (modesProp != null)
+                var arrObj = GetMemberValue<object>(sightComp, "ScopesSelectedModes", null);
+                if (arrObj is int[] arr)
                 {
-                    var arr = modesProp.GetValue(sightComp, null) as int[];
-                    if (arr != null && selectedScope >= 0 && selectedScope < arr.Length)
+                    if (selectedScope >= 0 && selectedScope < arr.Length)
                         return arr[selectedScope];
                 }
 
@@ -268,9 +264,7 @@ namespace ScopeHousingMeshSurgery
         {
             try
             {
-                var prop = obj.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-                if (prop != null)
-                    return Convert.ToInt32(prop.GetValue(obj, null));
+                return Convert.ToInt32(GetMemberValue<object>(obj, propertyName, fallback));
             }
             catch { }
             return fallback;
@@ -280,9 +274,7 @@ namespace ScopeHousingMeshSurgery
         {
             try
             {
-                var prop = obj.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-                if (prop != null)
-                    return Convert.ToSingle(prop.GetValue(obj, null));
+                return Convert.ToSingle(GetMemberValue<object>(obj, propertyName, fallback));
             }
             catch { }
             return fallback;
@@ -292,11 +284,38 @@ namespace ScopeHousingMeshSurgery
         {
             try
             {
-                var prop = obj.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-                if (prop != null)
-                    return Convert.ToBoolean(prop.GetValue(obj, null));
+                return Convert.ToBoolean(GetMemberValue<object>(obj, propertyName, fallback));
             }
             catch { }
+            return fallback;
+        }
+
+        private static T GetMemberValue<T>(object obj, string memberName, T fallback)
+        {
+            if (obj == null || string.IsNullOrEmpty(memberName)) return fallback;
+            try
+            {
+                var type = obj.GetType();
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+                var prop = type.GetProperty(memberName, flags);
+                if (prop != null)
+                {
+                    object value = prop.GetValue(obj, null);
+                    if (value is T v) return v;
+                    if (value != null) return (T)Convert.ChangeType(value, typeof(T));
+                }
+
+                var field = type.GetField(memberName, flags);
+                if (field != null)
+                {
+                    object value = field.GetValue(obj);
+                    if (value is T v) return v;
+                    if (value != null) return (T)Convert.ChangeType(value, typeof(T));
+                }
+            }
+            catch { }
+
             return fallback;
         }
 
