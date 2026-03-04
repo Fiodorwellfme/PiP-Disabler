@@ -335,8 +335,11 @@ namespace ScopeHousingMeshSurgery
                     bool isCylinder = ScopeHousingMeshSurgeryPlugin.CutMode.Value == "Cylinder";
                     string cacheKey = MeshCutCache.BuildKey(scopeRoot, activeMode, mf, originalAsset, keepSide, isCylinder);
 
+                    bool useMeshCutCache = ScopeHousingMeshSurgeryPlugin.EnableMeshCutCache != null &&
+                        ScopeHousingMeshSurgeryPlugin.EnableMeshCutCache.Value;
+
                     Mesh readable;
-                    if (MeshCutCache.TryLoad(cacheKey, out var cachedMesh))
+                    if (useMeshCutCache && MeshCutCache.TryLoad(cacheKey, out var cachedMesh))
                     {
                         readable = cachedMesh;
                         readable.name = originalAsset.name + "_CUT_CACHED";
@@ -414,7 +417,8 @@ namespace ScopeHousingMeshSurgery
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
                             $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
 
-                        MeshCutCache.Save(cacheKey, readable);
+                        if (useMeshCutCache)
+                            MeshCutCache.Save(cacheKey, readable);
                     }
 
                     // Step 3: Swap onto the MeshFilter

@@ -84,6 +84,7 @@ namespace ScopeHousingMeshSurgery
 
         // --- Mesh Surgery ---
         internal static ConfigEntry<bool> EnableMeshSurgery;
+        internal static ConfigEntry<bool> EnableMeshCutCache;
         internal static ConfigEntry<KeyCode> MeshSurgeryToggleKey;
         internal static ConfigEntry<bool> RestoreOnUnscope;
         internal static ConfigEntry<float> PlaneOffsetMeters;
@@ -289,6 +290,8 @@ namespace ScopeHousingMeshSurgery
             // --- Mesh Surgery (ON by default, Cylinder mode) ---
             EnableMeshSurgery = Config.Bind("3. Mesh Surgery", "EnableMeshSurgery", true,
                 "Enable runtime mesh cutting to bore a hole through the scope housing.");
+            EnableMeshCutCache = Config.Bind("3. Mesh Surgery", "EnableMeshCutCache", true,
+                "Cache generated cut meshes to disk so repeated scope usage loads faster. Disable to always recut meshes in-memory.");
             MeshSurgeryToggleKey = Config.Bind("3. Mesh Surgery", "MeshSurgeryToggleKey", KeyCode.F9,
                 "Toggle key for mesh surgery.");
             RestoreOnUnscope = Config.Bind("3. Mesh Surgery", "RestoreOnUnscope", true,
