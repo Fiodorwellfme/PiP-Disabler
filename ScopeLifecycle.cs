@@ -56,6 +56,15 @@ namespace ScopeHousingMeshSurgery
         public static OpticSight ActiveOptic => _activeOptic;
 
         /// <summary>
+        /// Shared optic classification helper for other systems that must make
+        /// early decisions before scope state is fully transitioned.
+        /// </summary>
+        internal static bool IsThermalOrNightVisionOpticForBypass(OpticSight os)
+        {
+            return IsThermalOrNightVisionOptic(os);
+        }
+
+        /// <summary>
         /// One-time reflection setup. Call from plugin Awake.
         /// </summary>
         public static void Init()

@@ -184,7 +184,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
             catch { /* ignore */ }
         }
 
-        private static bool ShouldSkipPiPDisableForHighMagnification(OpticComponentUpdater updater)
+        private static bool ShouldSkipPiPDisableForCurrentOptic(OpticComponentUpdater updater)
         {
             if (updater == null) return false;
 
@@ -200,8 +200,13 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                     && ZoomController.GetMinFov(os) < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
                 if (bypassHighMag) return true;
 
-                return ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value
-                    && FovController.IsOpticAdjustable(os);
+                if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value)
+                    return false;
+
+                if (FovController.IsOpticAdjustable(os))
+                    return true;
+
+                return ScopeLifecycle.IsThermalOrNightVisionOpticForBypass(os);
             }
             catch
             {
@@ -316,7 +321,7 @@ _ignoreOnDisableFrame.Clear();
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return;
                 if (__instance == null) return;
-                if (ShouldSkipPiPDisableForHighMagnification(__instance)) return;
+                if (ShouldSkipPiPDisableForCurrentOptic(__instance)) return;
 
                 // Cache the optic camera transform for ReticleRenderer camera alignment
                 OpticCameraTransform = __instance.transform;
@@ -354,7 +359,7 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return true;
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
-                if (ShouldSkipPiPDisableForHighMagnification(__instance)) return true;
+                if (ShouldSkipPiPDisableForCurrentOptic(__instance)) return true;
 
                 // Ensure the camera can't render, but let LateUpdate run for transforms.
                 var cam = __instance != null ? __instance.GetComponent<Camera>() : null;
