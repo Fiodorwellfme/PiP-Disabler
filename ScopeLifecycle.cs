@@ -135,8 +135,7 @@ namespace ScopeHousingMeshSurgery
                 _activeOptic = os;
 
                 float minFov = ZoomController.GetMinFov(os);
-                bool bypassForMode = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                    && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
+                bool bypassForMode = ShouldBypassForCurrentOptic(os, minFov);
                 if (bypassForMode)
                 {
                     _modBypassedForCurrentScope = true;
@@ -346,6 +345,19 @@ namespace ScopeHousingMeshSurgery
             CheckAndUpdate("SyncState");
         }
 
+        private static bool ShouldBypassForCurrentOptic(OpticSight os, float minFov)
+        {
+            if (os == null) return false;
+
+            bool bypassHighMag = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
+                && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
+            if (bypassHighMag) return true;
+
+            if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value) return false;
+
+            return FovController.IsOpticAdjustable(os);
+        }
+
         // ===== State transitions =====
 
         private static void DoScopeEnter()
@@ -365,12 +377,11 @@ namespace ScopeHousingMeshSurgery
             _activeOptic = os;
 
             float minFov = ZoomController.GetMinFov(os);
-            _modBypassedForCurrentScope = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
+            _modBypassedForCurrentScope = ShouldBypassForCurrentOptic(os, minFov);
             if (_modBypassedForCurrentScope)
             {
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    $"[ScopeLifecycle] Bypassing mod for high-magnification scope: minFov={minFov:F2}° (< {ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value:F1}°)");
+                    $"[ScopeLifecycle] Bypassing mod for current scope: minFov={minFov:F2}° adjustable={FovController.IsOpticAdjustable(os)}");
 
                 LensTransparency.RestoreAll();
                 CameraSettingsManager.Restore();

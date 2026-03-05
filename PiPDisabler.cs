@@ -186,7 +186,6 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
         private static bool ShouldSkipPiPDisableForHighMagnification(OpticComponentUpdater updater)
         {
-            if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value) return false;
             if (updater == null) return false;
 
             try
@@ -197,7 +196,12 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 var os = field.GetValue(updater) as OpticSight;
                 if (os == null) return false;
 
-                return ZoomController.GetMinFov(os) < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
+                bool bypassHighMag = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
+                    && ZoomController.GetMinFov(os) < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
+                if (bypassHighMag) return true;
+
+                return ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value
+                    && FovController.IsOpticAdjustable(os);
             }
             catch
             {
