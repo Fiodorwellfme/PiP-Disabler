@@ -43,6 +43,14 @@ namespace ScopeHousingMeshSurgery
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
 
+        // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
+        private static Type _scopeDataType;
+        private static FieldInfo _scopeDataNightVisionField;
+        private static FieldInfo _scopeDataThermalField;
+        private static PropertyInfo _scopeDataNightVisionProp;
+        private static PropertyInfo _scopeDataThermalProp;
+        private static bool _scopeDataMembersSearched;
+
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
         public static OpticSight ActiveOptic => _activeOptic;
@@ -353,9 +361,105 @@ namespace ScopeHousingMeshSurgery
                 && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
             if (bypassHighMag) return true;
 
-            if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value) return false;
+            if (ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value
+                && FovController.IsOpticAdjustable(os))
+                return true;
 
-            return FovController.IsOpticAdjustable(os);
+            if (ScopeHousingMeshSurgeryPlugin.AutoDisableForThermalOrNightVisionScopes.Value
+                && IsThermalOrNightVisionOptic(os))
+                return true;
+
+            return false;
+        }
+
+        private static bool IsThermalOrNightVisionOptic(OpticSight os)
+        {
+            if (os == null) return false;
+
+            try
+            {
+                if (!_scopeDataMembersSearched)
+                    DiscoverScopeDataMembers();
+
+                if (_scopeDataType == null)
+                    return false;
+
+                Component scopeData = os.GetComponentInParent(_scopeDataType);
+                if (scopeData == null)
+                    scopeData = os.GetComponentInChildren(_scopeDataType, true);
+
+                if (scopeData == null)
+                    return false;
+
+                bool hasNightVision = HasScopeDataReference(
+                    scopeData,
+                    _scopeDataNightVisionField,
+                    _scopeDataNightVisionProp);
+
+                bool hasThermal = HasScopeDataReference(
+                    scopeData,
+                    _scopeDataThermalField,
+                    _scopeDataThermalProp);
+
+                if (hasNightVision || hasThermal)
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[ScopeLifecycle] Thermal/NV auto-bypass match: nightVision={hasNightVision} thermal={hasThermal}");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    $"[ScopeLifecycle] Thermal/NV detection failed: {ex.Message}");
+            }
+
+            return false;
+        }
+
+        private static bool HasScopeDataReference(Component scopeData, FieldInfo field, PropertyInfo prop)
+        {
+            try
+            {
+                object value = null;
+
+                if (field != null)
+                    value = field.GetValue(scopeData);
+                else if (prop != null)
+                    value = prop.GetValue(scopeData, null);
+
+                // In Unity-serialized ScopeData, non-zero m_PathID manifests as a non-null object reference.
+                return value != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void DiscoverScopeDataMembers()
+        {
+            _scopeDataMembersSearched = true;
+
+            try
+            {
+                _scopeDataType = AccessTools.TypeByName("EFT.CameraControl.ScopeData");
+                if (_scopeDataType == null) return;
+
+                var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+                _scopeDataNightVisionField = _scopeDataType.GetField("NightVisionData", flags);
+                _scopeDataThermalField = _scopeDataType.GetField("ThermalVisionData", flags);
+
+                if (_scopeDataNightVisionField == null)
+                    _scopeDataNightVisionProp = _scopeDataType.GetProperty("NightVisionData", flags);
+
+                if (_scopeDataThermalField == null)
+                    _scopeDataThermalProp = _scopeDataType.GetProperty("ThermalVisionData", flags);
+            }
+            catch
+            {
+                _scopeDataType = null;
+            }
         }
 
         // ===== State transitions =====
