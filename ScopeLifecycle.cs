@@ -362,11 +362,7 @@ namespace ScopeHousingMeshSurgery
             if (bypassHighMag) return true;
 
             if (ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value
-                && FovController.IsOpticAdjustable(os))
-                return true;
-
-            if (ScopeHousingMeshSurgeryPlugin.AutoDisableForThermalOrNightVisionScopes.Value
-                && IsThermalOrNightVisionOptic(os))
+                && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
                 return true;
 
             return false;
@@ -387,6 +383,18 @@ namespace ScopeHousingMeshSurgery
                 Component scopeData = os.GetComponentInParent(_scopeDataType);
                 if (scopeData == null)
                     scopeData = os.GetComponentInChildren(_scopeDataType, true);
+
+                // ScopeData may live as a sibling under scope root (not direct parent/child of OpticSight).
+                if (scopeData == null)
+                {
+                    Transform scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
+                    if (scopeRoot != null)
+                    {
+                        scopeData = scopeRoot.GetComponentInChildren(_scopeDataType, true);
+                        if (scopeData == null && scopeRoot.parent != null)
+                            scopeData = scopeRoot.parent.GetComponentInChildren(_scopeDataType, true);
+                    }
+                }
 
                 if (scopeData == null)
                     return false;
