@@ -290,6 +290,42 @@ namespace ScopeHousingMeshSurgery
             return (0f, 0f);
         }
 
+        /// <summary>
+        /// Returns true when the current optic exposes AdjustableOpticData.IsAdjustableOptic.
+        /// Used for optional auto-bypass of variable scopes.
+        /// </summary>
+        public static bool IsCurrentOpticAdjustable()
+        {
+            return IsOpticAdjustable(ScopeLifecycle.ActiveOptic);
+        }
+
+        public static bool IsOpticAdjustable(OpticSight os)
+        {
+            if (os == null) return false;
+
+            object sightComponent = FindSightComponent(os);
+            if (sightComponent == null) return false;
+
+            if (!_sightComponentSearched)
+            {
+                _sightComponentSearched = true;
+                DiscoverSightComponentMembers(sightComponent.GetType());
+            }
+
+            if (_adjOpticData == null || _isAdjustable == null) return false;
+
+            try
+            {
+                object adjData = _adjOpticData.GetValue(sightComponent);
+                if (adjData == null) return false;
+                return (bool)_isAdjustable.GetValue(adjData);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         // =====================================================================
         //  SightComponent discovery via SightModVisualControllers
         // =====================================================================
