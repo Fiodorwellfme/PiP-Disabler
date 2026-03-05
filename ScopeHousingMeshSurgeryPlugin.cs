@@ -176,7 +176,8 @@ namespace ScopeHousingMeshSurgery
             AutoDisableForHighMagnificationScopes = Config.Bind("1. General", "AutoDisableForHighMagnificationScopes", false,
                 "Automatically disable all mod effects while scoped with optics whose minimum FOV is below the threshold.");
             AutoDisableForVariableScopes = Config.Bind("1. General", "AutoDisableForVariableScopes", false,
-                "Automatically disable all mod effects while scoped with variable magnification optics (IsAdjustableOptic=true).");
+                "Automatically disable all mod effects while scoped with variable magnification optics (IsAdjustableOptic=true).\n" +
+                "Also bypasses thermal/night-vision scopes detected via ScopeData.ThermalVisionData or NightVisionData.");
             HighMagnificationFovThreshold = Config.Bind("1. General", "HighMagnificationFovThreshold", 3.5f,
                 new ConfigDescription(
                     "FOV threshold (degrees) below which the mod auto-disables for high magnification scopes. " +
