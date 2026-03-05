@@ -123,6 +123,12 @@ namespace ScopeHousingMeshSurgery
         ///
         /// Accepts an optional exclusion renderer (the ZoomController's managed lens)
         /// so this can safely run every frame even when shader zoom is active.
+        ///
+        /// NOTE: ForceMaterialTransparent is intentionally NOT called here per-frame.
+        /// r.materials allocates new material instances every call → massive GC pressure.
+        /// The mesh is already empty (zero geometry = nothing to draw) and
+        /// forceRenderingOff = true is set, so material forcing is unnecessary.
+        /// Materials are forced once during KillMesh().
         /// </summary>
         public static void EnsureHidden(Renderer excludeRenderer = null)
         {
@@ -149,8 +155,9 @@ namespace ScopeHousingMeshSurgery
                 }
                 if (e.Renderer != null)
                 {
-                    // Re-force material properties (EFT can reset these via CommandBuffer)
-                    ForceMaterialTransparent(e.Renderer);
+                    // Re-enforce forceRenderingOff (lightweight bool check, no alloc)
+                    if (!e.Renderer.forceRenderingOff)
+                        e.Renderer.forceRenderingOff = true;
                 }
             }
         }
@@ -304,6 +311,8 @@ namespace ScopeHousingMeshSurgery
         ///   2. Mesh name patterns (glass, linza)
         ///   3. Shader name patterns (CW FX/OpticSight, CW FX/BackLens)
         ///   4. Material name patterns (linza, glass, lens)
+        ///
+        /// Uses OrdinalIgnoreCase to avoid ToLowerInvariant() string allocations.
         /// </summary>
         private static bool IsLensSurface(Renderer r)
         {
@@ -311,16 +320,15 @@ namespace ScopeHousingMeshSurgery
             var goName = r.gameObject.name;
             if (!string.IsNullOrEmpty(goName))
             {
-                var lo = goName.ToLowerInvariant();
-                if (lo.Contains("linza") ||
-                    lo.Contains("backlens") || lo.Contains("back_lens") ||
-                    lo.Contains("frontlens") || lo.Contains("front_lens") ||
-                    lo.Contains("front_linza"))
+                if (ContainsCI(goName, "linza") ||
+                    ContainsCI(goName, "backlens") || ContainsCI(goName, "back_lens") ||
+                    ContainsCI(goName, "frontlens") || ContainsCI(goName, "front_lens") ||
+                    ContainsCI(goName, "front_linza"))
                     return true;
 
                 // "glass" only when it looks like a scope lens (not "fiberglass" etc.)
-                // Match: *_glass_LOD*, *glass*lod*, scope*glass*
-                if (lo.Contains("glass") && (lo.Contains("lod") || lo.Contains("scope") || lo.Contains("optic")))
+                if (ContainsCI(goName, "glass") &&
+                    (ContainsCI(goName, "lod") || ContainsCI(goName, "scope") || ContainsCI(goName, "optic")))
                     return true;
             }
 
@@ -331,8 +339,9 @@ namespace ScopeHousingMeshSurgery
                 var meshName = mf.sharedMesh.name;
                 if (!string.IsNullOrEmpty(meshName))
                 {
-                    var mlo = meshName.ToLowerInvariant();
-                    if (mlo.Contains("linza") || mlo.Contains("_glass_") || mlo.Contains("_glass_lod"))
+                    if (ContainsCI(meshName, "linza") ||
+                        ContainsCI(meshName, "_glass_") ||
+                        ContainsCI(meshName, "_glass_lod"))
                         return true;
                 }
             }
@@ -351,16 +360,15 @@ namespace ScopeHousingMeshSurgery
                         var shaderName = m.shader?.name ?? "";
                         if (shaderName == "CW FX/OpticSight" ||
                             shaderName == "CW FX/BackLens" ||
-                            shaderName.Contains("OpticSight") ||
-                            shaderName.Contains("BackLens"))
+                            shaderName.IndexOf("OpticSight", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            shaderName.IndexOf("BackLens", StringComparison.OrdinalIgnoreCase) >= 0)
                             return true;
 
                         // Material name (e.g. "_LOD0_linza", "*_lens*")
                         var matName = m.name ?? "";
                         if (!string.IsNullOrEmpty(matName))
                         {
-                            var matLo = matName.ToLowerInvariant();
-                            if (matLo.Contains("linza") || matLo.Contains("_lens"))
+                            if (ContainsCI(matName, "linza") || ContainsCI(matName, "_lens"))
                                 return true;
                         }
                     }
@@ -369,6 +377,12 @@ namespace ScopeHousingMeshSurgery
             catch { }
 
             return false;
+        }
+
+        /// <summary>Zero-allocation case-insensitive Contains.</summary>
+        private static bool ContainsCI(string haystack, string needle)
+        {
+            return haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static Transform FindScopeSearchRoot(Transform t)
@@ -381,10 +395,10 @@ namespace ScopeHousingMeshSurgery
 
             for (int depth = 0; cur != null && depth < 10; depth++, cur = cur.parent)
             {
-                string n = (cur.name ?? "").ToLowerInvariant();
+                string n = cur.name ?? "";
 
                 // Typical container name
-                if (n.Contains("mod_scope"))
+                if (ContainsCI(n, "mod_scope"))
                     best = cur;
 
                 // Or a parent that contains mode_* children
@@ -400,7 +414,7 @@ namespace ScopeHousingMeshSurgery
                     best = cur;
 
                 // Don’t climb into the whole weapon/player hierarchy
-                if (n.Contains("weapon") || n.Contains("player") || n.Contains("hands"))
+                if (ContainsCI(n, "weapon") || ContainsCI(n, "player") || ContainsCI(n, "hands"))
                     break;
             }
 

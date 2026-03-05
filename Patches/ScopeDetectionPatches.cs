@@ -54,7 +54,7 @@ namespace ScopeHousingMeshSurgery.Patches
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
-            ScopeLifecycle.CheckAndUpdate();
+            ScopeLifecycle.CheckAndUpdate("ChangeAimingMode");
         }
     }
 }

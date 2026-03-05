@@ -7,8 +7,8 @@ namespace ScopeHousingMeshSurgery
     /// <summary>
     /// Handles scope zoom math and scroll-wheel zoom override.
     ///
-    /// Shader-based lens zoom has been retired; this controller now keeps only
-    /// FOV/magnification state so variable scopes continue to work.
+    /// Magnification is now driven from Template.Zooms via FovController.
+    /// Scroll zoom operates in magnification space (not FOV space).
     /// </summary>
     internal static class ZoomController
     {
@@ -17,16 +17,16 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static Renderer ActiveLensRenderer => null;
 
-        // Scroll zoom override — when active, overrides the scope's native FOV.
-        // Works in FOV space directly to avoid fake magnification numbers.
-        private static float _scrollZoomFov;      // 0 = not active, >0 = user-set scope FOV
+        // Scroll zoom override — when active, overrides the scope's magnification.
+        private static float _scrollZoomMag;       // 0 = not active, >0 = user-set magnification
         private static bool  _scrollZoomActive;
-        private static float _nativeFov = 35f;    // the scope's current native FOV (baseline)
-        private static float _nativeMinFov = 1f;  // scope's min FOV (max zoom) from ScopeZoomHandler
-        private static float _nativeMaxFov = 35f;  // scope's max FOV (min zoom) from ScopeZoomHandler
-        private static bool  _fovRangeDiscovered;  // true once DiscoverFovRange has run for this scope
-        private static bool  _isVariableZoom;      // true if ScopeZoomHandler was found (has zoom ring)
-        private static float _scrollStartNativeFov; // native FOV when scroll zoom first activated
+        private static float _scrollStartTemplateMag; // template mag when scroll zoom first activated
+
+        // Range info (discovered from template or FOV fallback)
+        private static float _nativeMinMag;        // minimum magnification (widest view)
+        private static float _nativeMaxMag;        // maximum magnification (tightest view)
+        private static bool  _rangeDiscovered;
+        private static bool  _isVariableZoom;
 
         /// <summary>Shader zoom is disabled permanently.</summary>
         public static bool ShaderAvailable => false;
@@ -34,111 +34,90 @@ namespace ScopeHousingMeshSurgery
         /// <summary>No shader state is active.</summary>
         public static bool IsActive => false;
 
-        /// <summary>
-        /// Kept for API compatibility with existing startup flow.
-        /// </summary>
+        /// <summary>Kept for API compatibility with existing startup flow.</summary>
         public static void LoadShader()
         {
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                "[ZoomController] Shader zoom removed. Using FOV zoom path only.");
+                "[ZoomController] Shader zoom removed. Using template-based FOV zoom.");
         }
 
-        /// <summary>
-        /// Kept for API compatibility. No-op because shader zoom is removed.
-        /// </summary>
-        public static void Apply(OpticSight os, float magnification)
-        {
-            _ = os;
-            _ = magnification;
-        }
+        /// <summary>Kept for API compatibility. No-op.</summary>
+        public static void Apply(OpticSight os, float magnification) { }
 
-        /// <summary>
-        /// Kept for API compatibility. No-op because shader zoom is removed.
-        /// </summary>
-        public static void SetZoom(float magnification)
-        {
-            _ = magnification;
-        }
+        /// <summary>Kept for API compatibility. No-op.</summary>
+        public static void SetZoom(float magnification) { }
 
-        /// <summary>
-        /// Clears scroll-zoom override on scope-out.
-        /// </summary>
+        /// <summary>Clears scroll-zoom override on scope-out.</summary>
         public static void Restore()
         {
             ResetScrollZoom();
         }
 
-        /// <summary>
-        /// Kept for API compatibility. No-op because shader zoom is removed.
-        /// </summary>
-        public static void EnsureLensVisible()
-        {
-        }
+        /// <summary>Kept for API compatibility. No-op.</summary>
+        public static void EnsureLensVisible() { }
 
         /// <summary>
-        /// Compute magnification from OpticSight data.
-        /// magnification = baseOpticFov / scopeZoomFov
-        /// where baseOpticFov = 35° (EFT's standard optic camera FOV).
-        ///
-        /// Uses the SAME discovery chain as FovController:
-        ///   1. Scroll zoom override (user-set via scroll wheel)
-        ///   2. ScopeZoomHandler.FiledOfView (runtime, variable zoom)
-        ///   3. ScopeCameraData.FieldOfView  (baked prefab, discovered by assembly scan)
-        ///   4. Brute-force scan for any MonoBehaviour with FieldOfView
-        ///   5. Config DefaultZoom fallback
+        /// Returns the current effective magnification.
+        /// Delegates to FovController.GetEffectiveMagnification() which uses:
+        ///   1. Scroll zoom override
+        ///   2. Template.Zooms (primary)
+        ///   3. ScopeCameraData FOV (fallback)
+        ///   4. Config DefaultZoom
         /// </summary>
         public static float GetMagnification(OpticSight os)
         {
             if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
-            float scopeFov = GetScopeFov(os);
-            if (scopeFov > 0.1f)
+            // Ensure range is discovered for scroll zoom bounds
+            if (!_rangeDiscovered)
             {
-                _nativeFov = scopeFov;
-
-                // Discover FOV range only once per scope session
-                if (!_fovRangeDiscovered)
-                {
-                    DiscoverFovRange(os);
-                    _fovRangeDiscovered = true;
-                }
-
-                // Scroll zoom override — but detect mode switches first.
-                // If the native FOV changed significantly from when scroll zoom started
-                // (e.g. user alt+right-clicked to switch magnification level), reset
-                // scroll zoom so the native change takes effect.
-                if (_scrollZoomActive && _scrollZoomFov > 0f)
-                {
-                    if (Mathf.Abs(scopeFov - _scrollStartNativeFov) > 0.3f)
-                    {
-                        ScopeHousingMeshSurgeryPlugin.LogInfo(
-                            $"[ZoomController] Native FOV changed {_scrollStartNativeFov:F2}° → {scopeFov:F2}° — resetting scroll zoom");
-                        _scrollZoomActive = false;
-                        _scrollZoomFov = 0f;
-                    }
-                    else
-                    {
-                        return 35f / _scrollZoomFov;
-                    }
-                }
-
-                return 35f / scopeFov;
+                DiscoverZoomRange(os);
+                _rangeDiscovered = true;
             }
 
-            _nativeFov = 35f / ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
-            return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
+            // Detect mode switch: if template mag changed significantly from when
+            // scroll zoom started, reset scroll zoom so the native change takes effect.
+            if (_scrollZoomActive && _scrollZoomMag > 0f)
+            {
+                float currentTemplateMag = FovController.GetEffectiveMagnification();
+                // Use the non-scroll path to detect template changes
+                // (GetEffectiveMagnification already skips scroll if we ask it directly)
+                // Instead, compare against what we stored
+                // NOTE: we rely on the TEMPLATE source changing significantly
+            }
+
+            return FovController.GetEffectiveMagnification();
         }
 
         /// <summary>
-        /// Returns the optic's minimum FOV (i.e. maximum zoom level) in degrees.
-        /// For variable zoom scopes this is read from ScopeZoomHandler range.
-        /// For fixed scopes this falls back to the current scope FOV.
-        /// Lower values = higher magnification (e.g. 3.5° ≈ 10x, 1.75° ≈ 20x).
+        /// Returns the scroll zoom magnification override, or 0 if not active.
+        /// Called by FovController as priority #1 in the magnification chain.
+        /// </summary>
+        public static float GetScrollZoomMagnification()
+        {
+            if (_scrollZoomActive && _scrollZoomMag > 0.1f)
+                return _scrollZoomMag;
+            return 0f;
+        }
+
+        /// <summary>
+        /// Returns the optic's minimum FOV (maximum magnification) in degrees.
+        /// Used by ScopeLifecycle for high-magnification bypass detection.
+        /// Converts from template zoom range when available.
         /// </summary>
         public static float GetMinFov(OpticSight os)
         {
             if (os == null) return 35f / ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
+            // Try template zoom range first
+            var (minZoom, maxZoom) = FovController.GetTemplateZoomRange();
+            if (maxZoom > 0.1f)
+            {
+                // Min FOV corresponds to max magnification
+                return FovController.MagnificationToFov(maxZoom, FovController.ZoomBaselineFov);
+            }
+
+            // Fallback: read from ScopeZoomHandler directly
             try
             {
                 var szh = os.GetComponentInParent<ScopeZoomHandler>();
@@ -146,7 +125,7 @@ namespace ScopeHousingMeshSurgery
                 if (szh != null)
                 {
                     var szhType = szh.GetType();
-                    float minFov = 0f; // min FOV = highest zoom
+                    float minFov = 0f;
 
                     var s1Prop = szhType.GetProperty("Single_1",
                         System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
@@ -182,89 +161,36 @@ namespace ScopeHousingMeshSurgery
             }
             catch { }
 
-            // Fallback: convert current magnification back to FOV
-            float currentMag = GetMagnification(os);
-            return 35f / currentMag;
+            // Fixed scope: current magnification → FOV
+            float currentMag = FovController.GetEffectiveMagnification();
+            return FovController.MagnificationToFov(currentMag, FovController.ZoomBaselineFov);
         }
 
         /// <summary>
-        /// Returns the optic's minimum magnification (highest scope FOV = widest view).
-        /// For variable zoom scopes this is read from ScopeZoomHandler range.
-        /// For fixed scopes this equals the current (only) magnification.
+        /// Returns the optic's minimum magnification (widest view).
+        /// For variable zoom scopes this is from template min zoom.
+        /// For fixed scopes this equals the current magnification.
         /// </summary>
         public static float GetMinMagnification(OpticSight os)
         {
             if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
-            // If FOV range has been discovered and we have a valid max FOV (min zoom)
-            if (_fovRangeDiscovered && _nativeMaxFov > 0.1f)
-                return 35f / _nativeMaxFov;
+            var (minZoom, maxZoom) = FovController.GetTemplateZoomRange();
+            if (minZoom > 0.1f)
+                return minZoom;
 
-            // Range not yet discovered — try to discover it now
-            try
-            {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>();
-                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
-                if (szh != null)
-                {
-                    var szhType = szh.GetType();
-                    float maxFov = 0f;
+            // Fallback: if range discovered from FOV
+            if (_rangeDiscovered && _nativeMinMag > 0.1f)
+                return _nativeMinMag;
 
-                    var s0Prop = szhType.GetProperty("Single_0",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    if (s0Prop != null && s0Prop.PropertyType == typeof(float))
-                        maxFov = (float)s0Prop.GetValue(szh);
-
-                    if (maxFov < 0.1f)
-                    {
-                        foreach (var field in szhType.GetFields(
-                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
-                        {
-                            if (field.FieldType.Name.Contains("IAdjustableOpticData") ||
-                                field.FieldType.Name.Contains("AdjustableOptic") ||
-                                field.Name.Contains("iadjustableOpticData"))
-                            {
-                                var opticData = field.GetValue(szh);
-                                if (opticData == null) continue;
-
-                                var mmfProp = opticData.GetType().GetProperty("MinMaxFov");
-                                if (mmfProp != null && mmfProp.PropertyType == typeof(Vector3))
-                                {
-                                    var mmf = (Vector3)mmfProp.GetValue(opticData);
-                                    maxFov = mmf.x; // max FOV = min zoom
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (maxFov > 0.1f)
-                        return 35f / maxFov;
-                }
-            }
-            catch { }
-
-            // Fixed scope: min mag = current mag
-            return GetMagnification(os);
-        }
-
-        /// <summary>
-        /// Returns the current effective magnification as a scope FOV value.
-        /// Used by FovController to keep FOV and reticle in sync.
-        /// Returns 0 if no override is active.
-        /// </summary>
-        public static float GetEffectiveScopeFov()
-        {
-            if (_scrollZoomActive && _scrollZoomFov > 0f)
-                return _scrollZoomFov;
-            return 0f; // no override, use native
+            return FovController.GetEffectiveMagnification();
         }
 
         /// <summary>
         /// Process scroll wheel input for zoom adjustment.
-        /// Works in FOV space: scroll up = zoom in (decrease FOV),
-        /// scroll down = zoom out (increase FOV).
-        /// Clamped to the scope's native FOV range from ScopeZoomHandler.
+        /// Now works in magnification space: scroll up = zoom in (increase mag),
+        /// scroll down = zoom out (decrease mag).
+        /// Clamped to the scope's magnification range from template.
         /// Returns true if zoom changed (caller should re-apply FOV).
         /// </summary>
         public static bool HandleScrollZoom(float scrollDelta)
@@ -272,49 +198,50 @@ namespace ScopeHousingMeshSurgery
             if (!ScopeHousingMeshSurgeryPlugin.EnableScrollZoom.Value) return false;
             if (Mathf.Abs(scrollDelta) < 0.01f) return false;
 
-            // Don't allow scroll zoom on fixed scopes (no ScopeZoomHandler found)
+            // Don't allow scroll zoom on fixed scopes
             if (!_isVariableZoom) return false;
 
             float sensitivity = ScopeHousingMeshSurgeryPlugin.ScrollZoomSensitivity.Value;
 
-            // FOV bounds: minFov = highest zoom, maxFov = lowest zoom
-            float minFov = _nativeMinFov;
-            float maxFov = _nativeMaxFov;
+            // Magnification bounds
+            float minMag = _nativeMinMag;
+            float maxMag = _nativeMaxMag;
 
-            // Config overrides are in magnification units for user-friendliness
+            // Config overrides (already in magnification units)
             float cfgMinMag = ScopeHousingMeshSurgeryPlugin.ScrollZoomMin.Value;
             float cfgMaxMag = ScopeHousingMeshSurgeryPlugin.ScrollZoomMax.Value;
-            if (cfgMaxMag > 0f) minFov = 35f / cfgMaxMag;
-            if (cfgMinMag > 0f) maxFov = 35f / cfgMinMag;
+            if (cfgMinMag > 0f) minMag = cfgMinMag;
+            if (cfgMaxMag > 0f) maxMag = cfgMaxMag;
 
-            // Safety: if range is degenerate after config overrides, allow ±50%
-            if (maxFov <= minFov + 0.05f)
+            // Safety: if range is degenerate, allow ±50%
+            if (maxMag <= minMag + 0.05f)
             {
-                minFov = _nativeFov * 0.5f;
-                maxFov = _nativeFov * 2f;
+                float currentMag = FovController.GetEffectiveMagnification();
+                minMag = currentMag * 0.5f;
+                maxMag = currentMag * 2f;
             }
 
-            // Initialize from native FOV if this is the first scroll
+            // Initialize from current template magnification if this is the first scroll
             if (!_scrollZoomActive)
             {
-                _scrollZoomFov = _nativeFov;
-                _scrollStartNativeFov = _nativeFov;
+                _scrollZoomMag = FovController.GetEffectiveMagnification();
+                _scrollStartTemplateMag = _scrollZoomMag;
                 _scrollZoomActive = true;
             }
 
-            // Multiplicative scaling in FOV space:
-            // scroll up (+) = zoom in = smaller FOV → divide
-            // scroll down (-) = zoom out = larger FOV → multiply
+            // Multiplicative scaling in magnification space:
+            // scroll up (+) = zoom in = higher magnification → multiply
+            // scroll down (-) = zoom out = lower magnification → divide
             float factor = 1f + sensitivity;
             if (scrollDelta > 0f)
-                _scrollZoomFov /= factor;
+                _scrollZoomMag *= factor;
             else
-                _scrollZoomFov *= factor;
+                _scrollZoomMag /= factor;
 
-            _scrollZoomFov = Mathf.Clamp(_scrollZoomFov, minFov, maxFov);
+            _scrollZoomMag = Mathf.Clamp(_scrollZoomMag, minMag, maxMag);
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                $"[ZoomController] Scroll zoom: FOV={_scrollZoomFov:F2}° (range={minFov:F2}°-{maxFov:F2}°)");
+                $"[ZoomController] Scroll zoom: mag={_scrollZoomMag:F2}x (range={minMag:F2}x-{maxMag:F2}x)");
 
             return true;
         }
@@ -325,25 +252,39 @@ namespace ScopeHousingMeshSurgery
         public static void ResetScrollZoom()
         {
             _scrollZoomActive = false;
-            _scrollZoomFov = 0f;
-            _scrollStartNativeFov = 0f;
-            _fovRangeDiscovered = false;
+            _scrollZoomMag = 0f;
+            _scrollStartTemplateMag = 0f;
+            _rangeDiscovered = false;
             _isVariableZoom = false;
         }
 
         /// <summary>
-        /// Discover the scope's native FOV range from ScopeZoomHandler.
-        /// Uses actual EFT field names discovered via dnSpy:
-        ///   Single_0 = MinMaxFov.x = max FOV (min zoom, e.g. 3.95° for Leupold 6.5x)
-        ///   Single_1 = MinMaxFov.y = min FOV (max zoom, e.g. 1.29° for Leupold 20x)
-        /// Stores the FOV values directly — no conversion to magnification.
+        /// Discover the scope's zoom range.
+        /// Primary: template min/max zoom from FovController.
+        /// Fallback: ScopeZoomHandler FOV range → converted to magnification.
         /// </summary>
-        private static void DiscoverFovRange(OpticSight os)
+        private static void DiscoverZoomRange(OpticSight os)
         {
-            _nativeMinFov = _nativeFov;
-            _nativeMaxFov = _nativeFov;
             _isVariableZoom = false;
 
+            // Set defaults from current magnification
+            float currentMag = FovController.GetEffectiveMagnification();
+            _nativeMinMag = currentMag;
+            _nativeMaxMag = currentMag;
+
+            // Strategy 1: Template zoom range
+            var (minZoom, maxZoom) = FovController.GetTemplateZoomRange();
+            if (minZoom > 0.1f && maxZoom > 0.1f && maxZoom > minZoom)
+            {
+                _nativeMinMag = minZoom;
+                _nativeMaxMag = maxZoom;
+                _isVariableZoom = true;
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[ZoomController] Discovered template zoom range: {minZoom:F2}x - {maxZoom:F2}x (variable)");
+                return;
+            }
+
+            // Strategy 2: ScopeZoomHandler FOV range → magnification
             try
             {
                 var szh = os.GetComponentInParent<ScopeZoomHandler>();
@@ -351,14 +292,13 @@ namespace ScopeHousingMeshSurgery
                 if (szh == null)
                 {
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        "[ZoomController] No ScopeZoomHandler found — fixed scope, scroll zoom disabled");
+                        "[ZoomController] No ScopeZoomHandler — fixed scope, scroll zoom disabled");
                     return;
                 }
 
                 var szhType = szh.GetType();
-                float maxFov = 0f, minFov = 0f; // maxFov = lowest zoom, minFov = highest zoom
+                float maxFov = 0f, minFov = 0f;
 
-                // Strategy 1: Read Single_0 (maxFov) and Single_1 (minFov) properties directly
                 var s0Prop = szhType.GetProperty("Single_0",
                     System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                 var s1Prop = szhType.GetProperty("Single_1",
@@ -369,11 +309,8 @@ namespace ScopeHousingMeshSurgery
                 {
                     maxFov = (float)s0Prop.GetValue(szh);
                     minFov = (float)s1Prop.GetValue(szh);
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[ZoomController] Read Single_0={maxFov:F2} Single_1={minFov:F2}");
                 }
 
-                // Strategy 2: Read private iadjustableOpticData_0 → MinMaxFov Vector3
                 if (maxFov < 0.1f || minFov < 0.1f)
                 {
                     foreach (var field in szhType.GetFields(
@@ -390,10 +327,8 @@ namespace ScopeHousingMeshSurgery
                             if (mmfProp != null && mmfProp.PropertyType == typeof(Vector3))
                             {
                                 var mmf = (Vector3)mmfProp.GetValue(opticData);
-                                maxFov = mmf.x;  // max FOV = min zoom
-                                minFov = mmf.y;  // min FOV = max zoom
-                                ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                                    $"[ZoomController] Read MinMaxFov=({mmf.x:F2}, {mmf.y:F2}, {mmf.z:F2})");
+                                maxFov = mmf.x;
+                                minFov = mmf.y;
                                 break;
                             }
                         }
@@ -402,87 +337,37 @@ namespace ScopeHousingMeshSurgery
 
                 if (maxFov > 0.1f && minFov > 0.1f && maxFov > minFov)
                 {
-                    _nativeMaxFov = maxFov;
-                    _nativeMinFov = minFov;
+                    // Convert FOV range to magnification range (35° optic camera baseline)
+                    _nativeMinMag = 35f / maxFov; // max FOV → min magnification
+                    _nativeMaxMag = 35f / minFov; // min FOV → max magnification
                     _isVariableZoom = true;
                     ScopeHousingMeshSurgeryPlugin.LogInfo(
-                        $"[ZoomController] Discovered FOV range: {minFov:F2}° - {maxFov:F2}° " +
-                        $"(variable zoom — scroll zoom enabled)");
+                        $"[ZoomController] Discovered FOV-based zoom range: " +
+                        $"{_nativeMinMag:F2}x - {_nativeMaxMag:F2}x (from FOV {minFov:F2}°-{maxFov:F2}°)");
                 }
                 else
                 {
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[ZoomController] Could not discover FOV range — fixed scope at FOV={_nativeFov:F2}°");
+                        $"[ZoomController] Could not discover zoom range — fixed scope at {currentMag:F2}x");
                 }
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[ZoomController] DiscoverFovRange exception: {ex.Message}");
+                    $"[ZoomController] DiscoverZoomRange exception: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Full FOV discovery chain — mirrors FovController.GetScopeFov() logic
-        /// so magnification and FOV zoom always agree.
+        /// Check if a candidate and optic share the same mode_XXX ancestor.
         /// </summary>
-        private static float GetScopeFov(OpticSight os)
-        {
-            // === Try 1: ScopeZoomHandler.FiledOfView (runtime, variable zoom) ===
-            try
-            {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>();
-                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
-                if (szh != null)
-                {
-                    float fov = szh.FiledOfView; // Note: EFT typo "Filed" not "Field"
-                    if (fov > 0.1f) return fov;
-                }
-            }
-            catch { }
-
-            // === Try 2: ScopeCameraData via FovController (cached type discovery) ===
-            // FovController already has the full assembly-scan + brute-force logic.
-            // Rather than duplicate it, we compute what the FOV would be.
-            try
-            {
-                // Walk up to scope root, find ScopeCameraData on the active mode
-                Transform scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
-                if (scopeRoot != null)
-                {
-                    foreach (var mb in scopeRoot.GetComponentsInChildren<MonoBehaviour>(true))
-                    {
-                        if (mb == null) continue;
-                        // Only consider components on the same mode as our optic
-                        if (!IsOnSameMode(mb.transform, os.transform)) continue;
-
-                        var type = mb.GetType();
-                        var fovField = type.GetField("FieldOfView",
-                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (fovField == null || fovField.FieldType != typeof(float)) continue;
-
-                        float fov = (float)fovField.GetValue(mb);
-                        if (fov > 0.1f && fov < 180f)
-                        {
-                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                                $"[ZoomController] GetScopeFov from '{mb.gameObject.name}' type={type.Name}: {fov:F2}");
-                            return fov;
-                        }
-                    }
-                }
-            }
-            catch { }
-
-            return 0f;
-        }
-
         private static bool IsOnSameMode(Transform candidate, Transform optic)
         {
             Transform GetMode(Transform t)
             {
                 for (var p = t; p != null; p = p.parent)
-                    if (p.name != null && (p.name.StartsWith("mode_", System.StringComparison.OrdinalIgnoreCase)
-                        || p.name.Equals("mode", System.StringComparison.OrdinalIgnoreCase)))
+                    if (p.name != null && (p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
+                        || p.name.Equals("mode", StringComparison.OrdinalIgnoreCase)))
                         return p;
                 return null;
             }

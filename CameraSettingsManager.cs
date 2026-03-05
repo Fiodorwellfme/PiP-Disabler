@@ -80,10 +80,10 @@ namespace ScopeHousingMeshSurgery
                     $"[CameraSettings] ScopeCameraData: FOV={scopeFov:F2} FarClip={scopeFarClip:F0}");
             }
 
-            // Calculate magnification
-            float magnification = 1f;
-            if (scopeFov > 0.1f)
-                magnification = 35f / scopeFov;
+            // Calculate magnification — prefer template zoom (matches HUD)
+            float magnification = FovController.GetEffectiveMagnification();
+            if (magnification < 0.1f)
+                magnification = scopeFov > 0.1f ? 35f / scopeFov : 1f;
 
             // === Apply LOD bias ===
             // Increase LOD bias proportionally to magnification.

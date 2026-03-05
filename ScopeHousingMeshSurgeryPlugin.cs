@@ -613,7 +613,7 @@ namespace ScopeHousingMeshSurgery
             PiPDisabler.TickBaseOpticCamera();
 
             // Safety-net: re-check scope state every frame in case we missed an event.
-            ScopeLifecycle.CheckAndUpdate();
+            ScopeLifecycle.CheckAndUpdate("Update");
 
             // Per-frame maintenance (ensure lens hidden, update variable zoom, etc.)
             ScopeLifecycle.Tick();
