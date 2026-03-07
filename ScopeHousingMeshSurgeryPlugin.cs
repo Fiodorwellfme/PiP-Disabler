@@ -109,6 +109,7 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<int> ReticleSmoothingFrames;
         internal static ConfigEntry<float> ReticleJitterThreshold;
         internal static ConfigEntry<bool> ReticleFlipHorizontal;
+        internal static ConfigEntry<string> ScopeRotationAxis;
         internal static ConfigEntry<float> ReticleMipBias;
         internal static ConfigEntry<float> AdsSettledThreshold;
         internal static ConfigEntry<bool> ReticleOverlayCamera;
@@ -425,6 +426,12 @@ namespace ScopeHousingMeshSurgery
             ReticleFlipHorizontal = Config.Bind("3. Mesh Surgery", "ReticleFlipHorizontal", false,
                 "Flip the reticle texture along the Y axis (left-right mirror).\n" +
                 "Enable if the reticle appears mirrored compared to the original PiP view.");
+            ScopeRotationAxis = Config.Bind("3. Mesh Surgery", "ScopeRotationAxis", "+Z",
+                new ConfigDescription(
+                    "Local axis on the scope transform used as look direction for ADS camera alignment.\n" +
+                    "Use this if ADS points to ceiling/floor or backwards on certain optics.\n" +
+                    "Options: +Z, -Z, +Y, -Y, +X, -X.",
+                    new AcceptableValueList<string>("+Z", "-Z", "+Y", "-Y", "+X", "-X")));
             ReticleMipBias = Config.Bind("3. Mesh Surgery", "ReticleMipBias", -1.5f,
                 new ConfigDescription(
                     "Mip map bias for the reticle texture. Negative = sharper.\n" +

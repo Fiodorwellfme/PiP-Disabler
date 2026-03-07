@@ -10,8 +10,8 @@ namespace ScopeHousingMeshSurgery
     ///
     /// ── SCOPE-ANCHORED OVERLAY APPROACH ───────────────────────────────────
     /// Reticle placement uses stable centered clip-space rendering while
-    /// camera rotation is aligned each pre-cull to the scope's own rotation
-    /// source (lens/optic transform).
+    /// camera rotation is aligned each pre-cull using a configurable local
+    /// scope axis (ScopeRotationAxis) sourced from lens/optic transforms.
     ///
     /// This keeps alignment tied to the scope rather than weapon transform
     /// assumptions, while retaining a post-process-safe CommandBuffer path.
@@ -265,11 +265,14 @@ namespace ScopeHousingMeshSurgery
             // with optic updater transform only as fallback.
             if (_alignmentActive)
             {
-                // Source rotation from scope geometry first (lens/optic), not
-                // the optic updater/weapon chain, to keep alignment tied to scope.
+                // Source from scope geometry first, then optic updater fallback.
                 Transform scopeSource = _lensTransform ?? _opticTransform ?? PiPDisabler.OpticCameraTransform;
                 if (scopeSource != null)
-                    cam.transform.rotation = scopeSource.rotation;
+                {
+                    Vector3 dir = GetConfiguredScopeDirection(scopeSource);
+                    if (dir.sqrMagnitude > 0.000001f)
+                        cam.transform.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+                }
             }
 
             RebuildMatrix(cam);
@@ -339,6 +342,26 @@ namespace ScopeHousingMeshSurgery
         {
             Rect r = GetDisplayViewport(cam);
             return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
+        }
+
+        private static Vector3 GetConfiguredScopeDirection(Transform source)
+        {
+            if (source == null) return Vector3.forward;
+
+            string axis = ScopeHousingMeshSurgeryPlugin.ScopeRotationAxis != null
+                ? ScopeHousingMeshSurgeryPlugin.ScopeRotationAxis.Value
+                : "+Z";
+
+            switch ((axis ?? "+Z").Trim().ToUpperInvariant())
+            {
+                case "-Z": return -source.forward;
+                case "+Y": return source.up;
+                case "-Y": return -source.up;
+                case "+X": return source.right;
+                case "-X": return -source.right;
+                case "+Z":
+                default:   return source.forward;
+            }
         }
 
         private static void ApplyHorizontalFlip()
