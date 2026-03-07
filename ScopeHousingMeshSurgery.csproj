@@ -50,4 +50,10 @@
       <Private>False</Private>
     </Reference>
   </ItemGroup>
+
+  <!-- Post-build: copy DLL to BepInEx plugins folder -->
+  <Target Name="CopyToPlugins" AfterTargets="Build" Condition="Exists('..\..\BepInEx\plugins')">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="..\..\BepInEx\plugins\PiP-Disabler\" />
+    <Message Importance="High" Text="Copied $(TargetFileName) → ..\..\BepInEx\plugins\PiP-Disabler\" />
+  </Target>
 </Project>
