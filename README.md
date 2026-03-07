@@ -6,7 +6,7 @@ FPS Comparison:
 
 Roadmap:
 
--~~Better cache naming~~ removed cache altogether  
+-Remove cache system or rework it, performance impact needs to be inspected
 -~~More targeted meshes (weapon,attachments...)~~ Done  
 -~~Find way to work across more scopes~~ Done  
 -~~More consistent zoom FOVs~~ Done, using the multiplier stored in the item json  
@@ -16,4 +16,5 @@ Roadmap:
 -Improve weapon scaling offset/multiplier or method  
 -Hide multiple options under advanced BepInEx settings  
 -Improve reticle scaling  
--Find way to make vignette stick to scope  
+-Find way to make vignette stick to scope. 
+-Make meshcutting more precise.  
