@@ -327,6 +327,9 @@ namespace ScopeHousingMeshSurgery
 
             // PiP stays disabled via Harmony patches — no per-frame action needed.
 
+            // Fallback visual ribcage scaling sync while scoped.
+            Patches.WeaponScalingPatch.UpdateScale();
+
             // Zeroing input polling
             ZeroingController.Tick();
         }

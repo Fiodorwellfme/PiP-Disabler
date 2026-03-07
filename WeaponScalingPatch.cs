@@ -42,8 +42,9 @@ namespace ScopeHousingMeshSurgery.Patches
     ///
     /// This makes the weapon model shrink without moving the reticle/aim point.
     ///
-    /// Transpiler tail-injection on SetCompensationScale catches EFT recalculations
-    /// without running an extra Harmony Postfix and without per-frame correction in Tick().
+    /// Transpiler tail-injection on SetCompensationScale catches EFT recalculations.
+    /// A lightweight per-frame fallback in Tick() keeps scaling stable when EFT
+    /// doesn't call SetCompensationScale during certain zoom transition paths.
     /// </summary>
     internal sealed class WeaponScalingPatch : ModulePatch
     {
@@ -66,6 +67,21 @@ namespace ScopeHousingMeshSurgery.Patches
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) { _isActive = false; return; }
             _isActive = true;
+
+            // Apply immediately on scope-enter in case EFT doesn't touch
+            // SetCompensationScale this frame.
+            ApplyVisualScaleIfNeeded(GetMainPlayer());
+        }
+
+        /// <summary>
+        /// Fallback update while scoped.
+        /// Keeps visual scale synced across camera-FOV animation frames where
+        /// SetCompensationScale may not be invoked.
+        /// </summary>
+        public static void UpdateScale()
+        {
+            if (!_isActive) return;
+            ApplyVisualScaleIfNeeded(GetMainPlayer());
         }
 
         /// <summary>
