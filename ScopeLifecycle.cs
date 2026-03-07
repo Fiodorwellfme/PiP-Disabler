@@ -571,7 +571,7 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
-            // 1. Restore FOV INSTANTLY (duration=0, no sluggish exit feel)
+            // 1. Restore FOV with ADS-matched animation timing
             RestoreFov();
 
             // 1b. Restore normal weapon model scaling (after FOV is back to normal)
@@ -664,8 +664,7 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Restore FOV to baseline INSTANTLY (duration=0).
-        /// Scope exit should feel snappy, never sluggish.
+        /// Restore FOV to baseline using the same ADS animation timing.
         /// </summary>
         private static void RestoreFov()
         {
@@ -683,9 +682,10 @@ namespace ScopeHousingMeshSurgery
                 float baseFov = pwa.Single_2;
                 if (baseFov > 30f)
                 {
-                    cc.SetFov(baseFov, 0f, true); // duration=0 = instant
+                    float duration = ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value;
+                    cc.SetFov(baseFov, duration, true);
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° (instant)");
+                        $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° dur={duration:F2}s");
                 }
             }
             catch (Exception ex)

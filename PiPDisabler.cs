@@ -1,9 +1,11 @@
 using System;
 using System.Reflection;
+using System.Collections.Generic;
 using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
+using System.Reflection.Emit;
 
 namespace ScopeHousingMeshSurgery
 {
@@ -335,45 +337,59 @@ _ignoreOnDisableFrame.Clear();
             protected override MethodBase GetTargetMethod()
                 => AccessTools.Method(typeof(OpticComponentUpdater), "LateUpdate");
 
-            /// <summary>
-            /// Instead of skipping the entire LateUpdate (which kills transform
-            /// updates used for aim alignment and zeroing), we let it run but
-            /// ensure the optic camera cannot actually render.
-            ///
-            /// LateUpdate does two things:
-            ///   1. Syncs the optic camera transform to match the weapon pose
-            ///      → we NEED this for correct aim alignment at all ranges
-            ///   2. Triggers the PiP render (Camera.Render / RT write)
-            ///      → we want to SKIP this
-            ///
-            /// With Camera.enabled=false, cullingMask=0, and targetTexture=null,
-            /// step 2 becomes a no-op even though LateUpdate executes.  The
-            /// transform sync in step 1 still runs, preserving aim alignment.
-            /// </summary>
             [PatchPrefix]
             private static bool Prefix(OpticComponentUpdater __instance)
             {
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return true;
-                if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
-                if (ShouldSkipPiPDisableForCurrentOptic(__instance)) return true;
+                if (__instance == null) return true;
 
-                // Ensure the camera can't render, but let LateUpdate run for transforms.
-                var cam = __instance != null ? __instance.GetComponent<Camera>() : null;
-
-                if (__instance != null)
+                if (ScopeHousingMeshSurgeryPlugin.DisablePiP.Value)
                 {
                     OpticCameraTransform = __instance.transform;
                     Debug_LastOpticCameraTransform = OpticCameraTransform;
                     Debug_LastOpticCameraSetBy = __instance.name;
                     Debug_LastOpticCameraSetFrame = Time.frameCount;
+
+                    if (!ShouldSkipPiPDisableForCurrentOptic(__instance))
+                    {
+                        var cam = __instance.GetComponent<Camera>();
+                        ForceDisable(cam);
+                    }
                 }
 
-                ForceDisable(cam);
-
-                // Return TRUE — let the original LateUpdate execute.
-                // It will update transforms normally.  Any Camera.Render() calls
-                // become no-ops because the camera is disabled with no target.
                 return true;
+            }
+
+            [PatchTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            {
+                var render = AccessTools.Method(typeof(Camera), nameof(Camera.Render));
+                var replacement = AccessTools.Method(
+                    typeof(OpticComponentUpdaterLateUpdate_DisablePiP),
+                    nameof(MaybeRender));
+
+                foreach (var code in instructions)
+                {
+                    if (code.opcode == OpCodes.Callvirt && Equals(code.operand, render))
+                    {
+                        yield return new CodeInstruction(OpCodes.Call, replacement);
+                        continue;
+                    }
+
+                    yield return code;
+                }
+            }
+
+            private static void MaybeRender(Camera cam)
+            {
+                if (cam == null) return;
+
+                if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value ||
+                    !ScopeHousingMeshSurgeryPlugin.DisablePiP.Value ||
+                    ScopeLifecycle.IsModBypassedForCurrentScope)
+                {
+                    cam.Render();
+                }
             }
         }
 
