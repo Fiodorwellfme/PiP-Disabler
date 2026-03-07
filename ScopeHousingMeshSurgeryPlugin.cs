@@ -149,6 +149,9 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<KeyCode> ScrollZoomModifierKey;
         internal static ConfigEntry<float> ScrollZoomMin;
         internal static ConfigEntry<float> ScrollZoomMax;
+        internal static ConfigEntry<float> ManualLodBias;
+        internal static ConfigEntry<int> ManualMaximumLodLevel;
+        internal static ConfigEntry<float> ManualCullingMultiplier;
 
         // --- 4. Zeroing ---
         internal static ConfigEntry<bool> EnableZeroing;
@@ -259,6 +262,24 @@ namespace ScopeHousingMeshSurgery
                     "0 = auto-detect from the scope's native zoom range.\n" +
                     ">0 = force this as the maximum (e.g. 12).",
                     new AcceptableValueRange<float>(0f, 100f)));
+            ManualLodBias = Config.Bind("2. Zoom", "ManualLodBias", 0f,
+                new ConfigDescription(
+                    "Manual LOD bias while scoped.\n" +
+                    "0 = auto (baseLodBias * magnification).\n" +
+                    ">0 = force this exact value (e.g. 4.0).",
+                    new AcceptableValueRange<float>(0f, 20f)));
+            ManualMaximumLodLevel = Config.Bind("2. Zoom", "ManualMaximumLodLevel", -1,
+                new ConfigDescription(
+                    "Manual QualitySettings.maximumLODLevel while scoped.\n" +
+                    "-1 = auto (force 0 / highest detail).\n" +
+                    ">=0 = force this exact max LOD level.",
+                    new AcceptableValueRange<int>(-1, 8)));
+            ManualCullingMultiplier = Config.Bind("2. Zoom", "ManualCullingMultiplier", 0f,
+                new ConfigDescription(
+                    "Manual multiplier for Camera.layerCullDistances while scoped.\n" +
+                    "0 = auto (use magnification).\n" +
+                    ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
+                    new AcceptableValueRange<float>(0f, 20f)));
             ZoomToggleKey = Config.Bind("2. Zoom", "ZoomToggleKey", KeyCode.None,
                 "Toggle key for zoom (None = always on when EnableZoom is true).");
 
