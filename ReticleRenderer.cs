@@ -8,24 +8,13 @@ namespace ScopeHousingMeshSurgery
     /// Renders the scope reticle via a CommandBuffer injected at
     /// CameraEvent.AfterEverything on the main FPS camera.
     ///
-    /// ── CAMERA ALIGNMENT APPROACH ───────────────────────────────────────
-    /// The root cause of reticle jitter is the mismatch between where the
-    /// camera looks and where the scope tube points.  In vanilla PiP, this
-    /// doesn't matter — the optic camera is aligned to the scope by design.
-    /// In no-PiP mode, the main camera and scope have slightly different
-    /// orientations, and any reticle placement (world-space, angular, etc.)
-    /// amplifies that difference at high magnification.
+    /// ── SCOPE-ANCHORED OVERLAY APPROACH ───────────────────────────────────
+    /// Reticle placement is done entirely in screen space, but anchored to
+    /// the projected position of the scope lens transform every frame.
     ///
-    /// The fix: in onPreCull (after all game systems have run), override the
-    /// main camera's rotation to match the scope's forward direction.  This
-    /// makes the rendered frame look exactly where the scope points.  The
-    /// reticle becomes a simple fixed quad at screen center — zero jitter
-    /// by definition.
-    ///
-    /// Weapon sway is preserved: the scope transform sways each frame from
-    /// ProceduralWeaponAnimation, and the camera follows.  The player sees
-    /// the world shift (exactly like looking through a real scope), not a
-    /// dancing crosshair.
+    /// This keeps the reticle aligned to the scope body (not weapon/camera
+    /// center assumptions) while still using a stable post-process-safe
+    /// CommandBuffer path.
     /// </summary>
     internal static class ReticleRenderer
     {
@@ -40,6 +29,7 @@ namespace ScopeHousingMeshSurgery
 
         // Cached transforms
         private static Transform _opticTransform;   // OpticSight   — for forward (downrange)
+        private static Transform _lensTransform;    // Lens anchor for screen-space alignment
 
         // CommandBuffer state
         private static CommandBuffer _cmdBuffer;
@@ -121,6 +111,7 @@ namespace ScopeHousingMeshSurgery
             try
             {
                 _opticTransform = os.transform;
+                _lensTransform = os.LensRenderer != null ? os.LensRenderer.transform : os.transform;
 
                 EnsureMeshAndMaterial();
 
@@ -141,11 +132,11 @@ namespace ScopeHousingMeshSurgery
                 AttachToCamera();
 
                 _settled = true;
-                _alignmentActive = true;
+                _alignmentActive = false;
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[Reticle] Showing: base={_baseScale:F4} mag={magnification:F1}x " +
-                    $"(camera-aligned centered rendering)");
+                    $"(scope-anchored screen-space rendering)");
             }
             catch (System.Exception e)
             {
@@ -186,6 +177,7 @@ namespace ScopeHousingMeshSurgery
             _savedMarkTex      = null;
             _savedMaskTex      = null;
             _opticTransform    = null;
+            _lensTransform     = null;
             _lastMag           = 1f;
             _baseScale         = 0f;
             _settled           = false;
@@ -276,14 +268,8 @@ namespace ScopeHousingMeshSurgery
             // the optic camera itself can't render.
             if (_alignmentActive)
             {
-                // Primary source: optic camera transform kept in sync by EFT updater.
-                // Fallback: optic transform itself, so sway-follow remains active even
-                // if optic camera cache is temporarily unavailable.
-                Transform swaySource = PiPDisabler.OpticCameraTransform ?? _opticTransform;
-                if (swaySource != null)
-                {
-                    cam.transform.rotation = swaySource.rotation;
-                }
+                // Intentionally left disabled for scope-anchored overlays.
+                // We keep the branch for compatibility with prior state flags.
             }
 
             RebuildMatrix(cam);
@@ -293,9 +279,7 @@ namespace ScopeHousingMeshSurgery
         // ── Centered quad matrix ─────────────────────────────────────────────
 
         /// <summary>
-        /// Place the reticle quad at screen center: a fixed distance along
-        /// the camera's (now scope-aligned) forward.  Since the camera is
-        /// aligned with the scope, this is always dead center.
+        /// Place the reticle quad at the projected scope lens center in clip-space.
         ///
         /// Size is computed directly in screen-space from FOV and magnification.
         /// </summary>
@@ -308,7 +292,8 @@ namespace ScopeHousingMeshSurgery
             // reference eye-relief distance, then project to NDC by camera FOV.
             float ndcSize = ScopeOverlaySizing.ComputeNdcDiameter(cam, _baseScale, _lastMag);
 
-            Vector3 pos = new Vector3(0f, 0f, 0.5f);
+            Vector2 clipCenter = GetClipCenterFromTransform(cam, _lensTransform ?? _opticTransform);
+            Vector3 pos = new Vector3(clipCenter.x, clipCenter.y, 0.5f);
             float aspect = GetDisplayAspect(cam);
             Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
             _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
@@ -355,6 +340,18 @@ namespace ScopeHousingMeshSurgery
         {
             Rect r = GetDisplayViewport(cam);
             return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
+        }
+
+        private static Vector2 GetClipCenterFromTransform(Camera cam, Transform anchor)
+        {
+            if (cam == null || anchor == null) return Vector2.zero;
+
+            Vector3 vp = cam.WorldToViewportPoint(anchor.position);
+            if (vp.z <= 0.001f) return Vector2.zero;
+
+            float cx = (vp.x - 0.5f) * 2f;
+            float cy = (vp.y - 0.5f) * 2f;
+            return new Vector2(Mathf.Clamp(cx, -2f, 2f), Mathf.Clamp(cy, -2f, 2f));
         }
 
         private static void ApplyHorizontalFlip()
