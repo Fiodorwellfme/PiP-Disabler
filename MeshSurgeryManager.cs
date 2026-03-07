@@ -766,17 +766,6 @@ namespace ScopeHousingMeshSurgery
         {
             if (scopeRoot == null) return new List<MeshFilter>();
 
-            var excludes = ParseExcludes("backlens,frontlens,linza,glass,scope_camera,optic_camera,reticle,mask,lens,scope_shadow,vignette");
-
-            bool IsExcluded(string s)
-            {
-                if (string.IsNullOrEmpty(s)) return false;
-                var l = s.ToLowerInvariant();
-                for (int i = 0; i < excludes.Count; i++)
-                    if (l.Contains(excludes[i])) return true;
-                return false;
-            }
-
             Transform GetModeAncestor(Transform t, Transform searchRoot)
             {
                 for (var p = t; p != null && p != searchRoot; p = p.parent)
@@ -784,21 +773,6 @@ namespace ScopeHousingMeshSurgery
                         || p.name.Equals("mode", StringComparison.OrdinalIgnoreCase)))
                         return p;
                 return null;
-            }
-
-            bool IsLensNode(Transform t, Transform searchRoot)
-            {
-                for (var p = t; p != null && p != searchRoot; p = p.parent)
-                {
-                    if (p == null || p.name == null) continue;
-                    var n = p.name.ToLowerInvariant();
-                    if (n.Contains("optic_camera")) return true;
-                    if (n == "backlens" || n.StartsWith("backlens")) return true;
-                    if (n.Contains("linza")) return true;
-                    if (n == "frontlens" || n.StartsWith("frontlens")) return true;
-                    if (n == "scopereticleoverlay") return true;
-                }
-                return false;
             }
 
             // Determine search root: go up through intermediate containers to catch
@@ -872,7 +846,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             var result = new List<MeshFilter>(64);
-            int skippedLens = 0, skippedExclude = 0, skippedMode = 0, skippedOther = 0;
+            int skippedMode = 0, skippedOther = 0;
 
             foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
             {
@@ -881,15 +855,6 @@ namespace ScopeHousingMeshSurgery
                 // Skip meshes under other scope roots (sibling scopes, canted sights)
                 if (otherScopeRoots.Count > 0 && IsUnderOtherScope(mf.transform))
                 { skippedOther++; continue; }
-
-                if (IsLensNode(mf.transform, searchRoot))
-                { skippedLens++; continue; }
-
-                var goName = mf.transform.name ?? "";
-                var meshName = mf.sharedMesh.name ?? "";
-
-                if (IsExcluded(goName) || IsExcluded(meshName))
-                { skippedExclude++; continue; }
 
                 // Skip meshes belonging to a DIFFERENT mode (not the active one)
                 var modeAncestor = GetModeAncestor(mf.transform, searchRoot);
@@ -901,8 +866,7 @@ namespace ScopeHousingMeshSurgery
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
-                $"{result.Count} targets, skipped: lens={skippedLens} exclude={skippedExclude} " +
-                $"mode={skippedMode} otherScope={skippedOther}");
+                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther}");
 
             return result;
         }
@@ -933,17 +897,5 @@ namespace ScopeHousingMeshSurgery
             }
         }
 
-        private static List<string> ParseExcludes(string csv)
-        {
-            var list = new List<string>();
-            if (string.IsNullOrWhiteSpace(csv)) return list;
-            foreach (var part in csv.Split(','))
-            {
-                var t = part.Trim();
-                if (t.Length == 0) continue;
-                list.Add(t.ToLowerInvariant());
-            }
-            return list;
-        }
     }
 }
