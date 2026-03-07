@@ -40,7 +40,7 @@ namespace ScopeHousingMeshSurgery.Patches
     /// This makes the weapon model shrink without moving the reticle/aim point.
     ///
     /// Postfix on SetCompensationScale catches all EFT-initiated recalculations.
-    /// Per-frame UpdateScale() catches the coroutine lerp and scroll zoom changes.
+    /// Per-frame UpdateScale() catches coroutine lerp and dynamic FOV changes.
     /// </summary>
     internal sealed class WeaponScalingPatch : ModulePatch
     {

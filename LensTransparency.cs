@@ -26,7 +26,7 @@ namespace ScopeHousingMeshSurgery
     ///   - Material property forcing (_Color alpha=0, _SwitchToSight=0) as fallback
     ///   - Expanded search root (climbs through mod_scope/mount parents like MeshSurgeryManager)
     ///   - EnsureHidden now accepts an exclusion renderer so it always runs even when
-    ///     shader zoom is active (skipping only the ZoomController's managed lens)
+    ///     while scoped.
     /// </summary>
     internal static class LensTransparency
     {
@@ -122,7 +122,7 @@ namespace ScopeHousingMeshSurgery
         /// Also keep renderer disabled as secondary measure.
         ///
         /// Accepts an optional exclusion renderer (the ZoomController's managed lens)
-        /// so this can safely run every frame even when shader zoom is active.
+        /// so this can safely run every frame while scoped.
         ///
         /// NOTE: ForceMaterialTransparent is intentionally NOT called here per-frame.
         /// r.materials allocates new material instances every call → massive GC pressure.
@@ -137,7 +137,7 @@ namespace ScopeHousingMeshSurgery
             {
                 var e = _hidden[i];
 
-                // Skip the renderer managed by ZoomController (shader zoom needs it alive)
+                // No special per-lens exclusions are needed here
                 if (excludeRenderer != null && e.Renderer == excludeRenderer)
                     continue;
 

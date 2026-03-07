@@ -5,22 +5,12 @@ using UnityEngine;
 namespace ScopeHousingMeshSurgery
 {
     /// <summary>
-    /// Handles scope zoom math and scroll-wheel zoom override.
-    ///
-    /// Magnification is now driven from Template.Zooms via FovController.
-    /// Scroll zoom operates in magnification space (not FOV space).
+    /// Handles scope zoom math.
+    /// Magnification is driven from Template.Zooms via FovController.
     /// </summary>
     internal static class ZoomController
     {
-        /// <summary>
-        /// Shader zoom is removed, so no lens renderer is excluded from transparency kills.
-        /// </summary>
         public static Renderer ActiveLensRenderer => null;
-
-        // Scroll zoom override — when active, overrides the scope's magnification.
-        private static float _scrollZoomMag;       // 0 = not active, >0 = user-set magnification
-        private static bool  _scrollZoomActive;
-        private static float _scrollStartTemplateMag; // template mag when scroll zoom first activated
 
         // Range info (discovered from template or FOV fallback)
         private static float _nativeMinMag;        // minimum magnification (widest view)
@@ -28,7 +18,6 @@ namespace ScopeHousingMeshSurgery
         private static bool  _rangeDiscovered;
         private static bool  _isVariableZoom;
 
-        /// <summary>Shader zoom is disabled permanently.</summary>
         public static bool ShaderAvailable => false;
 
         /// <summary>No shader state is active.</summary>
@@ -38,7 +27,7 @@ namespace ScopeHousingMeshSurgery
         public static void LoadShader()
         {
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                "[ZoomController] Shader zoom removed. Using template-based FOV zoom.");
+                "[ZoomController] Using template-based FOV zoom.");
         }
 
         /// <summary>Kept for API compatibility. No-op.</summary>
@@ -47,7 +36,7 @@ namespace ScopeHousingMeshSurgery
         /// <summary>Kept for API compatibility. No-op.</summary>
         public static void SetZoom(float magnification) { }
 
-        /// <summary>Clears scroll-zoom override on scope-out.</summary>
+        /// <summary>Resets zoom state on scope-out.</summary>
         public static void Restore()
         {
             ResetScrollZoom();
@@ -58,51 +47,26 @@ namespace ScopeHousingMeshSurgery
 
         /// <summary>
         /// Returns the current effective magnification.
-        /// Delegates to FovController.GetEffectiveMagnification() which uses:
-        ///   1. Scroll zoom override
-        ///   2. Template.Zooms (primary)
-        ///   3. ScopeCameraData FOV (fallback)
-        ///   4. Config DefaultZoom
+        /// Delegates to FovController.GetEffectiveMagnification().
         /// </summary>
         public static float GetMagnification(OpticSight os)
         {
             if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
 
-            // Ensure range is discovered for scroll zoom bounds
+            // Ensure range is discovered
             if (!_rangeDiscovered)
             {
                 DiscoverZoomRange(os);
                 _rangeDiscovered = true;
             }
 
-            // Detect mode switch: if template mag changed significantly from when
-            // scroll zoom started, reset scroll zoom so the native change takes effect.
-            if (_scrollZoomActive && _scrollZoomMag > 0f)
-            {
-                float currentTemplateMag = FovController.GetEffectiveMagnification();
-                // Use the non-scroll path to detect template changes
-                // (GetEffectiveMagnification already skips scroll if we ask it directly)
-                // Instead, compare against what we stored
-                // NOTE: we rely on the TEMPLATE source changing significantly
-            }
-
             return FovController.GetEffectiveMagnification();
         }
 
-        /// <summary>
-        /// Returns the scroll zoom magnification override, or 0 if not active.
-        /// Called by FovController as priority #1 in the magnification chain.
-        /// </summary>
-        public static float GetScrollZoomMagnification()
-        {
-            if (_scrollZoomActive && _scrollZoomMag > 0.1f)
-                return _scrollZoomMag;
-            return 0f;
-        }
+        public static float GetScrollZoomMagnification() => 0f;
 
         /// <summary>
         /// Returns the optic's minimum FOV (maximum magnification) in degrees.
-        /// Used by ScopeLifecycle for high-magnification bypass detection.
         /// Converts from template zoom range when available.
         /// </summary>
         public static float GetMinFov(OpticSight os)
@@ -187,73 +151,18 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Process scroll wheel input for zoom adjustment.
-        /// Now works in magnification space: scroll up = zoom in (increase mag),
-        /// scroll down = zoom out (decrease mag).
-        /// Clamped to the scope's magnification range from template.
-        /// Returns true if zoom changed (caller should re-apply FOV).
+        /// No runtime input zoom override.
         /// </summary>
         public static bool HandleScrollZoom(float scrollDelta)
         {
-            if (!ScopeHousingMeshSurgeryPlugin.EnableScrollZoom.Value) return false;
-            if (Mathf.Abs(scrollDelta) < 0.01f) return false;
-
-            // Don't allow scroll zoom on fixed scopes
-            if (!_isVariableZoom) return false;
-
-            float sensitivity = ScopeHousingMeshSurgeryPlugin.ScrollZoomSensitivity.Value;
-
-            // Magnification bounds
-            float minMag = _nativeMinMag;
-            float maxMag = _nativeMaxMag;
-
-            // Config overrides (already in magnification units)
-            float cfgMinMag = ScopeHousingMeshSurgeryPlugin.ScrollZoomMin.Value;
-            float cfgMaxMag = ScopeHousingMeshSurgeryPlugin.ScrollZoomMax.Value;
-            if (cfgMinMag > 0f) minMag = cfgMinMag;
-            if (cfgMaxMag > 0f) maxMag = cfgMaxMag;
-
-            // Safety: if range is degenerate, allow ±50%
-            if (maxMag <= minMag + 0.05f)
-            {
-                float currentMag = FovController.GetEffectiveMagnification();
-                minMag = currentMag * 0.5f;
-                maxMag = currentMag * 2f;
-            }
-
-            // Initialize from current template magnification if this is the first scroll
-            if (!_scrollZoomActive)
-            {
-                _scrollZoomMag = FovController.GetEffectiveMagnification();
-                _scrollStartTemplateMag = _scrollZoomMag;
-                _scrollZoomActive = true;
-            }
-
-            // Multiplicative scaling in magnification space:
-            // scroll up (+) = zoom in = higher magnification → multiply
-            // scroll down (-) = zoom out = lower magnification → divide
-            float factor = 1f + sensitivity;
-            if (scrollDelta > 0f)
-                _scrollZoomMag *= factor;
-            else
-                _scrollZoomMag /= factor;
-
-            _scrollZoomMag = Mathf.Clamp(_scrollZoomMag, minMag, maxMag);
-
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
-                $"[ZoomController] Scroll zoom: mag={_scrollZoomMag:F2}x (range={minMag:F2}x-{maxMag:F2}x)");
-
-            return true;
+            return false;
         }
 
         /// <summary>
-        /// Reset scroll zoom override. Called on scope exit.
+        /// Reset cached zoom range. Called on scope exit.
         /// </summary>
         public static void ResetScrollZoom()
         {
-            _scrollZoomActive = false;
-            _scrollZoomMag = 0f;
-            _scrollStartTemplateMag = 0f;
             _rangeDiscovered = false;
             _isVariableZoom = false;
         }
@@ -292,7 +201,7 @@ namespace ScopeHousingMeshSurgery
                 if (szh == null)
                 {
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        "[ZoomController] No ScopeZoomHandler — fixed scope, scroll zoom disabled");
+                        "[ZoomController] No ScopeZoomHandler — fixed scope");
                     return;
                 }
 

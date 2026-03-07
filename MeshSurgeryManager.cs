@@ -523,15 +523,8 @@ namespace ScopeHousingMeshSurgery
 
         private static bool DecideKeepPositive(Vector3 planePoint, Vector3 planeNormal, Vector3 camPos)
         {
-            if (ScopeHousingMeshSurgeryPlugin.ForceManualKeepSide.Value)
-                return ScopeHousingMeshSurgeryPlugin.ManualKeepPositive.Value;
-
             float d = Vector3.Dot(planeNormal, camPos - planePoint);
             bool cameraIsPositive = d >= 0f;
-
-            if (ScopeHousingMeshSurgeryPlugin.RemoveCameraSide.Value)
-                return !cameraIsPositive;
-
             return cameraIsPositive;
         }
     }
@@ -773,7 +766,7 @@ namespace ScopeHousingMeshSurgery
         {
             if (scopeRoot == null) return new List<MeshFilter>();
 
-            var excludes = ParseExcludes(ScopeHousingMeshSurgeryPlugin.ExcludeNameContainsCsv.Value);
+            var excludes = ParseExcludes("backlens,frontlens,linza,glass,scope_camera,optic_camera,reticle,mask,lens,scope_shadow,vignette");
 
             bool IsExcluded(string s)
             {

@@ -14,7 +14,7 @@ namespace ScopeHousingMeshSurgery
     /// doesn't matter — the optic camera is aligned to the scope by design.
     /// In no-PiP mode, the main camera and scope have slightly different
     /// orientations, and any reticle placement (world-space, angular, etc.)
-    /// amplifies that difference at high magnification.
+    /// amplifies that difference at tighter FOV values.
     ///
     /// The fix: in onPreCull (after all game systems have run), override the
     /// main camera's rotation to match the scope's forward direction.  This
@@ -93,15 +93,13 @@ namespace ScopeHousingMeshSurgery
                 {
                     _savedMarkTex.filterMode = FilterMode.Trilinear;
                     _savedMarkTex.anisoLevel = 16;
-                    if (_savedMarkTex is Texture2D tex2d)
-                        tex2d.mipMapBias = ScopeHousingMeshSurgeryPlugin.ReticleMipBias.Value;
                 }
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[Reticle] Extracted: _MarkTex={(_savedMarkTex != null ? _savedMarkTex.name : "null")} " +
                     $"({(_savedMarkTex != null ? $"{_savedMarkTex.width}x{_savedMarkTex.height}" : "?")}) " +
                     $"_MaskTex={(_savedMaskTex != null ? _savedMaskTex.name : "null")} " +
-                    $"filter=Trilinear aniso=16 mipBias={ScopeHousingMeshSurgeryPlugin.ReticleMipBias.Value}");
+                    "filter=Trilinear aniso=16");
             }
             catch (System.Exception e)
             {
@@ -367,10 +365,10 @@ namespace ScopeHousingMeshSurgery
         private static void ApplyHorizontalFlip()
         {
             if (_reticleMesh == null) return;
-            bool flip = ScopeHousingMeshSurgeryPlugin.ReticleFlipHorizontal.Value;
-            _reticleMesh.uv = flip
-                ? new[] { new Vector2(1,0), new Vector2(0,0), new Vector2(0,1), new Vector2(1,1) }
-                : new[] { new Vector2(0,0), new Vector2(1,0), new Vector2(1,1), new Vector2(0,1) };
+            _reticleMesh.uv = new[]
+            {
+                new Vector2(0,0), new Vector2(1,0), new Vector2(1,1), new Vector2(0,1)
+            };
         }
 
         private static void EnsureMeshAndMaterial()
