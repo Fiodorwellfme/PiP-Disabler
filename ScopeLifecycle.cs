@@ -327,9 +327,6 @@ namespace ScopeHousingMeshSurgery
 
             // PiP stays disabled via Harmony patches — no per-frame action needed.
 
-            // Per-frame weapon scale compensation (tracks animated FOV transitions)
-            Patches.WeaponScalingPatch.UpdateScale();
-
             // Zeroing input polling
             ZeroingController.Tick();
         }

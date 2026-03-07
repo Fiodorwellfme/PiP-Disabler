@@ -4,6 +4,9 @@ using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection.Emit;
 
 namespace ScopeHousingMeshSurgery
 {
@@ -357,9 +360,6 @@ _ignoreOnDisableFrame.Clear();
                 if (!ScopeHousingMeshSurgeryPlugin.DisablePiP.Value) return true;
                 if (ShouldSkipPiPDisableForCurrentOptic(__instance)) return true;
 
-                // Ensure the camera can't render, but let LateUpdate run for transforms.
-                var cam = __instance != null ? __instance.GetComponent<Camera>() : null;
-
                 if (__instance != null)
                 {
                     OpticCameraTransform = __instance.transform;
@@ -368,12 +368,44 @@ _ignoreOnDisableFrame.Clear();
                     Debug_LastOpticCameraSetFrame = Time.frameCount;
                 }
 
-                ForceDisable(cam);
-
-                // Return TRUE — let the original LateUpdate execute.
-                // It will update transforms normally.  Any Camera.Render() calls
-                // become no-ops because the camera is disabled with no target.
+                // Return TRUE — transpiler controls render calls directly.
                 return true;
+            }
+
+            [PatchTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            {
+                var code = new List<CodeInstruction>(instructions);
+                var render = AccessTools.Method(typeof(Camera), nameof(Camera.Render));
+                var renderIfAllowed = AccessTools.Method(
+                    typeof(OpticComponentUpdaterLateUpdate_DisablePiP),
+                    nameof(RenderIfAllowed));
+
+                for (int i = 0; i < code.Count; i++)
+                {
+                    var ci = code[i];
+                    if ((ci.opcode == OpCodes.Call || ci.opcode == OpCodes.Callvirt)
+                        && ci.operand is MethodInfo mi
+                        && mi == render)
+                    {
+                        ci.opcode = OpCodes.Call;
+                        ci.operand = renderIfAllowed;
+                    }
+                }
+
+                return code.AsEnumerable();
+            }
+
+            private static void RenderIfAllowed(Camera cam)
+            {
+                if (cam == null) return;
+
+                if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value
+                    || !ScopeHousingMeshSurgeryPlugin.DisablePiP.Value
+                    || ScopeLifecycle.IsModBypassedForCurrentScope)
+                {
+                    cam.Render();
+                }
             }
         }
 

@@ -5,6 +5,9 @@ using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection.Emit;
 
 namespace ScopeHousingMeshSurgery.Patches
 {
@@ -26,53 +29,88 @@ namespace ScopeHousingMeshSurgery.Patches
             => AccessTools.Method(typeof(ProceduralWeaponAnimation),
                 nameof(ProceduralWeaponAnimation.method_23));
 
-        [PatchPostfix]
-        private static void Postfix(ProceduralWeaponAnimation __instance)
+        [PatchTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var code = new List<CodeInstruction>(instructions);
+            var setFov = AccessTools.Method(typeof(CameraClass), nameof(CameraClass.SetFov));
+            var intercept = AccessTools.Method(typeof(PWAMethod23Patch), nameof(SetFovIntercept));
+
+            for (int i = 0; i < code.Count; i++)
+            {
+                var ci = code[i];
+                if ((ci.opcode == OpCodes.Call || ci.opcode == OpCodes.Callvirt)
+                    && ci.operand is MethodInfo mi
+                    && mi == setFov)
+                {
+                    code.Insert(i, new CodeInstruction(OpCodes.Ldarg_0));
+                    i++;
+                    code[i].opcode = OpCodes.Call;
+                    code[i].operand = intercept;
+                }
+            }
+
+            return code.AsEnumerable();
+        }
+
+        private static void SetFovIntercept(
+            CameraClass cameraClass,
+            float vanillaFov,
+            float vanillaDuration,
+            bool vanillaForce,
+            ProceduralWeaponAnimation pwa)
         {
             try
             {
-                // Global mod toggle
-                if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
+                if (cameraClass == null)
+                    return;
 
-                // FOV zoom: only if enabled
-                if (!ScopeHousingMeshSurgeryPlugin.EnableZoom.Value) return;
+                // Keep vanilla path unless we are fully in scoped-zoom mode.
+                if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value
+                    || !ScopeHousingMeshSurgeryPlugin.EnableZoom.Value
+                    || !ScopeLifecycle.IsScoped
+                    || ScopeLifecycle.IsModBypassedForCurrentScope
+                    || pwa == null
+                    || !pwa.IsAiming
+                    || pwa.Sprint)
+                {
+                    cameraClass.SetFov(vanillaFov, vanillaDuration, vanillaForce);
+                    return;
+                }
 
-                // Only apply when actually scoped (prevents FOV changes outside ADS)
-                if (!ScopeLifecycle.IsScoped) return;
-
-                // Auto-bypass mode for scoped optics: keep vanilla EFT FOV behavior.
-                if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
-
-                // Only in first person, aiming, not sprinting.
-                if (!__instance.IsAiming) return;
-                if (__instance.Sprint) return;
-
-                // Check if it's an optic (not iron sights / red dot).
                 bool isOptic;
-                try { isOptic = __instance.CurrentScope.IsOptic; }
-                catch { return; }
-                if (!isOptic) return;
+                try { isOptic = pwa.CurrentScope.IsOptic; }
+                catch
+                {
+                    cameraClass.SetFov(vanillaFov, vanillaDuration, vanillaForce);
+                    return;
+                }
 
-                if (!CameraClass.Exist) return;
+                if (!isOptic)
+                {
+                    cameraClass.SetFov(vanillaFov, vanillaDuration, vanillaForce);
+                    return;
+                }
 
-                float playerBaseFov = __instance.Single_2; // Player's own FOV setting
-                float zoomBaseFov = FovController.ZoomBaselineFov; // Fixed baseline for zoom strength
-                float zoomedFov = FovController.ComputeZoomedFov(playerBaseFov, __instance);
+                float playerBaseFov = pwa.Single_2;
+                float zoomBaseFov = FovController.ZoomBaselineFov;
+                float zoomedFov = FovController.ComputeZoomedFov(playerBaseFov, pwa);
+                if (zoomedFov < 0.5f || zoomedFov >= zoomBaseFov)
+                {
+                    cameraClass.SetFov(vanillaFov, vanillaDuration, vanillaForce);
+                    return;
+                }
 
-                if (zoomedFov < 0.5f || zoomedFov >= zoomBaseFov) return;
-
-                // Use FovAnimationDuration for smooth animated transition into zoom.
-                // EFT's own SetFov starts a coroutine that smoothly animates to the target.
                 float duration = ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value;
-                CameraClass.Instance.SetFov(zoomedFov, duration, false);
+                cameraClass.SetFov(zoomedFov, duration, false);
 
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[PWAPatch] FOV zoom: playerBase={playerBaseFov:F0} fixedBase={zoomBaseFov:F0} → zoom={zoomedFov:F1} dur={duration:F2}s");
+                    $"[PWATranspiler] FOV override: vanilla={vanillaFov:F1} zoom={zoomedFov:F1} dur={duration:F2}s");
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                    $"[PWAPatch] Error: {ex.Message}");
+                ScopeHousingMeshSurgeryPlugin.LogVerbose($"[PWATranspiler] Error: {ex.Message}");
+                cameraClass?.SetFov(vanillaFov, vanillaDuration, vanillaForce);
             }
         }
     }

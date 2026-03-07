@@ -6,6 +6,9 @@ using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection.Emit;
 
 namespace ScopeHousingMeshSurgery.Patches
 {
@@ -39,8 +42,8 @@ namespace ScopeHousingMeshSurgery.Patches
     ///
     /// This makes the weapon model shrink without moving the reticle/aim point.
     ///
-    /// Postfix on SetCompensationScale catches all EFT-initiated recalculations.
-    /// Per-frame UpdateScale() catches coroutine lerp and dynamic FOV changes.
+    /// Transpiler tail-injection on SetCompensationScale catches EFT recalculations
+    /// without running an extra Harmony Postfix and without per-frame correction in Tick().
     /// </summary>
     internal sealed class WeaponScalingPatch : ModulePatch
     {
@@ -63,32 +66,6 @@ namespace ScopeHousingMeshSurgery.Patches
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) { _isActive = false; return; }
             _isActive = true;
-        }
-
-        /// <summary>
-        /// Per-frame update: override visual ribcage scale with our computed value.
-        /// Snaps both fields so there's no lerp delay.
-        /// Called from ScopeLifecycle.Tick().
-        /// </summary>
-        public static void UpdateScale()
-        {
-            if (!_isActive) return;
-            if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value) return;
-
-            try
-            {
-                var player = GetMainPlayer();
-                if (player == null) return;
-                if (!CameraClass.Exist) return;
-
-                float currentFov = CameraClass.Instance.Fov;
-                float scale = ComputeCompensatedScale(currentFov);
-
-                // Override ONLY visual fields — aim math (_compensatoryScale etc.) untouched
-                player.RibcageScaleCurrentTarget = scale;
-                player.RibcageScaleCurrent = scale; // instant snap
-            }
-            catch { }
         }
 
         /// <summary>
@@ -141,21 +118,35 @@ namespace ScopeHousingMeshSurgery.Patches
         }
 
         /// <summary>
-        /// Harmony Postfix on Player.SetCompensationScale.
-        ///
-        /// Runs AFTER EFT has:
-        ///   1. Copied _ribcageScaleCompensated → RibcageScaleCurrentTarget
-        ///   2. Called PWA.SetFovParams(_ribcageScaleCompensated) → aim math set correctly
-        ///   3. Optionally snapped RibcageScaleCurrent (if force=true)
-        ///
-        /// We then override only the visual scale fields, leaving aim math untouched.
+        /// Harmony Transpiler on Player.SetCompensationScale.
+        /// Injects a single tail-call before every return so visual ribcage scale
+        /// is overridden after EFT has finished its own aim math path.
         /// </summary>
-        [PatchPostfix]
-        private static void Postfix(Player __instance)
+        [PatchTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var code = new List<CodeInstruction>(instructions);
+            var helper = AccessTools.Method(typeof(WeaponScalingPatch), nameof(ApplyVisualScaleIfNeeded));
+
+            for (int i = 0; i < code.Count; i++)
+            {
+                if (code[i].opcode == OpCodes.Ret)
+                {
+                    code.Insert(i, new CodeInstruction(OpCodes.Ldarg_0));
+                    code.Insert(i + 1, new CodeInstruction(OpCodes.Call, helper));
+                    i += 2;
+                }
+            }
+
+            return code.AsEnumerable();
+        }
+
+        private static void ApplyVisualScaleIfNeeded(Player player)
         {
             try
             {
-                if (!__instance.IsYourPlayer) return;
+                if (player == null) return;
+                if (!player.IsYourPlayer) return;
                 if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value) return;
                 if (!ScopeLifecycle.IsScoped) return;
                 if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
@@ -165,9 +156,8 @@ namespace ScopeHousingMeshSurgery.Patches
                 float currentFov = CameraClass.Instance.Fov;
                 float scale = ComputeCompensatedScale(currentFov);
 
-                // Override visual scale AFTER EFT has finished all aim math
-                __instance.RibcageScaleCurrentTarget = scale;
-                __instance.RibcageScaleCurrent = scale; // instant snap
+                player.RibcageScaleCurrentTarget = scale;
+                player.RibcageScaleCurrent = scale;
             }
             catch { }
         }
