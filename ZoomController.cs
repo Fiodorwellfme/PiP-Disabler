@@ -16,7 +16,6 @@ namespace ScopeHousingMeshSurgery
         private static float _nativeMinMag;        // minimum magnification (widest view)
         private static float _nativeMaxMag;        // maximum magnification (tightest view)
         private static bool  _rangeDiscovered;
-        private static bool  _isVariableZoom;
 
         public static bool ShaderAvailable => false;
 
@@ -164,7 +163,6 @@ namespace ScopeHousingMeshSurgery
         public static void ResetScrollZoom()
         {
             _rangeDiscovered = false;
-            _isVariableZoom = false;
         }
 
         /// <summary>
@@ -174,7 +172,6 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         private static void DiscoverZoomRange(OpticSight os)
         {
-            _isVariableZoom = false;
 
             // Set defaults from current magnification
             float currentMag = FovController.GetEffectiveMagnification();
@@ -187,7 +184,6 @@ namespace ScopeHousingMeshSurgery
             {
                 _nativeMinMag = minZoom;
                 _nativeMaxMag = maxZoom;
-                _isVariableZoom = true;
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[ZoomController] Discovered template zoom range: {minZoom:F2}x - {maxZoom:F2}x (variable)");
                 return;
@@ -249,8 +245,7 @@ namespace ScopeHousingMeshSurgery
                     // Convert FOV range to magnification range (35° optic camera baseline)
                     _nativeMinMag = 35f / maxFov; // max FOV → min magnification
                     _nativeMaxMag = 35f / minFov; // min FOV → max magnification
-                    _isVariableZoom = true;
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        ScopeHousingMeshSurgeryPlugin.LogInfo(
                         $"[ZoomController] Discovered FOV-based zoom range: " +
                         $"{_nativeMinMag:F2}x - {_nativeMaxMag:F2}x (from FOV {minFov:F2}°-{maxFov:F2}°)");
                 }
