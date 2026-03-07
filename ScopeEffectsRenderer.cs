@@ -36,7 +36,6 @@ namespace ScopeHousingMeshSurgery
         private static bool       _vigActive;
         private static float      _baseSize = 0.030f;
         private static float      _lastMag = 1f;
-        private static Transform  _lensTransform;
 
         // ── Shadow ──────────────────────────────────────────────────────────
         private static Mesh       _shadowMesh;
@@ -62,7 +61,7 @@ namespace ScopeHousingMeshSurgery
 
         public static void Show(Transform lensTransform, float baseSize, float magnification)
         {
-            _lensTransform = lensTransform;
+            _ = lensTransform;
             _baseSize = Mathf.Max(0.001f, baseSize);
             _lastMag = Mathf.Max(1f, magnification);
 
@@ -108,7 +107,6 @@ namespace ScopeHousingMeshSurgery
         {
             _vigActive = false;
             _shadowActive = false;
-            _lensTransform = null;
             DetachFromCamera();
         }
 
@@ -201,10 +199,8 @@ namespace ScopeHousingMeshSurgery
             float ndcDiameter = ScopeOverlaySizing.ComputeNdcDiameter(cam, _baseSize, _lastMag);
             float ndcScale = Mathf.Clamp(ndcDiameter / edgeR, 0.1f, 6f);
 
-            Vector2 clipCenter = GetClipCenterFromTransform(cam, _lensTransform);
-
             _vigMatrix = Matrix4x4.TRS(
-                new Vector3(clipCenter.x, clipCenter.y, 0.6f),
+                new Vector3(0f, 0f, 0.6f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
         }
@@ -219,10 +215,8 @@ namespace ScopeHousingMeshSurgery
             float screenScale = GetScreenSpaceScale(cam);
             float ndcScale = Mathf.Max(2.25f, Mathf.Clamp(3.2f * screenScale, 0.8f, 6f));
 
-            Vector2 clipCenter = GetClipCenterFromTransform(cam, _lensTransform);
-
             _shadowMatrix = Matrix4x4.TRS(
-                new Vector3(clipCenter.x, clipCenter.y, 0.7f),
+                new Vector3(0f, 0f, 0.7f),
                 Quaternion.identity,
                 new Vector3(ndcScale, ndcScale, 1f));
         }
@@ -420,18 +414,6 @@ namespace ScopeHousingMeshSurgery
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
                 $"[ScopeEffects] Shadow texture rebuilt: {texW}x{texH} aspect={aspect:F2} radius={radius} soft={soft}");
-        }
-
-        private static Vector2 GetClipCenterFromTransform(Camera cam, Transform anchor)
-        {
-            if (cam == null || anchor == null) return Vector2.zero;
-
-            Vector3 vp = cam.WorldToViewportPoint(anchor.position);
-            if (vp.z <= 0.001f) return Vector2.zero;
-
-            float cx = (vp.x - 0.5f) * 2f;
-            float cy = (vp.y - 0.5f) * 2f;
-            return new Vector2(Mathf.Clamp(cx, -2f, 2f), Mathf.Clamp(cy, -2f, 2f));
         }
 
         private static Rect GetDisplayViewport(Camera cam)

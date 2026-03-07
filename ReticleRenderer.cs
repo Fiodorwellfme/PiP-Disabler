@@ -9,12 +9,12 @@ namespace ScopeHousingMeshSurgery
     /// CameraEvent.AfterEverything on the main FPS camera.
     ///
     /// ── SCOPE-ANCHORED OVERLAY APPROACH ───────────────────────────────────
-    /// Reticle placement is done entirely in screen space, but anchored to
-    /// the projected position of the scope lens transform every frame.
+    /// Reticle placement uses stable centered clip-space rendering while
+    /// camera rotation is aligned each pre-cull to the scope's own rotation
+    /// source (lens/optic transform).
     ///
-    /// This keeps the reticle aligned to the scope body (not weapon/camera
-    /// center assumptions) while still using a stable post-process-safe
-    /// CommandBuffer path.
+    /// This keeps alignment tied to the scope rather than weapon transform
+    /// assumptions, while retaining a post-process-safe CommandBuffer path.
     /// </summary>
     internal static class ReticleRenderer
     {
@@ -29,7 +29,7 @@ namespace ScopeHousingMeshSurgery
 
         // Cached transforms
         private static Transform _opticTransform;   // OpticSight   — for forward (downrange)
-        private static Transform _lensTransform;    // Lens anchor for screen-space alignment
+        private static Transform _lensTransform;    // Preferred scope rotation source
 
         // CommandBuffer state
         private static CommandBuffer _cmdBuffer;
@@ -132,11 +132,11 @@ namespace ScopeHousingMeshSurgery
                 AttachToCamera();
 
                 _settled = true;
-                _alignmentActive = false;
+                _alignmentActive = true;
 
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
                     $"[Reticle] Showing: base={_baseScale:F4} mag={magnification:F1}x " +
-                    $"(scope-anchored screen-space rendering)");
+                    $"(scope-rotation aligned centered rendering)");
             }
             catch (System.Exception e)
             {
@@ -261,15 +261,15 @@ namespace ScopeHousingMeshSurgery
             // (PWA, animation, IK) and OpticComponentUpdater.LateUpdate()
             // have updated transforms, but before Unity starts rendering.
             //
-            // We use the optic camera's transform cached by PiPDisabler.
-            // OpticComponentUpdater.LateUpdate() syncs this transform to the
-            // scope's look direction every frame.  We let LateUpdate run
-            // (v4.5.2 fix), so the transform is always up to date even though
-            // the optic camera itself can't render.
+            // Rotation is sourced from scope geometry first (lens/optic),
+            // with optic updater transform only as fallback.
             if (_alignmentActive)
             {
-                // Intentionally left disabled for scope-anchored overlays.
-                // We keep the branch for compatibility with prior state flags.
+                // Source rotation from scope geometry first (lens/optic), not
+                // the optic updater/weapon chain, to keep alignment tied to scope.
+                Transform scopeSource = _lensTransform ?? _opticTransform ?? PiPDisabler.OpticCameraTransform;
+                if (scopeSource != null)
+                    cam.transform.rotation = scopeSource.rotation;
             }
 
             RebuildMatrix(cam);
@@ -279,7 +279,7 @@ namespace ScopeHousingMeshSurgery
         // ── Centered quad matrix ─────────────────────────────────────────────
 
         /// <summary>
-        /// Place the reticle quad at the projected scope lens center in clip-space.
+        /// Place the reticle quad at clip-space center; camera rotation is scope-aligned.
         ///
         /// Size is computed directly in screen-space from FOV and magnification.
         /// </summary>
@@ -292,8 +292,7 @@ namespace ScopeHousingMeshSurgery
             // reference eye-relief distance, then project to NDC by camera FOV.
             float ndcSize = ScopeOverlaySizing.ComputeNdcDiameter(cam, _baseScale, _lastMag);
 
-            Vector2 clipCenter = GetClipCenterFromTransform(cam, _lensTransform ?? _opticTransform);
-            Vector3 pos = new Vector3(clipCenter.x, clipCenter.y, 0.5f);
+            Vector3 pos = new Vector3(0f, 0f, 0.5f);
             float aspect = GetDisplayAspect(cam);
             Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
             _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
@@ -340,18 +339,6 @@ namespace ScopeHousingMeshSurgery
         {
             Rect r = GetDisplayViewport(cam);
             return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
-        }
-
-        private static Vector2 GetClipCenterFromTransform(Camera cam, Transform anchor)
-        {
-            if (cam == null || anchor == null) return Vector2.zero;
-
-            Vector3 vp = cam.WorldToViewportPoint(anchor.position);
-            if (vp.z <= 0.001f) return Vector2.zero;
-
-            float cx = (vp.x - 0.5f) * 2f;
-            float cy = (vp.y - 0.5f) * 2f;
-            return new Vector2(Mathf.Clamp(cx, -2f, 2f), Mathf.Clamp(cy, -2f, 2f));
         }
 
         private static void ApplyHorizontalFlip()
