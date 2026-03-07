@@ -1,3 +1,7 @@
+FPS Comparison:  
+
+!https://github.com/Fiodorwellfme/PiP-Disabler/blob/main/images/Screenshot%202026-03-07%20173054.png
+
 Roadmap:
 
 -~~Better cache naming~~ removed cache altogether  
