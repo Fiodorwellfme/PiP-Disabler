@@ -11,44 +11,15 @@ namespace ScopeHousingMeshSurgery
     /// On-demand diagnostics dump, triggered by DiagnosticsKey.
     ///
     /// Output covers:
-    ///   - Active scope hierarchy (name, root, mode, path to blacklist entry)
+    ///   - Active scope hierarchy (name, root, mode)
     ///   - Current magnification and ScopeZoomHandler data
     ///   - All active cut-plane config values
     ///   - BackLens position and resolved plane normal
     ///   - Target mesh names that WOULD be cut
-    ///   - Whether the scope is currently blacklisted
     ///
-    /// The "Add to blacklist" line at the bottom can be copy-pasted directly
-    /// into the ScopeBlacklist config entry.
-    ///
-    /// BLACKLIST LOGIC:
-    ///   ScopeBlacklist is a comma-separated list of scope root names.
-    ///   When the active scope root name contains any blacklist entry (case-insensitive),
-    ///   mesh surgery AND the reticle overlay are both suppressed for that scope.
-    ///   Use this for scopes where the mesh cut doesn't look right.
     /// </summary>
     internal static class ScopeDiagnostics
     {
-        /// <summary>
-        /// Returns true if the given scope root name matches any blacklist entry.
-        /// Called from ScopeLifecycle.DoScopeEnter().
-        /// </summary>
-        public static bool IsBlacklisted(string scopeRootName)
-        {
-            if (string.IsNullOrWhiteSpace(scopeRootName)) return false;
-            string csv = ScopeHousingMeshSurgeryPlugin.ScopeBlacklist.Value;
-            if (string.IsNullOrWhiteSpace(csv)) return false;
-
-            string lower = scopeRootName.ToLowerInvariant();
-            foreach (var entry in csv.Split(','))
-            {
-                string e = entry.Trim().ToLowerInvariant();
-                if (e.Length > 0 && lower.Contains(e))
-                    return true;
-            }
-            return false;
-        }
-
         /// <summary>
         /// Dump full diagnostics for the currently active optic.
         /// Logs to BepInEx LogInfo — visible in the console and BepInEx log file.
@@ -121,7 +92,6 @@ namespace ScopeHousingMeshSurgery
             var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
             string rootName = scopeRoot != null ? scopeRoot.name : "(NOT FOUND)";
             sb.AppendLine($"[Diagnostics] Scope root       : {rootName}");
-            sb.AppendLine($"[Diagnostics] Blacklisted      : {(IsBlacklisted(rootName) ? "YES (mesh surgery + reticle skipped)" : "no")}");
 
             // ── Magnification ─────────────────────────────────────────────────
             float mag = 1f;
@@ -157,7 +127,6 @@ namespace ScopeHousingMeshSurgery
             sb.AppendLine($"[Diagnostics]   CutLength        : {ScopeHousingMeshSurgeryPlugin.CutLength.Value:F4}");
             sb.AppendLine($"[Diagnostics]   NearPreserveDepth: {ScopeHousingMeshSurgeryPlugin.NearPreserveDepth.Value:F4}");
             sb.AppendLine($"[Diagnostics]   CutRadius        : {ScopeHousingMeshSurgeryPlugin.CutRadius.Value:F4}");
-            sb.AppendLine($"[Diagnostics]   RemoveCameraSide : {ScopeHousingMeshSurgeryPlugin.RemoveCameraSide.Value}");
 
             // ── Plane resolution ──────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Plane Resolution ---");
@@ -209,7 +178,7 @@ namespace ScopeHousingMeshSurgery
                         $"verts={mf.sharedMesh?.vertexCount}  path={relPath}");
                 }
                 if (targets.Count == 0)
-                    sb.AppendLine($"[Diagnostics]   (none — check ExcludeNameContainsCsv or CutRadius)");
+                    sb.AppendLine($"[Diagnostics]   (none — check CutRadius)");
             }
             else
             {
@@ -220,18 +189,6 @@ namespace ScopeHousingMeshSurgery
             sb.AppendLine("[Diagnostics] --- Reticle ---");
             sb.AppendLine($"[Diagnostics]   ShowReticle      : {ScopeHousingMeshSurgeryPlugin.ShowReticle.Value}");
             sb.AppendLine($"[Diagnostics]   ReticleBaseSize  : {ScopeHousingMeshSurgeryPlugin.ReticleBaseSize.Value:F4}");
-            sb.AppendLine($"[Diagnostics]   FlipHorizontal   : {ScopeHousingMeshSurgeryPlugin.ReticleFlipHorizontal.Value}");
-            sb.AppendLine($"[Diagnostics]   SmoothingFrames  : {ScopeHousingMeshSurgeryPlugin.ReticleSmoothingFrames.Value}");
-            sb.AppendLine($"[Diagnostics]   JitterThreshold  : {ScopeHousingMeshSurgeryPlugin.ReticleJitterThreshold.Value:F5}");
-
-            // ── Blacklist hint ────────────────────────────────────────────────
-            sb.AppendLine("[Diagnostics] --- Blacklist ---");
-            string current = ScopeHousingMeshSurgeryPlugin.ScopeBlacklist.Value;
-            sb.AppendLine($"[Diagnostics]   Current blacklist : {(string.IsNullOrWhiteSpace(current) ? "(empty)" : current)}");
-            sb.AppendLine($"[Diagnostics]   Add this scope    : {rootName}");
-            if (!string.IsNullOrWhiteSpace(current))
-                sb.AppendLine($"[Diagnostics]   New value would be: {current},{rootName}");
-
             sb.AppendLine("[Diagnostics] ==========================================");
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(sb.ToString());

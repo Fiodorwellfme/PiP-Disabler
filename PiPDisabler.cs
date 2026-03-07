@@ -196,10 +196,6 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 var os = field.GetValue(updater) as OpticSight;
                 if (os == null) return false;
 
-                bool bypassHighMag = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                    && ZoomController.GetMinFov(os) < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
-                if (bypassHighMag) return true;
-
                 if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value)
                     return false;
 

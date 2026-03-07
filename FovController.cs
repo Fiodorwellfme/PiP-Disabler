@@ -60,10 +60,9 @@ namespace ScopeHousingMeshSurgery
         /// Computes the zoomed main-camera FOV from a fixed baseline of 50°.
         ///
         /// Priority chain:
-        ///   1. Scroll zoom override (user-set via scroll wheel, in magnification units)
-        ///   2. Template zoom from SightComponent (ground truth — matches HUD "xN")
-        ///   3. ScopeCameraData.FieldOfView fallback (mag = 35 / fov)
-        ///   4. Config ScopedFov manual fallback
+        ///   1. Template zoom from SightComponent (ground truth — matches HUD "xN")
+        ///   2. ScopeCameraData.FieldOfView fallback (mag = 35 / fov)
+        ///   3. Config ScopedFov manual fallback
         /// </summary>
         public static float ComputeZoomedFov(float baseFov, ProceduralWeaponAnimation pwa)
         {
@@ -115,15 +114,7 @@ namespace ScopeHousingMeshSurgery
 
         private static float GetEffectiveMagnificationUncached()
         {
-            // 1. Scroll zoom override
-            float scrollMag = ZoomController.GetScrollZoomMagnification();
-            if (scrollMag > 0.1f)
-            {
-                _lastLoggedSource = "SCROLL";
-                return scrollMag;
-            }
-
-            // 2. Template zoom (primary — matches HUD)
+            // 1. Template zoom (primary — matches HUD)
             float templateMag = GetTemplateZoom();
             if (templateMag > 0.1f)
             {
@@ -131,7 +122,7 @@ namespace ScopeHousingMeshSurgery
                 return templateMag;
             }
 
-            // 3. ScopeCameraData FOV fallback
+            // 2. ScopeCameraData FOV fallback
             float fovMag = GetFovBasedMagnification();
             if (fovMag > 0.1f)
             {
@@ -139,7 +130,7 @@ namespace ScopeHousingMeshSurgery
                 return fovMag;
             }
 
-            // 4. Config default
+            // 3. Config default
             _lastLoggedSource = "DEFAULT";
             return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
         }
@@ -259,7 +250,7 @@ namespace ScopeHousingMeshSurgery
 
         /// <summary>
         /// Returns the template min/max zoom for the current scope. Used by ZoomController
-        /// to set scroll zoom bounds in magnification space.
+        /// for magnification bounds.
         /// Returns (minZoom, maxZoom). Returns (0,0) if not available.
         /// </summary>
         public static (float min, float max) GetTemplateZoomRange()

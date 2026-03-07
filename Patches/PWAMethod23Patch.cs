@@ -16,15 +16,9 @@ namespace ScopeHousingMeshSurgery.Patches
     ///   - Aiming non-optic:  SetFov(BaseFov - 15f, 1, false)
     ///   - Aiming optic:      SetFov(35f,           1, false)
     ///
-    /// Two zoom modes:
-    ///
-    /// 1. SHADER ZOOM (preferred): This patch does NOTHING. EFT sets FOV=35 normally.
-    ///    The GrabPass shader on the lens handles all magnification. Weapon stays at
-    ///    EFT's standard ADS size. No FOV fighting.
-    ///
-    /// 2. FOV ZOOM (fallback, no AssetBundle): After EFT calls SetFov(35), we
-    ///    immediately call SetFov with our computed zoom value and the configured
-    ///    FovAnimationDuration for smooth animated transitions.
+    /// This patch applies FOV zoom after EFT's method_23 camera update.
+    /// It computes magnification-driven FOV and applies the configured
+    /// FovAnimationDuration for smooth transitions.
     /// </summary>
     internal sealed class PWAMethod23Patch : ModulePatch
     {
@@ -40,17 +34,13 @@ namespace ScopeHousingMeshSurgery.Patches
                 // Global mod toggle
                 if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
 
-                // Shader zoom mode: don't touch FOV at all. Let EFT's FOV=35 stand.
-                if (ZoomController.ShaderAvailable && ScopeHousingMeshSurgeryPlugin.EnableShaderZoom.Value)
-                    return;
-
-                // FOV zoom fallback: only if enabled and no shader
+                // FOV zoom: only if enabled
                 if (!ScopeHousingMeshSurgeryPlugin.EnableZoom.Value) return;
 
                 // Only apply when actually scoped (prevents FOV changes outside ADS)
                 if (!ScopeLifecycle.IsScoped) return;
 
-                // Auto-bypass mode for high-magnification optics: keep vanilla EFT FOV behavior.
+                // Auto-bypass mode for scoped optics: keep vanilla EFT FOV behavior.
                 if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
 
                 // Only in first person, aiming, not sprinting.

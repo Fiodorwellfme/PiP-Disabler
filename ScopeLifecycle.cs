@@ -307,17 +307,16 @@ namespace ScopeHousingMeshSurgery
                 }
                 ZoomController.EnsureLensVisible();
 
-                // ALWAYS re-kill OTHER lens surfaces even when shader zoom is active.
-                // Pass the ZoomController's managed renderer as exclusion so it stays alive
-                // for the zoom shader, while any other glass/linza surfaces EFT restores
-                // get killed again immediately.
+                // Always re-kill other lens surfaces.
+                // Pass the ZoomController's managed renderer as exclusion while
+                // any other glass/linza surfaces EFT restores get killed again immediately.
                 LensTransparency.EnsureHidden(ZoomController.ActiveLensRenderer);
             }
             else
             {
                 LensTransparency.EnsureHidden();
 
-                // Even without shader zoom, update reticle position/rotation/scale
+                // Update reticle position/rotation/scale
                 if (_activeOptic != null)
                 {
                     float mag = ZoomController.GetMagnification(_activeOptic);
@@ -328,7 +327,7 @@ namespace ScopeHousingMeshSurgery
 
             // PiP stays disabled via Harmony patches — no per-frame action needed.
 
-            // Per-frame weapon scale compensation (tracks animated FOV transitions + scroll zoom)
+            // Per-frame weapon scale compensation (tracks animated FOV transitions)
             Patches.WeaponScalingPatch.UpdateScale();
 
             // Zeroing input polling
@@ -365,10 +364,6 @@ namespace ScopeHousingMeshSurgery
         private static bool ShouldBypassForCurrentOptic(OpticSight os, float minFov)
         {
             if (os == null) return false;
-
-            bool bypassHighMag = ScopeHousingMeshSurgeryPlugin.AutoDisableForHighMagnificationScopes.Value
-                && minFov < ScopeHousingMeshSurgeryPlugin.HighMagnificationFovThreshold.Value;
-            if (bypassHighMag) return true;
 
             if (ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value
                 && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
@@ -512,18 +507,11 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
-            // Check blacklist before doing anything — blacklisted scopes skip surgery + reticle
-            var scopeRootForBlacklist = ScopeHierarchy.FindScopeRoot(os.transform);
-            string rootNameForBlacklist = scopeRootForBlacklist != null ? scopeRootForBlacklist.name : "";
-            bool isBlacklisted = ScopeDiagnostics.IsBlacklisted(rootNameForBlacklist);
-
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                $"[ScopeLifecycle] ENTER: '{os.name}' root='{rootNameForBlacklist}' " +
-                $"blacklisted={isBlacklisted} frame={Time.frameCount}");
+                $"[ScopeLifecycle] ENTER: '{os.name}' frame={Time.frameCount}");
 
             // 1. Extract reticle texture BEFORE destroying lens mesh
-            if (!isBlacklisted)
-                ReticleRenderer.ExtractReticle(os);
+            ReticleRenderer.ExtractReticle(os);
 
             // 2. Hide ALL lens surfaces in the scope hierarchy (once)
             LensTransparency.HideAllLensSurfaces(os);
@@ -532,24 +520,17 @@ namespace ScopeHousingMeshSurgery
             float mag = ZoomController.GetMagnification(os);
 
             // 4. Show reticle overlay at the lens position, scaled for magnification
-            if (!isBlacklisted)
-                ReticleRenderer.Show(os, mag);
+            ReticleRenderer.Show(os, mag);
 
-            // 4b. Show lens vignette + scope shadow effects (always shown, even for blacklisted scopes)
+            // 4b. Show lens vignette + scope shadow effects
             Transform lensT = os.LensRenderer != null ? os.LensRenderer.transform : os.transform;
             float baseSize = ScopeHousingMeshSurgeryPlugin.ReticleBaseSize.Value;
             if (baseSize < 0.001f) baseSize = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value * 2f;
             if (baseSize < 0.001f) baseSize = 0.030f;
             ScopeEffectsRenderer.Show(lensT, baseSize, mag);
 
-            // 5. Shader zoom (if available)
-            if (ZoomController.ShaderAvailable && ScopeHousingMeshSurgeryPlugin.EnableShaderZoom.Value)
-            {
-                ZoomController.Apply(os, mag);
-            }
-
-            // 5. Mesh surgery (once — skipped for blacklisted scopes)
-            if (!isBlacklisted && ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
+            // 5. Mesh surgery (once)
+            if (ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
                 MeshSurgeryManager.ApplyForOptic(os);
 
             // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
@@ -583,7 +564,7 @@ namespace ScopeHousingMeshSurgery
             _isScoped = false;
             _activeOptic = null;
 
-            // If this scope was bypassed (high magnification), skip mod cleanup paths.
+            // If this scope was bypassed, skip mod cleanup paths.
             if (_modBypassedForCurrentScope)
             {
                 _modBypassedForCurrentScope = false;
@@ -599,7 +580,7 @@ namespace ScopeHousingMeshSurgery
             // 2. Restore zoom controller
             ZoomController.Restore();
 
-            // 2b. Always reset scroll zoom (Restore only runs for shader zoom)
+            // 2b. Reset cached zoom state
             ZoomController.ResetScrollZoom();
 
             // 3. Hide reticle overlay + scope effects
@@ -653,9 +634,6 @@ namespace ScopeHousingMeshSurgery
             {
                 if (_modBypassedForCurrentScope) return;
                 if (!ScopeHousingMeshSurgeryPlugin.EnableZoom.Value) return;
-                if (ZoomController.ShaderAvailable && ScopeHousingMeshSurgeryPlugin.EnableShaderZoom.Value)
-                    return; // Shader zoom mode doesn't need FOV changes
-
                 if (!CameraClass.Exist) return;
 
                 var player = GetLocalPlayer();
