@@ -88,11 +88,20 @@ namespace ScopeHousingMeshSurgery
             // === Apply LOD bias ===
             // Increase LOD bias proportionally to magnification.
             // At 4x zoom, objects at distance appear 4x larger → use 4x finer LODs.
-            float newLodBias = _savedLodBias * Mathf.Max(magnification, 1f);
+            float manualLodBias = ScopeHousingMeshSurgeryPlugin.ManualLodBias != null
+                ? ScopeHousingMeshSurgeryPlugin.ManualLodBias.Value
+                : 0f;
+            float newLodBias = manualLodBias > 0f
+                ? manualLodBias
+                : _savedLodBias * Mathf.Max(magnification, 1f);
             QualitySettings.lodBias = newLodBias;
 
-            // Force highest LOD level during scope view
-            QualitySettings.maximumLODLevel = 0;
+            // Force highest LOD by default unless overridden by manual max LOD level.
+            int manualMaxLod = ScopeHousingMeshSurgeryPlugin.ManualMaximumLodLevel != null
+                ? ScopeHousingMeshSurgeryPlugin.ManualMaximumLodLevel.Value
+                : -1;
+            int appliedMaxLod = manualMaxLod >= 0 ? manualMaxLod : 0;
+            QualitySettings.maximumLODLevel = appliedMaxLod;
 
             // === Apply far clip plane ===
             if (scopeFarClip > cam.farClipPlane)
@@ -102,18 +111,25 @@ namespace ScopeHousingMeshSurgery
             // Increase cull distances proportionally so objects stay visible when zoomed
             if (_savedCullDistances != null)
             {
+                float manualCullMultiplier = ScopeHousingMeshSurgeryPlugin.ManualCullingMultiplier != null
+                    ? ScopeHousingMeshSurgeryPlugin.ManualCullingMultiplier.Value
+                    : 0f;
+                float cullingMultiplier = manualCullMultiplier > 0f
+                    ? manualCullMultiplier
+                    : Mathf.Max(magnification, 1f);
+
                 float[] newCull = (float[])_savedCullDistances.Clone();
                 for (int i = 0; i < newCull.Length; i++)
                 {
                     if (newCull[i] > 0f)
-                        newCull[i] *= Mathf.Max(magnification, 1f);
+                        newCull[i] *= cullingMultiplier;
                 }
                 cam.layerCullDistances = newCull;
             }
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[CameraSettings] Applied: lodBias {_savedLodBias:F2}→{newLodBias:F2} " +
-                $"(mag={magnification:F1}x) farClip={cam.farClipPlane:F0} maxLOD=0");
+                $"(mag={magnification:F1}x) farClip={cam.farClipPlane:F0} maxLOD={appliedMaxLod}");
         }
 
         /// <summary>
