@@ -306,14 +306,7 @@ namespace ScopeHousingMeshSurgery
             // Clip-space centered quad: independent of world/lens transforms.
             // Convert physical reticle size into an angular screen size using a
             // reference eye-relief distance, then project to NDC by camera FOV.
-            float mag = Mathf.Max(1f, _lastMag);
-            float fovRad = (cam != null ? cam.fieldOfView : 35f) * Mathf.Deg2Rad;
-            float tanHalfFov = Mathf.Max(0.01f, Mathf.Tan(fovRad * 0.5f));
-            const float referenceLensDistance = 0.075f;
-
-            float angularSize = (_baseScale / mag) / referenceLensDistance;
-            float ndcSize = angularSize / tanHalfFov;
-            ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
+            float ndcSize = ScopeOverlaySizing.ComputeNdcDiameter(cam, _baseScale, _lastMag);
 
             Vector3 pos = new Vector3(0f, 0f, 0.5f);
             float aspect = GetDisplayAspect(cam);

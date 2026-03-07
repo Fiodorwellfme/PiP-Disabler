@@ -34,6 +34,8 @@ namespace ScopeHousingMeshSurgery
         private static float      _lastVigAspect    = -1f;
         private static Matrix4x4  _vigMatrix = Matrix4x4.identity;
         private static bool       _vigActive;
+        private static float      _baseSize = 0.030f;
+        private static float      _lastMag = 1f;
 
         // ── Shadow ──────────────────────────────────────────────────────────
         private static Mesh       _shadowMesh;
@@ -60,8 +62,8 @@ namespace ScopeHousingMeshSurgery
         public static void Show(Transform lensTransform, float baseSize, float magnification)
         {
             _ = lensTransform;
-            _ = baseSize;
-            _ = magnification;
+            _baseSize = Mathf.Max(0.001f, baseSize);
+            _lastMag = Mathf.Max(1f, magnification);
 
             if (ScopeHousingMeshSurgeryPlugin.VignetteEnabled.Value)
             {
@@ -86,8 +88,10 @@ namespace ScopeHousingMeshSurgery
         /// <summary>Per-frame update — call from ScopeLifecycle.Tick().</summary>
         public static void UpdateTransform(float baseSize, float magnification)
         {
-            _ = baseSize;
-            _ = magnification;
+            if (baseSize > 0f)
+                _baseSize = Mathf.Max(0.001f, baseSize);
+            if (magnification > 0f)
+                _lastMag = Mathf.Max(1f, magnification);
 
             // Refresh textures if config changed
             if (_vigActive)  RefreshVignetteTexture();
@@ -189,8 +193,11 @@ namespace ScopeHousingMeshSurgery
             if (cam == null) return;
 
             // Clip-space centered overlay, independent of world/lens transforms.
-            float screenScale = GetScreenSpaceScale(cam);
-            float ndcScale = Mathf.Clamp(3.2f * screenScale, 0.8f, 6f);
+            // Keep vignette aperture matched to the same projected aperture size
+            // used by the reticle so both always track scope size together.
+            float edgeR = Mathf.Max(0.05f, ScopeHousingMeshSurgeryPlugin.VignetteSizeMult.Value);
+            float ndcDiameter = ScopeOverlaySizing.ComputeNdcDiameter(cam, _baseSize, _lastMag);
+            float ndcScale = Mathf.Clamp(ndcDiameter / edgeR, 0.1f, 6f);
 
             _vigMatrix = Matrix4x4.TRS(
                 new Vector3(0f, 0f, 0.6f),

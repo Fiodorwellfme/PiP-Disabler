@@ -303,7 +303,7 @@ namespace ScopeHousingMeshSurgery
                     ZoomController.SetZoom(mag);
                     // Update reticle + effects position (smoothed), rotation, and scale each frame
                     ReticleRenderer.UpdateTransform(mag);
-                    ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
+                    ScopeEffectsRenderer.UpdateTransform(baseSize: GetReticleBaseSize(), magnification: mag);
                 }
                 ZoomController.EnsureLensVisible();
 
@@ -322,7 +322,7 @@ namespace ScopeHousingMeshSurgery
                 {
                     float mag = ZoomController.GetMagnification(_activeOptic);
                     ReticleRenderer.UpdateTransform(mag);
-                    ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
+                    ScopeEffectsRenderer.UpdateTransform(baseSize: GetReticleBaseSize(), magnification: mag);
                 }
             }
 
@@ -537,9 +537,7 @@ namespace ScopeHousingMeshSurgery
 
             // 4b. Show lens vignette + scope shadow effects (always shown, even for blacklisted scopes)
             Transform lensT = os.LensRenderer != null ? os.LensRenderer.transform : os.transform;
-            float baseSize = ScopeHousingMeshSurgeryPlugin.ReticleBaseSize.Value;
-            if (baseSize < 0.001f) baseSize = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value * 2f;
-            if (baseSize < 0.001f) baseSize = 0.030f;
+            float baseSize = GetReticleBaseSize();
             ScopeEffectsRenderer.Show(lensT, baseSize, mag);
 
             // 5. Shader zoom (if available)
@@ -570,6 +568,14 @@ namespace ScopeHousingMeshSurgery
 
             // 10. Read initial zeroing distance
             ZeroingController.ReadCurrentZeroing();
+        }
+
+        private static float GetReticleBaseSize()
+        {
+            float baseSize = ScopeHousingMeshSurgeryPlugin.ReticleBaseSize.Value;
+            if (baseSize < 0.001f) baseSize = ScopeHousingMeshSurgeryPlugin.CylinderRadius.Value * 2f;
+            if (baseSize < 0.001f) baseSize = 0.030f;
+            return baseSize;
         }
 
         private static void DoScopeExit()
