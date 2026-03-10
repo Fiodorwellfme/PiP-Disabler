@@ -70,6 +70,30 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
+        /// Returns true if the given optic matches the AutoBypassNameContains pattern.
+        /// Callable from PiPDisabler patches which have a concrete OpticSight reference.
+        /// </summary>
+        internal static bool IsNameBypassed(OpticSight os)
+        {
+            return ScopeNameMatchesBypassPattern(os);
+        }
+
+        /// <summary>
+        /// Returns true if the most recently enabled OpticSight (as seen by the
+        /// OnEnable patch — set before CheckAndUpdate / PWA check) matches
+        /// AutoBypassNameContains and is still enabled in the scene.
+        /// Used by PiPDisabler.ShouldAllowVanillaPiP() which has no concrete
+        /// OpticSight but must decide per-frame whether to restore vanilla PiP.
+        /// </summary>
+        internal static bool IsLastOpticNameBypassed()
+        {
+            var os = _lastEnabledOptic;
+            if (os == null) return false;
+            try { if (!os.enabled) return false; } catch { return false; }
+            return ScopeNameMatchesBypassPattern(os);
+        }
+
+        /// <summary>
         /// One-time reflection setup. Call from plugin Awake.
         /// </summary>
         public static void Init()
