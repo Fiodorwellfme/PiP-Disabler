@@ -80,6 +80,11 @@ namespace ScopeHousingMeshSurgery
         // Camera alignment state
         private static bool _alignmentActive;
 
+        // Reticle visibility hysteresis — hides the reticle when most of it is
+        // covered by the housing stencil mask (heavy sway) and only shows it
+        // again when a configurable fraction is visible.
+        private static bool _reticleHiddenByCoverage;
+
         // ── Public API ───────────────────────────────────────────────────────
 
         /// <summary>
@@ -199,6 +204,7 @@ namespace ScopeHousingMeshSurgery
         {
             _alignmentActive = false;
             _settled = false;
+            _reticleHiddenByCoverage = false;
             DetachFromCamera();
         }
 
@@ -206,13 +212,14 @@ namespace ScopeHousingMeshSurgery
         {
             Hide();
             _housingRenderers.Clear();
-            _debugFrameCount   = 0;
-            _savedMarkTex      = null;
-            _savedMaskTex      = null;
-            _opticTransform    = null;
-            _lastMag           = 1f;
-            _baseScale         = 0f;
-            _settled           = false;
+            _debugFrameCount           = 0;
+            _savedMarkTex              = null;
+            _savedMaskTex              = null;
+            _opticTransform            = null;
+            _lastMag                   = 1f;
+            _baseScale                 = 0f;
+            _settled                   = false;
+            _reticleHiddenByCoverage   = false;
         }
 
         /// <summary>
@@ -329,6 +336,32 @@ namespace ScopeHousingMeshSurgery
                 }
             }
 
+            // ── Reticle coverage hysteresis ─────────────────────────────────
+            // Estimate what fraction of the reticle is visible through the scope
+            // aperture and apply configurable hide/show thresholds to prevent
+            // the reticle from appearing outside the scope during heavy sway.
+            float hideThreshold = ScopeHousingMeshSurgeryPlugin.GetReticleHideThreshold();
+            if (hideThreshold > 0f)
+            {
+                float visibility = EstimateVisibility(cam);
+                float showThreshold = ScopeHousingMeshSurgeryPlugin.GetReticleShowThreshold();
+
+                if (_reticleHiddenByCoverage)
+                {
+                    if (visibility >= showThreshold)
+                        _reticleHiddenByCoverage = false;
+                }
+                else
+                {
+                    if (visibility <= (1f - hideThreshold))
+                        _reticleHiddenByCoverage = true;
+                }
+            }
+            else
+            {
+                _reticleHiddenByCoverage = false;
+            }
+
             RebuildMatrix(cam);
             RebuildCommandBuffer(cam);
         }
@@ -430,8 +463,12 @@ namespace ScopeHousingMeshSurgery
                 }
 
                 // ── Step 3: draw reticle with stencil test (clip-space) ─────────────
-                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                // Skip the reticle draw when coverage hysteresis has hidden it.
+                if (!_reticleHiddenByCoverage)
+                {
+                    _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                    _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                }
 
                 // ── Step 4: optional debug overlay — red tint where housing masked ───
                 // Renders anywhere stencil == 1, i.e. every pixel the housing suppressed.
@@ -442,7 +479,7 @@ namespace ScopeHousingMeshSurgery
                     _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
                 }
             }
-            else
+            else if (!_reticleHiddenByCoverage)
             {
                 // Original path — no stencil.
                 _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
@@ -450,6 +487,51 @@ namespace ScopeHousingMeshSurgery
             }
 
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
+        }
+
+        // ── Reticle visibility estimation ────────────────────────────────────
+
+        /// <summary>
+        /// Estimates what fraction of the reticle is visible through the scope
+        /// aperture (not blocked by housing).  Returns 0..1 where 1 = fully
+        /// visible and 0 = fully occluded.
+        ///
+        /// The camera has already been rotated to look along the scope axis, so
+        /// the scope bore projects to screen centre.  Heavy sway shifts the
+        /// physical housing relative to the camera position, causing the aperture
+        /// circle to drift away from centre.  We project the optic position to
+        /// viewport space and compare the offset with the aperture's viewport
+        /// radius to estimate the visible fraction.
+        /// </summary>
+        private static float EstimateVisibility(Camera cam)
+        {
+            if (_opticTransform == null || cam == null) return 1f;
+
+            Vector3 viewportPos = cam.WorldToViewportPoint(_opticTransform.position);
+
+            // Behind camera — treat as fully occluded
+            if (viewportPos.z <= 0f) return 0f;
+
+            // Offset from viewport centre (0.5, 0.5)
+            float dx = viewportPos.x - 0.5f;
+            float dy = viewportPos.y - 0.5f;
+            float offset = Mathf.Sqrt(dx * dx + dy * dy);
+
+            // Compute the aperture radius in viewport space by projecting a
+            // point on the aperture edge and measuring the screen distance.
+            float cylinderRadius = ScopeHousingMeshSurgeryPlugin.GetCylinderRadius();
+            Vector3 edgeWorld = _opticTransform.position + _opticTransform.right * cylinderRadius;
+            Vector3 edgeViewport = cam.WorldToViewportPoint(edgeWorld);
+            float apertureViewportRadius = Vector2.Distance(
+                new Vector2(viewportPos.x, viewportPos.y),
+                new Vector2(edgeViewport.x, edgeViewport.y));
+
+            if (apertureViewportRadius < 0.0001f) return 1f;
+
+            // Linear estimate: visibility = 1 when aperture is centred,
+            // drops to 0 when the offset reaches twice the aperture radius
+            // (at which point the aperture circle no longer overlaps centre).
+            return Mathf.Clamp01(1f - offset / (apertureViewportRadius * 2f));
         }
 
         // ── Private helpers ─────────────────────────────────────────────────

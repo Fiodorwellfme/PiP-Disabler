@@ -35,6 +35,8 @@ namespace ScopeHousingMeshSurgery
         public bool ReticleOverlayCamera;
         public bool RestoreOnUnscope;
         public bool ExpandSearchToWeaponRoot;
+        public float ReticleHideThreshold = -1f;
+        public float ReticleShowThreshold = -1f;
     }
 
     [Serializable]
@@ -97,6 +99,10 @@ namespace ScopeHousingMeshSurgery
                 ScopeHousingMeshSurgeryPlugin.CustomReticleOverlayCamera.Value = entry.ReticleOverlayCamera;
                 ScopeHousingMeshSurgeryPlugin.CustomRestoreOnUnscope.Value = entry.RestoreOnUnscope;
                 ScopeHousingMeshSurgeryPlugin.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
+                if (entry.ReticleHideThreshold >= 0f)
+                    ScopeHousingMeshSurgeryPlugin.CustomReticleHideThreshold.Value = entry.ReticleHideThreshold;
+                if (entry.ReticleShowThreshold >= 0f)
+                    ScopeHousingMeshSurgeryPlugin.CustomReticleShowThreshold.Value = entry.ReticleShowThreshold;
                 ScopeHousingMeshSurgeryPlugin.LogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
             }
             catch (Exception ex)
@@ -180,6 +186,8 @@ namespace ScopeHousingMeshSurgery
             target.ReticleOverlayCamera = ScopeHousingMeshSurgeryPlugin.CustomReticleOverlayCamera.Value;
             target.RestoreOnUnscope = ScopeHousingMeshSurgeryPlugin.CustomRestoreOnUnscope.Value;
             target.ExpandSearchToWeaponRoot = ScopeHousingMeshSurgeryPlugin.CustomExpandSearchToWeaponRoot.Value;
+            target.ReticleHideThreshold = ScopeHousingMeshSurgeryPlugin.CustomReticleHideThreshold.Value;
+            target.ReticleShowThreshold = ScopeHousingMeshSurgeryPlugin.CustomReticleShowThreshold.Value;
 
             WriteToDisk();
             return true;
