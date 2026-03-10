@@ -797,8 +797,9 @@ namespace ScopeHousingMeshSurgery
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
 
-            // 4. Restore lens
-            LensTransparency.RestoreAll();
+            // 4. Restore lens geometry but force an opaque black lens material while
+            // unscoped to avoid reticle/glass flash on ADS exit.
+            LensTransparency.RestoreAll(makeLensBlack: true);
 
             // 5. Restore camera LOD/culling settings
             CameraSettingsManager.Restore();

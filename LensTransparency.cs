@@ -165,7 +165,7 @@ namespace ScopeHousingMeshSurgery
         /// <summary>
         /// Restore all. Called on scope exit.
         /// </summary>
-        public static void RestoreAll()
+        public static void RestoreAll(bool makeLensBlack = false)
         {
             if (_hidden.Count == 0) return;
 
@@ -197,15 +197,18 @@ namespace ScopeHousingMeshSurgery
                             catch { }
                         }
 
+                        if (makeLensBlack)
+                            ForceMaterialBlackOpaque(e.Renderer);
+
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' forceOff={e.WasForceOff}");
+                            $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' forceOff={e.WasForceOff} black={makeLensBlack}");
                     }
                 }
                 catch { }
             }
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                $"[LensTransparency] Restored {_hidden.Count} lens meshes");
+                $"[LensTransparency] Restored {_hidden.Count} lens meshes (blackOnRestore={makeLensBlack})");
             _hidden.Clear();
         }
 
@@ -296,6 +299,43 @@ namespace ScopeHousingMeshSurgery
 
                     // Force transparent render queue so it can't occlude anything
                     m.renderQueue = 4000;
+                }
+                if (changed)
+                    r.materials = mats;
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Forces lens materials to an opaque black look after scope exit.
+        /// This avoids the one-frame reticle/glass flash during unscope transitions.
+        /// </summary>
+        private static void ForceMaterialBlackOpaque(Renderer r)
+        {
+            if (r == null) return;
+            try
+            {
+                var mats = r.materials; // instance per renderer
+                bool changed = false;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    var m = mats[i];
+                    if (m == null) continue;
+
+                    if (m.HasProperty(_propColor))
+                    {
+                        m.SetColor(_propColor, Color.black);
+                        changed = true;
+                    }
+
+                    if (m.HasProperty(_propSwitchToSight))
+                    {
+                        m.SetFloat(_propSwitchToSight, 0f);
+                        changed = true;
+                    }
+
+                    // Ensure opaque queue so the lens reads as solid black.
+                    m.renderQueue = 2000;
                 }
                 if (changed)
                     r.materials = mats;
