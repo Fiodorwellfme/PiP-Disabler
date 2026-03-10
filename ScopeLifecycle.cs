@@ -540,19 +540,32 @@ namespace ScopeHousingMeshSurgery
             string templateName = FovController.GetOpticTemplateName(os);
             string templateId = FovController.GetOpticTemplateId(os);
             string opticName = os.name;
+            string hierarchyMatch = FindAgsNameInHierarchy(os.transform);
 
             bool isAgs = ContainsCI(scopeKey, "ags")
                 || ContainsCI(templateName, "ags")
                 || ContainsCI(templateId, "ags")
-                || ContainsCI(opticName, "ags");
+                || ContainsCI(opticName, "ags")
+                || !string.IsNullOrEmpty(hierarchyMatch);
 
             if (isAgs)
             {
                 ScopeHousingMeshSurgeryPlugin.LogInfo(
-                    $"[ScopeLifecycle] AGS auto-bypass match: key='{scopeKey}' template='{templateName}' id='{templateId}' optic='{opticName}'");
+                    $"[ScopeLifecycle] AGS auto-bypass match: key='{scopeKey}' template='{templateName}' id='{templateId}' optic='{opticName}' hierarchy='{hierarchyMatch}'");
             }
 
             return isAgs;
+        }
+
+        private static string FindAgsNameInHierarchy(Transform start)
+        {
+            for (var t = start; t != null; t = t.parent)
+            {
+                if (ContainsCI(t.name, "ags"))
+                    return t.name;
+            }
+
+            return null;
         }
 
         private static void RefreshScopeWhitelistCache()
