@@ -54,6 +54,11 @@ namespace ScopeHousingMeshSurgery
         private static readonly Dictionary<int, Material[]> _trulyOriginalMaterials =
             new Dictionary<int, Material[]>();
 
+        // Renderers that currently have the black material applied (scope not in use).
+        // Tracked so we can restore them before ReticleRenderer reads textures on scope entry,
+        // and so we can fully clean up when the mod is disabled.
+        private static readonly HashSet<Renderer> _blackenedRenderers = new HashSet<Renderer>();
+
         // Solid black unlit material applied to lens surfaces when unscoped.
         private static Material _blackLensMaterial;
 
@@ -82,7 +87,7 @@ namespace ScopeHousingMeshSurgery
 
         /// <summary>
         /// Replace all material slots on <paramref name="r"/> with a solid black unlit material.
-        /// Uses sharedMaterials assignment so no instance leak occurs.
+        /// Records the renderer in _blackenedRenderers so it can be un-blackened later.
         /// </summary>
         private static void ApplyBlackMaterial(Renderer r)
         {
@@ -99,8 +104,47 @@ namespace ScopeHousingMeshSurgery
                     blackArray[i] = blackMat;
 
                 r.sharedMaterials = blackArray;
+                _blackenedRenderers.Add(r);
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Restores the original sharedMaterials on any lens renderers that currently have
+        /// the black material applied.  Call this at scope ENTRY, before
+        /// ReticleRenderer.ExtractReticle(), so the texture read sees the real OpticSight
+        /// material rather than our Unlit/Color placeholder.
+        /// </summary>
+        public static void RestoreBlackLensMaterials()
+        {
+            if (_blackenedRenderers.Count == 0) return;
+            foreach (var r in _blackenedRenderers)
+            {
+                if (r == null) continue;
+                int rid = r.GetInstanceID();
+                Material[] origMats;
+                if (_trulyOriginalMaterials.TryGetValue(rid, out origMats) && origMats != null)
+                {
+                    try { r.sharedMaterials = origMats; }
+                    catch { }
+                }
+            }
+            _blackenedRenderers.Clear();
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                "[LensTransparency] Restored original materials before scope entry");
+        }
+
+        /// <summary>
+        /// Full cleanup: restores original materials and clears all internal caches.
+        /// Call when the mod is disabled or the plugin is destroyed so EFT's native
+        /// PiP rendering can use the lens normally.
+        /// </summary>
+        public static void FullRestoreAll()
+        {
+            RestoreBlackLensMaterials(); // also clears _blackenedRenderers
+            _trulyOriginalMaterials.Clear();
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                "[LensTransparency] FullRestoreAll: caches cleared");
         }
 
         /// <summary>

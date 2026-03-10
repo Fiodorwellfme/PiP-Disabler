@@ -556,6 +556,7 @@ namespace ScopeHousingMeshSurgery
         {
             // Plugin unload or game exit — restore everything
             ScopeLifecycle.ForceExit();
+            LensTransparency.FullRestoreAll();
             PiPDisabler.RestoreAllCameras();
 
             ModEnabled.SettingChanged -= OnModEnabledChanged;
@@ -571,6 +572,7 @@ namespace ScopeHousingMeshSurgery
             if (!ModEnabled.Value)
             {
                 ScopeLifecycle.ForceExit();
+                LensTransparency.FullRestoreAll(); // restore any lingering black lens materials
                 PiPDisabler.RestoreAllCameras();
             }
             else

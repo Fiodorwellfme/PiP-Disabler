@@ -714,10 +714,14 @@ namespace ScopeHousingMeshSurgery
             ScopeHousingMeshSurgeryPlugin.LogInfo(
                 $"[ScopeLifecycle] ENTER: '{os.name}'[{FovController.GetOpticTemplateId(os)}] frame={Time.frameCount}");
 
-            // 1. Extract reticle texture BEFORE destroying lens mesh
+            // 1. Restore any black lens materials so ExtractReticle can read OpticSight textures.
+            //    (RestoreAll on previous scope-exit may have left sharedMaterials as Unlit/Color.)
+            LensTransparency.RestoreBlackLensMaterials();
+
+            // 2. Extract reticle texture BEFORE destroying lens mesh
             ReticleRenderer.ExtractReticle(os);
 
-            // 2. Hide ALL lens surfaces in the scope hierarchy (once)
+            // 3. Hide ALL lens surfaces in the scope hierarchy (once)
             LensTransparency.HideAllLensSurfaces(os);
 
             // 2b. Collect housing renderers for reticle stencil mask (lens surfaces are
