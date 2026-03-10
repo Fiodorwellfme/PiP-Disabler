@@ -197,7 +197,7 @@ namespace ScopeHousingMeshSurgery
             public static string BuildKey(Transform scopeRoot, Transform activeMode, MeshFilter mf, Mesh originalAsset, MeshPlaneCutter.KeepSide keepSide, bool isCylinder)
             {
                 var sb = new StringBuilder(512);
-                sb.Append("v2|");
+                sb.Append("v3|");
                 sb.Append(scopeRoot != null ? scopeRoot.name : "scope").Append('|');
                 sb.Append(activeMode != null ? activeMode.name : "mode").Append('|');
                 sb.Append(GetRelativePath(scopeRoot, mf != null ? mf.transform : null)).Append('|');
@@ -213,7 +213,7 @@ namespace ScopeHousingMeshSurgery
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetCutStartOffset());
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetCutLength());
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetNearPreserveDepth());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane2Position());
+                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane2PositionNormalized(ScopeHousingMeshSurgeryPlugin.GetCutLength()));
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane2Radius());
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane3Position());
                     AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane3Radius());
@@ -396,7 +396,7 @@ namespace ScopeHousingMeshSurgery
                             float startOff = ScopeHousingMeshSurgeryPlugin.GetCutStartOffset();
                             float cutLen = ScopeHousingMeshSurgeryPlugin.GetCutLength();
                             float preserve = ScopeHousingMeshSurgeryPlugin.GetNearPreserveDepth();
-                            float p2 = ScopeHousingMeshSurgeryPlugin.GetPlane2Position();
+                            float p2 = ScopeHousingMeshSurgeryPlugin.GetPlane2PositionNormalized(cutLen);
                             float r2 = ScopeHousingMeshSurgeryPlugin.GetPlane2Radius();
                             float p3 = ScopeHousingMeshSurgeryPlugin.GetPlane3Position();
                             float r3 = ScopeHousingMeshSurgeryPlugin.GetPlane3Radius();
