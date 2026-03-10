@@ -452,6 +452,12 @@ namespace ScopeHousingMeshSurgery
             if (!string.IsNullOrWhiteSpace(modScopeName))
                 return modScopeName;
 
+            // Secondary: derive from resolved scope root/mode hierarchy, which helps when
+            // the OpticSight component is placed outside the mod_scope subtree.
+            string scopeRootName = ResolveNameFromScopeRoot(os.transform);
+            if (!string.IsNullOrWhiteSpace(scopeRootName))
+                return scopeRootName;
+
             // Fallback for runtimes where hierarchy naming is atypical.
             string templateName = FovController.GetOpticTemplateName(os);
             if (!string.IsNullOrWhiteSpace(templateName)
@@ -463,7 +469,8 @@ namespace ScopeHousingMeshSurgery
                 && !string.Equals(templateId, "unknown", StringComparison.OrdinalIgnoreCase))
                 return templateId;
 
-            if (!string.IsNullOrWhiteSpace(os.name))
+            if (!string.IsNullOrWhiteSpace(os.name)
+                && IsUsableScopeNameNode(os.name))
                 return NormalizeScopeKey(os.name);
 
             return null;
@@ -493,17 +500,121 @@ namespace ScopeHousingMeshSurgery
                 return NormalizeScopeKey(t.name);
             }
 
+            // Some optics expose OpticSight directly on mod_scope. In that case there is
+            // no usable parent path between opticTransform and mod_scope, so inspect the
+            // immediate children and pick the best scope-like candidate.
+            string childName = ResolveBestNameFromModScopeChildren(modScope);
+            if (!string.IsNullOrWhiteSpace(childName))
+                return childName;
+
             return null;
+        }
+
+        private static string ResolveNameFromScopeRoot(Transform opticTransform)
+        {
+            if (opticTransform == null) return null;
+
+            Transform scopeRoot = ScopeHierarchy.FindScopeRoot(opticTransform);
+            if (scopeRoot == null) return null;
+
+            Transform activeMode = ScopeHierarchy.FindBestMode(scopeRoot);
+            for (var t = activeMode != null ? activeMode : scopeRoot; t != null; t = t.parent)
+            {
+                if (!IsUsableScopeNameNode(t.name)) continue;
+                return NormalizeScopeKey(t.name);
+            }
+
+            return null;
+        }
+
+        private static string ResolveBestNameFromModScopeChildren(Transform modScope)
+        {
+            if (modScope == null) return null;
+
+            Transform best = null;
+            int bestScore = int.MinValue;
+
+            for (int i = 0; i < modScope.childCount; i++)
+            {
+                var child = modScope.GetChild(i);
+                if (child == null || !IsUsableScopeNameNode(child.name))
+                    continue;
+
+                int score = 0;
+                if (child.gameObject.activeInHierarchy) score += 25;
+                if (HasDirectModeChild(child)) score += 40;
+                if (ScopeHierarchy.FindDeepChild(child, "backLens") != null
+                    || ScopeHierarchy.FindDeepChild(child, "backlens") != null)
+                    score += 25;
+                if (ScopeHierarchy.FindDeepChild(child, "optic_camera") != null)
+                    score += 15;
+                if (LooksLikeMountOrAdapterName(child.name))
+                    score -= 100;
+
+                if (score > bestScore)
+                {
+                    best = child;
+                    bestScore = score;
+                }
+            }
+
+            return best != null ? NormalizeScopeKey(best.name) : null;
+        }
+
+        private static bool HasDirectModeChild(Transform t)
+        {
+            if (t == null) return false;
+            for (int i = 0; i < t.childCount; i++)
+            {
+                var c = t.GetChild(i);
+                if (c == null || string.IsNullOrWhiteSpace(c.name))
+                    continue;
+
+                if (c.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
+                    || c.name.Equals("mode", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         private static bool IsUsableScopeNameNode(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return false;
             if (ContainsCI(name, "mount")) return false;
+            if (LooksLikeMountOrAdapterName(name)) return false;
+            if (LooksLikeWeaponContainerName(name)) return false;
             if (ContainsCI(name, "mod_scope")) return false;
+            if (name.StartsWith("mod_", StringComparison.OrdinalIgnoreCase)) return false;
             if (name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)) return false;
             if (name.Equals("mode", StringComparison.OrdinalIgnoreCase)) return false;
             return true;
+        }
+
+        private static bool LooksLikeMountOrAdapterName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+
+            return ContainsCI(name, "riser")
+                || ContainsCI(name, "adapter")
+                || ContainsCI(name, "bracket")
+                || ContainsCI(name, "rail")
+                || ContainsCI(name, "ring")
+                || ContainsCI(name, "base");
+        }
+
+        private static bool LooksLikeWeaponContainerName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+
+            return ContainsCI(name, "receiver")
+                || ContainsCI(name, "weapon_root")
+                || ContainsCI(name, "weapon_")
+                || ContainsCI(name, "handguard")
+                || ContainsCI(name, "barrel")
+                || name.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith("_LOD1", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith("_LOD2", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith("_LOD3", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string NormalizeScopeKey(string raw)
