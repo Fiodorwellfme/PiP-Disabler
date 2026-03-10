@@ -115,6 +115,8 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> ExpandSearchToWeaponRoot;
         internal static ConfigEntry<bool> DebugShowHousingMask;
         internal static ConfigEntry<bool> StencilIncludeWeaponMeshes;
+        internal static ConfigEntry<float> ReticleHideIfMaskedPercent;
+        internal static ConfigEntry<float> ReticleShowIfVisiblePercent;
 
         // --- Custom Mesh Surgery settings (per-scope authoring) ---
         internal static ConfigEntry<KeyCode> SaveCustomMeshSurgerySettingsKey;
@@ -434,6 +436,16 @@ namespace ScopeHousingMeshSurgery
                 "Include weapon body renderers (found under the 'weapon' transform) in the\n" +
                 "stencil mask alongside the scope housing.  Prevents the reticle from\n" +
                 "bleeding through the weapon mesh at screen centre.");
+            ReticleHideIfMaskedPercent = Config.Bind("3. Global Mesh Surgery settings", "ReticleHideIfMaskedPercent", 80f,
+                new ConfigDescription(
+                    "Hide the reticle completely when this percentage of its area is masked by the housing stencil.\n" +
+                    "Uses hysteresis with ReticleShowIfVisiblePercent to reduce flicker around edges.",
+                    new AcceptableValueRange<float>(0f, 100f)));
+            ReticleShowIfVisiblePercent = Config.Bind("3. Global Mesh Surgery settings", "ReticleShowIfVisiblePercent", 40f,
+                new ConfigDescription(
+                    "After auto-hide triggers, keep reticle hidden until at least this percentage of area is visible again.\n" +
+                    "Set <= (100 - ReticleHideIfMaskedPercent) to avoid chatter.",
+                    new AcceptableValueRange<float>(0f, 100f)));
 
             // --- Custom Mesh Surgery settings ---
             SaveCustomMeshSurgerySettingsKey = Config.Bind("4. Custom Mesh Surgery settings", "SaveCustomMeshSurgerySettingsKey", KeyCode.None,
@@ -561,6 +573,8 @@ namespace ScopeHousingMeshSurgery
         internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : RestoreOnUnscope.Value;
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
+        internal static float GetReticleHideIfMaskedPercent() => Mathf.Clamp(ReticleHideIfMaskedPercent?.Value ?? 80f, 0f, 100f);
+        internal static float GetReticleShowIfVisiblePercent() => Mathf.Clamp(ReticleShowIfVisiblePercent?.Value ?? 40f, 0f, 100f);
 
         private void OnDestroy()
         {

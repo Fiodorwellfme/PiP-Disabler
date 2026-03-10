@@ -79,6 +79,7 @@ namespace ScopeHousingMeshSurgery
 
         // Camera alignment state
         private static bool _alignmentActive;
+        private static bool _reticleSuppressedByMask;
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -199,6 +200,7 @@ namespace ScopeHousingMeshSurgery
         {
             _alignmentActive = false;
             _settled = false;
+            _reticleSuppressedByMask = false;
             DetachFromCamera();
         }
 
@@ -213,6 +215,7 @@ namespace ScopeHousingMeshSurgery
             _lastMag           = 1f;
             _baseScale         = 0f;
             _settled           = false;
+            _reticleSuppressedByMask = false;
         }
 
         /// <summary>
@@ -393,6 +396,11 @@ namespace ScopeHousingMeshSurgery
             bool useStencil = _hasStencilSupport && _housingRenderers.Count > 0
                               && _stencilClearMat != null && _housingStencilMat != null;
 
+            if (useStencil)
+                UpdateReticleSuppressionByMaskCoverage(cam);
+            else
+                _reticleSuppressedByMask = false;
+
             // ── Per-frame debug logging (first N frames after scope enter) ────────────
             if (_debugFrameCount < DebugLogFrames)
             {
@@ -430,8 +438,11 @@ namespace ScopeHousingMeshSurgery
                 }
 
                 // ── Step 3: draw reticle with stencil test (clip-space) ─────────────
-                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                if (!_reticleSuppressedByMask)
+                {
+                    _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                    _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                }
 
                 // ── Step 4: optional debug overlay — red tint where housing masked ───
                 // Renders anywhere stencil == 1, i.e. every pixel the housing suppressed.
@@ -473,6 +484,118 @@ namespace ScopeHousingMeshSurgery
         private static float GetSceneAspect(Camera cam)
         {
             return Mathf.Max(0.01f, cam.pixelWidth / Mathf.Max(1f, cam.pixelHeight));
+        }
+
+        private static void UpdateReticleSuppressionByMaskCoverage(Camera cam)
+        {
+            Rect reticleViewportRect = GetReticleViewportRect();
+            float maskedPercent = EstimateReticleMaskedPercent(cam, reticleViewportRect);
+            float visiblePercent = 100f - maskedPercent;
+
+            float hideIfMaskedPercent = ScopeHousingMeshSurgeryPlugin.GetReticleHideIfMaskedPercent();
+            float showIfVisiblePercent = ScopeHousingMeshSurgeryPlugin.GetReticleShowIfVisiblePercent();
+
+            if (!_reticleSuppressedByMask)
+            {
+                if (maskedPercent >= hideIfMaskedPercent)
+                    _reticleSuppressedByMask = true;
+            }
+            else
+            {
+                if (visiblePercent >= showIfVisiblePercent)
+                    _reticleSuppressedByMask = false;
+            }
+        }
+
+        private static Rect GetReticleViewportRect()
+        {
+            float centerX = 0.5f + _reticleMatrix.m03;
+            float centerY = 0.5f + _reticleMatrix.m13;
+            float width = Mathf.Abs(_reticleMatrix.m00);
+            float height = Mathf.Abs(_reticleMatrix.m11);
+            return Rect.MinMaxRect(centerX - width * 0.5f, centerY - height * 0.5f, centerX + width * 0.5f, centerY + height * 0.5f);
+        }
+
+        private static float EstimateReticleMaskedPercent(Camera cam, Rect reticleViewportRect)
+        {
+            if (reticleViewportRect.width <= 0.0001f || reticleViewportRect.height <= 0.0001f)
+                return 0f;
+
+            const int sampleGrid = 24;
+            int maskedCount = 0;
+            int totalCount = sampleGrid * sampleGrid;
+
+            List<Rect> projectedRects = BuildProjectedHousingRects(cam);
+            if (projectedRects.Count == 0)
+                return 0f;
+
+            for (int y = 0; y < sampleGrid; y++)
+            {
+                float fy = (y + 0.5f) / sampleGrid;
+                float vy = Mathf.Lerp(reticleViewportRect.yMin, reticleViewportRect.yMax, fy);
+
+                for (int x = 0; x < sampleGrid; x++)
+                {
+                    float fx = (x + 0.5f) / sampleGrid;
+                    float vx = Mathf.Lerp(reticleViewportRect.xMin, reticleViewportRect.xMax, fx);
+
+                    if (IsPointInsideAnyRect(vx, vy, projectedRects))
+                        maskedCount++;
+                }
+            }
+
+            return (maskedCount * 100f) / Mathf.Max(1, totalCount);
+        }
+
+        private static bool IsPointInsideAnyRect(float vx, float vy, List<Rect> rects)
+        {
+            for (int i = 0; i < rects.Count; i++)
+            {
+                if (rects[i].Contains(new Vector2(vx, vy)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static List<Rect> BuildProjectedHousingRects(Camera cam)
+        {
+            var rects = new List<Rect>(_housingRenderers.Count);
+            for (int i = 0; i < _housingRenderers.Count; i++)
+            {
+                Renderer r = _housingRenderers[i];
+                if (r == null || !r.gameObject.activeInHierarchy) continue;
+
+                Bounds b = r.bounds;
+                Vector3 c = b.center;
+                Vector3 e = b.extents;
+
+                float minX = float.MaxValue;
+                float minY = float.MaxValue;
+                float maxX = float.MinValue;
+                float maxY = float.MinValue;
+                bool hasFrontPoint = false;
+
+                for (int cx = -1; cx <= 1; cx += 2)
+                for (int cy = -1; cy <= 1; cy += 2)
+                for (int cz = -1; cz <= 1; cz += 2)
+                {
+                    Vector3 p = new Vector3(c.x + e.x * cx, c.y + e.y * cy, c.z + e.z * cz);
+                    Vector3 vp = cam.WorldToViewportPoint(p);
+                    if (vp.z <= 0f) continue;
+
+                    hasFrontPoint = true;
+                    minX = Mathf.Min(minX, vp.x);
+                    minY = Mathf.Min(minY, vp.y);
+                    maxX = Mathf.Max(maxX, vp.x);
+                    maxY = Mathf.Max(maxY, vp.y);
+                }
+
+                if (!hasFrontPoint) continue;
+                rects.Add(Rect.MinMaxRect(minX, minY, maxX, maxY));
+            }
+
+            return rects;
         }
 
         private static void ApplyHorizontalFlip()
