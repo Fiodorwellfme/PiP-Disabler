@@ -362,7 +362,8 @@ namespace ScopeHousingMeshSurgery
                     new AcceptableValueRange<float>(-0.02f, 0.02f)));
             Plane2Position = Config.Bind("3. Global Mesh Surgery settings", "Plane2Position", 0.1138498f,
                 new ConfigDescription(
-                    "Normalized depth of plane 2 from near (0) to far (1).",
+                    "Plane 2 profile position (0..1) anchored from the near side.\n" +
+                    "Changing CutLength keeps this plane at the same world-space depth from near.",
                     new AcceptableValueRange<float>(0f, 1f)));
             Plane2Radius = Config.Bind("3. Global Mesh Surgery settings", "Plane2Radius", 0.0186338f,
                 new ConfigDescription(
@@ -452,7 +453,7 @@ namespace ScopeHousingMeshSurgery
             CustomMidCylinderPosition = Config.Bind("4. Custom Mesh Surgery settings", "MidCylinderPosition", 0.28f, new ConfigDescription("Custom per-scope mid profile position (0..1).", new AcceptableValueRange<float>(0.01f, 0.99f)));
             CustomFarCylinderRadius = Config.Bind("4. Custom Mesh Surgery settings", "FarCylinderRadius", 0.12f, new ConfigDescription("Custom per-scope far radius in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
             CustomPlane1OffsetMeters = Config.Bind("4. Custom Mesh Surgery settings", "Plane1OffsetMeters", 0f, new ConfigDescription("Custom per-scope plane 1 offset in meters.", new AcceptableValueRange<float>(-0.02f, 0.02f)));
-            CustomPlane2Position = Config.Bind("4. Custom Mesh Surgery settings", "Plane2Position", 0.1138498f, new ConfigDescription("Custom per-scope plane 2 depth (0..1).", new AcceptableValueRange<float>(0f, 1f)));
+            CustomPlane2Position = Config.Bind("4. Custom Mesh Surgery settings", "Plane2Position", 0.1138498f, new ConfigDescription("Custom per-scope plane 2 position (0..1), anchored from near when CutLength changes.", new AcceptableValueRange<float>(0f, 1f)));
             CustomPlane2Radius = Config.Bind("4. Custom Mesh Surgery settings", "Plane2Radius", 0.0186338f, new ConfigDescription("Custom per-scope plane 2 radius in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
             CustomPlane3Position = Config.Bind("4. Custom Mesh Surgery settings", "Plane3Position", 0.55f, new ConfigDescription("Custom per-scope plane 3 depth (0..1).", new AcceptableValueRange<float>(0f, 1f)));
             CustomPlane3Radius = Config.Bind("4. Custom Mesh Surgery settings", "Plane3Radius", 0.2f, new ConfigDescription("Custom per-scope plane 3 radius in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
@@ -547,6 +548,13 @@ namespace ScopeHousingMeshSurgery
         internal static float GetFarCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.FarCylinderRadius : FarCylinderRadius.Value;
         internal static float GetPlane1OffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1OffsetMeters : Plane1OffsetMeters.Value;
         internal static float GetPlane2Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Position : Plane2Position.Value;
+        internal static float GetPlane2PositionNormalized(float cutLength)
+        {
+            const float legacyReferenceCutLength = 0.755493f;
+            float p2LegacyNormalized = Mathf.Clamp01(GetPlane2Position());
+            float anchoredDepth = p2LegacyNormalized * legacyReferenceCutLength;
+            return cutLength > 1e-5f ? Mathf.Clamp01(anchoredDepth / cutLength) : 0f;
+        }
         internal static float GetPlane2Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Radius : Plane2Radius.Value;
         internal static float GetPlane3Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Position : Plane3Position.Value;
         internal static float GetPlane3Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Radius : Plane3Radius.Value;

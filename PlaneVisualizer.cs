@@ -91,7 +91,7 @@ namespace ScopeHousingMeshSurgery
             {
                 float p1R = ScopeHousingMeshSurgeryPlugin.GetCylinderRadius();
                 float p2R = ScopeHousingMeshSurgeryPlugin.GetPlane2Radius();
-                float p2Pos = ScopeHousingMeshSurgeryPlugin.GetPlane2Position();
+                float p2Pos = ScopeHousingMeshSurgeryPlugin.GetPlane2PositionNormalized(cutLength);
                 float p3R = ScopeHousingMeshSurgeryPlugin.GetPlane3Radius();
                 float p3Pos = ScopeHousingMeshSurgeryPlugin.GetPlane3Position();
                 float p4R = ScopeHousingMeshSurgeryPlugin.GetPlane4Radius();
