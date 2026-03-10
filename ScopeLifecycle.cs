@@ -70,6 +70,30 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
+        /// Returns true if the given optic matches the AutoBypassNameContains pattern.
+        /// Callable from PiPDisabler patches which have a concrete OpticSight reference.
+        /// </summary>
+        internal static bool IsNameBypassed(OpticSight os)
+        {
+            return ScopeNameMatchesBypassPattern(os);
+        }
+
+        /// <summary>
+        /// Returns true if the most recently enabled OpticSight (as seen by the
+        /// OnEnable patch — set before CheckAndUpdate / PWA check) matches
+        /// AutoBypassNameContains and is still enabled in the scene.
+        /// Used by PiPDisabler.ShouldAllowVanillaPiP() which has no concrete
+        /// OpticSight but must decide per-frame whether to restore vanilla PiP.
+        /// </summary>
+        internal static bool IsLastOpticNameBypassed()
+        {
+            var os = _lastEnabledOptic;
+            if (os == null) return false;
+            try { if (!os.enabled) return false; } catch { return false; }
+            return ScopeNameMatchesBypassPattern(os);
+        }
+
+        /// <summary>
         /// One-time reflection setup. Call from plugin Awake.
         /// </summary>
         public static void Init()
@@ -509,6 +533,33 @@ namespace ScopeHousingMeshSurgery
                 && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
                 return true;
 
+            if (ScopeNameMatchesBypassPattern(os))
+                return true;
+
+            return false;
+        }
+
+        private static bool ScopeNameMatchesBypassPattern(OpticSight os)
+        {
+            if (os == null) return false;
+            string raw = ScopeHousingMeshSurgeryPlugin.AutoBypassNameContains?.Value;
+            if (string.IsNullOrWhiteSpace(raw)) return false;
+
+            string scopeKey   = ResolveWhitelistScopeKey(os) ?? string.Empty;
+            string objectName = os.name ?? string.Empty;
+
+            foreach (string token in raw.Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string t = token.Trim();
+                if (string.IsNullOrEmpty(t)) continue;
+                if (ContainsCI(scopeKey, t) || ContainsCI(objectName, t))
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[ScopeLifecycle] AutoBypassNameContains match: token='{t}'" +
+                        $" objectName='{objectName}' scopeKey='{scopeKey}'");
+                    return true;
+                }
+            }
             return false;
         }
 

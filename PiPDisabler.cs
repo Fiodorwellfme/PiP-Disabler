@@ -201,6 +201,10 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 var os = field.GetValue(updater) as OpticSight;
                 if (os == null) return false;
 
+                // Name-pattern bypass is independent of AutoDisableForVariableScopes.
+                if (ScopeLifecycle.IsNameBypassed(os))
+                    return true;
+
                 if (!ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value)
                     return false;
 
@@ -316,7 +320,8 @@ _ignoreOnDisableFrame.Clear();
         {
             return !ScopeHousingMeshSurgeryPlugin.ModEnabled.Value
                 || !ScopeHousingMeshSurgeryPlugin.DisablePiP.Value
-                || ScopeLifecycle.IsModBypassedForCurrentScope;
+                || ScopeLifecycle.IsModBypassedForCurrentScope
+                || ScopeLifecycle.IsLastOpticNameBypassed();
         }
 
         internal sealed class OpticComponentUpdaterCopyComponentFromOptic_DisablePiP : ModulePatch
