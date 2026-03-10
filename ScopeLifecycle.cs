@@ -211,6 +211,8 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void OnOpticDisabled(OpticSight os)
         {
+            ReticleRenderer.Hide();
+            ScopeEffectsRenderer.Hide();
             CheckAndUpdate("OnOpticDisabled");
         }
 
@@ -899,10 +901,11 @@ namespace ScopeHousingMeshSurgery
                 float baseFov = pwa.Single_2;
                 if (baseFov > 30f)
                 {
-                    // Use instant restore; the game's own ADS animation handles the smooth transition
-                    cc.SetFov(baseFov, 0f, true);
+                float duration = ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value;
+                    cc.SetFov(baseFov, duration, true);
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                        $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° dur=0.00s");
+                        $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° dur={duration:F2}s");
+
                 }
             }
             catch (Exception ex)

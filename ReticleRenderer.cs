@@ -7,7 +7,7 @@ namespace ScopeHousingMeshSurgery
 {
     /// <summary>
     /// Renders the scope reticle via a CommandBuffer injected at
-    /// CameraEvent.AfterEverything on the main FPS camera.
+    /// CameraEvent.AfterForwardAlpha on the main FPS camera.
     ///
     /// ── CAMERA ALIGNMENT APPROACH ───────────────────────────────────────
     /// The root cause of reticle jitter is the mismatch between where the
@@ -27,6 +27,17 @@ namespace ScopeHousingMeshSurgery
     /// ProceduralWeaponAnimation, and the camera follows.  The player sees
     /// the world shift (exactly like looking through a real scope), not a
     /// dancing crosshair.
+    ///
+    /// ── NVG INTEGRATION ─────────────────────────────────────────────────
+    /// The CommandBuffer is attached at CameraEvent.AfterForwardAlpha, which
+    /// fires before OnRenderImage.  This means the NightVision image effect
+    /// reads the reticle pixels as part of the scene colour buffer and applies
+    /// its green tint, noise, and circular mask to them naturally.
+    ///
+    /// SetRenderTarget is intentionally absent from RebuildCommandBuffer.
+    /// At AfterForwardAlpha the active RT is the scene colour buffer — correct.
+    /// Explicitly binding CameraTarget here would resolve to the wrong surface
+    /// under DLSS/FSR and cause the draw to silently disappear.
     /// </summary>
     internal static class ReticleRenderer
     {
@@ -65,7 +76,6 @@ namespace ScopeHousingMeshSurgery
 
         // Rendering state
         private static bool _settled;
-
 
         // Camera alignment state
         private static bool _alignmentActive;
@@ -252,7 +262,7 @@ namespace ScopeHousingMeshSurgery
             if (_cmdBuffer == null)
                 _cmdBuffer = new CommandBuffer { name = "ScopeReticleOverlay" };
 
-            mainCam.AddCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer);
+            mainCam.AddCommandBuffer(CameraEvent.AfterForwardAlpha, _cmdBuffer);
             _attachedCamera = mainCam;
 
             if (!_preCullRegistered)
@@ -262,7 +272,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                $"[Reticle] CommandBuffer attached to '{mainCam.name}' at AfterEverything");
+                $"[Reticle] CommandBuffer attached to '{mainCam.name}' at AfterForwardAlpha");
         }
 
         private static void DetachFromCamera()
@@ -275,7 +285,7 @@ namespace ScopeHousingMeshSurgery
 
             if (_attachedCamera != null && _cmdBuffer != null)
             {
-                try { _attachedCamera.RemoveCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer); }
+                try { _attachedCamera.RemoveCommandBuffer(CameraEvent.AfterForwardAlpha, _cmdBuffer); }
                 catch (System.Exception) { }
             }
 
@@ -348,7 +358,7 @@ namespace ScopeHousingMeshSurgery
             ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
             Vector3 pos = new Vector3(0f, 0f, 0.5f);
-            float aspect = GetDisplayAspect(cam);
+            float aspect = GetSceneAspect(cam);
             Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
             _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
         }
@@ -365,14 +375,20 @@ namespace ScopeHousingMeshSurgery
         ///
         /// Falls back to the original single-draw path when stencil is unavailable or no
         /// housing renderers have been registered.
+        ///
+        /// Note: SetRenderTarget is intentionally absent.  At AfterForwardAlpha the active
+        /// RT is already the scene colour buffer.  Explicitly binding CameraTarget resolves
+        /// to the wrong surface under DLSS/FSR and silently drops all draws.
         /// </summary>
         private static void RebuildCommandBuffer(Camera cam)
         {
             _cmdBuffer.Clear();
 
-            // ── DLSS/FSR viewport fix ────────────────────────────────────────────────
-            _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            _cmdBuffer.SetViewport(GetDisplayViewport(cam));
+            // SetViewport uses the camera's render-resolution pixel dimensions.
+            // Do NOT use Screen.width/height here — under DLSS/FSR the camera renders
+            // at a lower internal resolution and Screen reports the display resolution,
+            // which would pin the viewport offset and mis-center the reticle.
+            _cmdBuffer.SetViewport(GetSceneViewport(cam));
 
             bool useStencil = _hasStencilSupport && _housingRenderers.Count > 0
                               && _stencilClearMat != null && _housingStencilMat != null;
@@ -438,27 +454,25 @@ namespace ScopeHousingMeshSurgery
 
         // ── Private helpers ─────────────────────────────────────────────────
 
-        private static Rect GetDisplayViewport(Camera cam)
+        /// <summary>
+        /// Returns the viewport rect in render-resolution pixel coordinates.
+        /// cam.pixelWidth/pixelHeight always reflect the actual RT size, even
+        /// under DLSS/FSR where Screen.width/height report display resolution.
+        /// </summary>
+        private static Rect GetSceneViewport(Camera cam)
         {
-            float w = Mathf.Max(1f, Screen.width);
-            float h = Mathf.Max(1f, Screen.height);
-
-            // Under DLSS/FSR, camera pixelRect can reflect the lower-resolution
-            // internal render size, which would pin overlays to lower-left when
-            // used as the viewport. Prefer display-space dimensions instead.
-            if (cam != null)
-            {
-                w = Mathf.Max(w, cam.pixelWidth);
-                h = Mathf.Max(h, cam.pixelHeight);
-            }
-
-            return new Rect(0f, 0f, w, h);
+            return new Rect(0f, 0f,
+                Mathf.Max(1f, cam.pixelWidth),
+                Mathf.Max(1f, cam.pixelHeight));
         }
 
-        private static float GetDisplayAspect(Camera cam)
+        /// <summary>
+        /// Returns the aspect ratio of the scene render target.
+        /// Used to compensate the reticle quad's X scale so it stays square.
+        /// </summary>
+        private static float GetSceneAspect(Camera cam)
         {
-            Rect r = GetDisplayViewport(cam);
-            return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
+            return Mathf.Max(0.01f, cam.pixelWidth / Mathf.Max(1f, cam.pixelHeight));
         }
 
         private static void ApplyHorizontalFlip()
