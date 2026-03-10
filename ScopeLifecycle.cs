@@ -509,6 +509,33 @@ namespace ScopeHousingMeshSurgery
                 && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
                 return true;
 
+            if (ScopeNameMatchesBypassPattern(os))
+                return true;
+
+            return false;
+        }
+
+        private static bool ScopeNameMatchesBypassPattern(OpticSight os)
+        {
+            if (os == null) return false;
+            string raw = ScopeHousingMeshSurgeryPlugin.AutoBypassNameContains?.Value;
+            if (string.IsNullOrWhiteSpace(raw)) return false;
+
+            string scopeKey   = ResolveWhitelistScopeKey(os) ?? string.Empty;
+            string objectName = os.name ?? string.Empty;
+
+            foreach (string token in raw.Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string t = token.Trim();
+                if (string.IsNullOrEmpty(t)) continue;
+                if (ContainsCI(scopeKey, t) || ContainsCI(objectName, t))
+                {
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[ScopeLifecycle] AutoBypassNameContains match: token='{t}'" +
+                        $" objectName='{objectName}' scopeKey='{scopeKey}'");
+                    return true;
+                }
+            }
             return false;
         }
 
