@@ -5,7 +5,7 @@ namespace ScopeHousingMeshSurgery
 {
     /// <summary>
     /// Renders scope vignette and shadow effects via a CommandBuffer injected at
-    /// CameraEvent.AfterEverything on Camera.main, using nonJitteredProjectionMatrix.
+    /// CameraEvent.BeforeImageEffects on Camera.main, using nonJitteredProjectionMatrix.
     ///
     /// This is the same technique as ReticleRenderer — both effects are drawn after
     /// all post-processing (TAA, DLSS, FSR) with explicitly non-jittered matrices,
@@ -144,7 +144,7 @@ namespace ScopeHousingMeshSurgery
             if (_cmdBuffer == null)
                 _cmdBuffer = new CommandBuffer { name = "ScopeEffectsOverlay" };
 
-            mainCam.AddCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer);
+            mainCam.AddCommandBuffer(CameraEvent.BeforeImageEffects, _cmdBuffer);
             _attachedCamera = mainCam;
 
             if (!_preCullRegistered)
@@ -154,7 +154,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                $"[ScopeEffects] CommandBuffer attached to '{mainCam.name}' at AfterEverything");
+                $"[ScopeEffects] CommandBuffer attached to '{mainCam.name}' at BeforeImageEffects");
         }
 
         private static void DetachFromCamera()
@@ -167,7 +167,7 @@ namespace ScopeHousingMeshSurgery
 
             if (_attachedCamera != null && _cmdBuffer != null)
             {
-                try { _attachedCamera.RemoveCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer); }
+                try { _attachedCamera.RemoveCommandBuffer(CameraEvent.BeforeImageEffects, _cmdBuffer); }
                 catch (System.Exception) { }
             }
 
