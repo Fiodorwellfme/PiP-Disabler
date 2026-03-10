@@ -648,6 +648,86 @@ namespace ScopeHousingMeshSurgery
             return result;
         }
 
+        // ===== Weapon mesh stencil collection =====
+
+        /// <summary>
+        /// Walks up from <paramref name="from"/> looking for a transform whose name
+        /// is exactly "weapon" (case-insensitive).  This is the EFT node that parents
+        /// all weapon components — body, handguard, scope mounts, etc.
+        /// Returns null if not found before hitting a player/hands/camera boundary.
+        /// </summary>
+        private static Transform FindWeaponRoot(Transform from)
+        {
+            if (from == null) return null;
+            for (Transform cur = from; cur != null; cur = cur.parent)
+            {
+                string n = cur.name ?? "";
+                if (string.Equals(n, "weapon", StringComparison.OrdinalIgnoreCase))
+                    return cur;
+                // Don't climb out of the weapon rig into the player/camera hierarchy.
+                if (ContainsCI(n, "player") || ContainsCI(n, "hands") || ContainsCI(n, "camera"))
+                    break;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Returns active, solid weapon-body renderers under the "weapon" root that
+        /// are not already in <paramref name="alreadyCollected"/> and are not lens
+        /// surfaces.  These are added to the stencil mask so the reticle is
+        /// suppressed wherever the physical weapon body occludes screen-centre.
+        /// </summary>
+        public static List<Renderer> CollectWeaponRenderers(OpticSight os,
+                                                            List<Renderer> alreadyCollected)
+        {
+            var result = new List<Renderer>();
+            if (os == null) return result;
+
+            Transform weaponRoot = FindWeaponRoot(os.transform);
+            if (weaponRoot == null)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    "[LensTransparency] CollectWeaponRenderers: no 'weapon' root found");
+                return result;
+            }
+
+            // Build a fast exclusion set from already-collected housing renderers.
+            var excludeSet = new HashSet<Renderer>(
+                alreadyCollected ?? new List<Renderer>());
+
+            var allRenderers = weaponRoot.GetComponentsInChildren<Renderer>(true);
+            foreach (var r in allRenderers)
+            {
+                if (r == null) continue;
+                if (!r.gameObject.activeInHierarchy) continue;
+                if (excludeSet.Contains(r)) continue;
+                if (IsLensSurface(r)) continue;
+                if (ShouldSkipForCollimator(r)) continue;
+
+                var mf  = r.GetComponent<MeshFilter>();
+                var smr = r as SkinnedMeshRenderer;
+                Mesh mesh = mf?.sharedMesh ?? smr?.sharedMesh;
+                if (mesh == null || mesh.vertexCount == 0) continue;
+
+                string meshName = mesh.name ?? string.Empty;
+                string goName   = r.gameObject.name ?? string.Empty;
+
+                if (ContainsCI(meshName, "LOD1")) continue;
+                if (LooksLikeLensName(meshName) || LooksLikeLensName(goName)) continue;
+
+                result.Add(r);
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[LensTransparency] WeaponMask +renderer: go='{goName}'" +
+                    $" mesh='{meshName}' verts={mesh.vertexCount}");
+            }
+
+            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                $"[LensTransparency] CollectWeaponRenderers: {result.Count} renderer(s)" +
+                $" (weaponRoot='{weaponRoot.name}')");
+
+            return result;
+        }
+
         // ===== Diagnostics =====
 
         private static bool _dumpedOnce;

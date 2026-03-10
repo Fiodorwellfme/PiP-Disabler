@@ -114,6 +114,7 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> ReticleOverlayCamera;
         internal static ConfigEntry<bool> ExpandSearchToWeaponRoot;
         internal static ConfigEntry<bool> DebugShowHousingMask;
+        internal static ConfigEntry<bool> StencilIncludeWeaponMeshes;
 
         // --- Custom Mesh Surgery settings (per-scope authoring) ---
         internal static ConfigEntry<KeyCode> SaveCustomMeshSurgerySettingsKey;
@@ -429,6 +430,10 @@ namespace ScopeHousingMeshSurgery
                 "suppressing the reticle.  Use this to diagnose which meshes are incorrectly\n" +
                 "masking the aperture.  Combine with the BepInEx log to see the exact renderer\n" +
                 "names printed by CollectHousingRenderers.  Disable in normal play.");
+            StencilIncludeWeaponMeshes = Config.Bind("3. Global Mesh Surgery settings", "StencilIncludeWeaponMeshes", true,
+                "Include weapon body renderers (found under the 'weapon' transform) in the\n" +
+                "stencil mask alongside the scope housing.  Prevents the reticle from\n" +
+                "bleeding through the weapon mesh at screen centre.");
 
             // --- Custom Mesh Surgery settings ---
             SaveCustomMeshSurgerySettingsKey = Config.Bind("4. Custom Mesh Surgery settings", "SaveCustomMeshSurgerySettingsKey", KeyCode.None,

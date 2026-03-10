@@ -200,8 +200,8 @@ namespace ScopeHousingMeshSurgery
                 // Re-hide lenses (the new mode's lens might not be hidden yet)
                 LensTransparency.HideAllLensSurfaces(os);
 
-                // Recollect housing renderers for the new mode's geometry.
-                ReticleRenderer.SetHousingRenderers(LensTransparency.CollectHousingRenderers(os));
+                // Recollect housing + weapon renderers for the new mode's geometry.
+                ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
 
                 // Show reticle for the new mode (with magnification scaling)
                 float modeMag = ZoomController.GetMagnification(os);
@@ -775,9 +775,9 @@ namespace ScopeHousingMeshSurgery
             // 3. Hide ALL lens surfaces in the scope hierarchy (once)
             LensTransparency.HideAllLensSurfaces(os);
 
-            // 2b. Collect housing renderers for reticle stencil mask (lens surfaces are
-            //     already empty-meshed above, so they won't end up in this list).
-            ReticleRenderer.SetHousingRenderers(LensTransparency.CollectHousingRenderers(os));
+            // 2b. Collect housing + weapon renderers for reticle stencil mask (lens surfaces
+            //     are already empty-meshed above, so they won't end up in the list).
+            ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
 
             // 3. Get magnification for reticle scaling and zoom
             float mag = ZoomController.GetMagnification(os);
@@ -887,6 +887,21 @@ namespace ScopeHousingMeshSurgery
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
             ApplyFov(false); // false = short duration for scroll feel
+        }
+
+        /// <summary>
+        /// Collects stencil-mask renderers: scope housing + (optionally) weapon body.
+        /// Weapon renderers are only added when StencilIncludeWeaponMeshes is enabled.
+        /// </summary>
+        private static List<Renderer> CollectStencilRenderers(OpticSight os)
+        {
+            var housing = LensTransparency.CollectHousingRenderers(os);
+            if (ScopeHousingMeshSurgeryPlugin.StencilIncludeWeaponMeshes != null
+                && ScopeHousingMeshSurgeryPlugin.StencilIncludeWeaponMeshes.Value)
+            {
+                housing.AddRange(LensTransparency.CollectWeaponRenderers(os, housing));
+            }
+            return housing;
         }
 
         /// <summary>
