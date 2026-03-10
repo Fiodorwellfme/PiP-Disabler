@@ -80,6 +80,7 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<KeyCode> DisablePiPToggleKey;
         internal static ConfigEntry<bool> MakeLensesTransparent;
         internal static ConfigEntry<KeyCode> LensesTransparentToggleKey;
+        internal static ConfigEntry<bool> BlackLensWhenUnscoped;
 
         // --- Mesh Surgery ---
         internal static ConfigEntry<bool> EnableMeshSurgery;
@@ -212,6 +213,10 @@ namespace ScopeHousingMeshSurgery
                 "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.");
             LensesTransparentToggleKey = Config.Bind("1. General", "LensesTransparentToggleKey", KeyCode.F11,
                 "Toggle key for lens transparency.");
+            BlackLensWhenUnscoped = Config.Bind("1. General", "BlackLensWhenUnscoped", true,
+                "When unscoping, apply a solid black opaque material to the lens instead of restoring " +
+                "the original PiP/sight material. Eliminates the reticle flash during the unscope " +
+                "transition and gives the scope a realistic dark-glass appearance when not in use.");
 
             // --- Weapon Scaling ---
             EnableWeaponScaling = Config.Bind("2. Zoom", "EnableWeaponScaling", true,
@@ -551,6 +556,7 @@ namespace ScopeHousingMeshSurgery
         {
             // Plugin unload or game exit — restore everything
             ScopeLifecycle.ForceExit();
+            LensTransparency.FullRestoreAll();
             PiPDisabler.RestoreAllCameras();
 
             ModEnabled.SettingChanged -= OnModEnabledChanged;
@@ -566,6 +572,7 @@ namespace ScopeHousingMeshSurgery
             if (!ModEnabled.Value)
             {
                 ScopeLifecycle.ForceExit();
+                LensTransparency.FullRestoreAll(); // restore any lingering black lens materials
                 PiPDisabler.RestoreAllCameras();
             }
             else
