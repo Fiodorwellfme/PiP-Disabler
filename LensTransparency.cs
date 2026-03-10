@@ -48,6 +48,15 @@ namespace ScopeHousingMeshSurgery
         private static readonly int _propColor = Shader.PropertyToID("_Color");
         private static readonly int _propSwitchToSight = Shader.PropertyToID("_SwitchToSight");
 
+        // Truly original materials per renderer, stored once on first KillMesh call.
+        // Prevents the black material we apply on RestoreAll from being mistaken for
+        // the original if the player scopes in again on the same session.
+        private static readonly Dictionary<int, Material[]> _trulyOriginalMaterials =
+            new Dictionary<int, Material[]>();
+
+        // Solid black unlit material applied to lens surfaces when unscoped.
+        private static Material _blackLensMaterial;
+
         private static Mesh GetEmptyMesh()
         {
             if (_emptyMesh != null) return _emptyMesh;
@@ -55,6 +64,43 @@ namespace ScopeHousingMeshSurgery
             _emptyMesh.name = "EmptyLensMesh";
             // Zero vertices, zero triangles. Nothing to render.
             return _emptyMesh;
+        }
+
+        private static Material GetBlackLensMaterial()
+        {
+            if (_blackLensMaterial != null) return _blackLensMaterial;
+            // Unlit/Color: solid color, no lighting, no texture — guaranteed opaque black.
+            // Falls back to Standard if Unlit/Color isn't in the build's shader set.
+            var shader = Shader.Find("Unlit/Color") ?? Shader.Find("Standard");
+            _blackLensMaterial = new Material(shader)
+            {
+                name  = "PiPDisabler_BlackLens",
+                color = Color.black,
+            };
+            return _blackLensMaterial;
+        }
+
+        /// <summary>
+        /// Replace all material slots on <paramref name="r"/> with a solid black unlit material.
+        /// Uses sharedMaterials assignment so no instance leak occurs.
+        /// </summary>
+        private static void ApplyBlackMaterial(Renderer r)
+        {
+            if (r == null) return;
+            try
+            {
+                var blackMat = GetBlackLensMaterial();
+                int slotCount = 1;
+                try { slotCount = r.sharedMaterials.Length; } catch { }
+                if (slotCount < 1) slotCount = 1;
+
+                var blackArray = new Material[slotCount];
+                for (int i = 0; i < slotCount; i++)
+                    blackArray[i] = blackMat;
+
+                r.sharedMaterials = blackArray;
+            }
+            catch { }
         }
 
         /// <summary>
@@ -164,16 +210,28 @@ namespace ScopeHousingMeshSurgery
 
         /// <summary>
         /// Restore all. Called on scope exit.
+        ///
+        /// When BlackLensWhenUnscoped is enabled (default), the lens geometry is
+        /// restored but an opaque black material is applied in place of the original
+        /// PiP/sight material.  This prevents the reticle-flash that occurs during
+        /// the unscope transition and matches the real-world appearance of scope
+        /// glass viewed from outside.  The truly original materials are kept in
+        /// _trulyOriginalMaterials so the next scope-enter always saves the correct
+        /// originals rather than the black placeholder.
         /// </summary>
         public static void RestoreAll()
         {
             if (_hidden.Count == 0) return;
+
+            bool blackLens = ScopeHousingMeshSurgeryPlugin.BlackLensWhenUnscoped != null
+                             && ScopeHousingMeshSurgeryPlugin.BlackLensWhenUnscoped.Value;
 
             for (int i = 0; i < _hidden.Count; i++)
             {
                 var e = _hidden[i];
                 try
                 {
+                    // Restore original mesh geometry so the lens body is visible again.
                     if (e.Skinned != null && e.OriginalMesh != null)
                     {
                         e.Skinned.sharedMesh = e.OriginalMesh;
@@ -186,26 +244,38 @@ namespace ScopeHousingMeshSurgery
                         ScopeHousingMeshSurgeryPlugin.LogVerbose(
                             $"[LensTransparency] Restored mesh on '{e.Filter.gameObject.name}' → {e.OriginalMesh.vertexCount} verts");
                     }
+
                     if (e.Renderer != null)
                     {
+                        // Re-enable rendering (lens is visible when unscoped).
                         e.Renderer.forceRenderingOff = e.WasForceOff;
 
-                        // Restore original shared materials (undoes our property forcing)
-                        if (e.OriginalMaterials != null)
+                        if (blackLens)
                         {
-                            try { e.Renderer.sharedMaterials = e.OriginalMaterials; }
-                            catch { }
+                            // Apply solid black material — no PiP texture, no reticle flash.
+                            ApplyBlackMaterial(e.Renderer);
+                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                                $"[LensTransparency] Applied black lens to '{e.Renderer.gameObject.name}'");
                         }
-
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' forceOff={e.WasForceOff}");
+                        else
+                        {
+                            // Restore original shared materials (legacy path).
+                            if (e.OriginalMaterials != null)
+                            {
+                                try { e.Renderer.sharedMaterials = e.OriginalMaterials; }
+                                catch { }
+                            }
+                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                                $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' forceOff={e.WasForceOff}");
+                        }
                     }
                 }
                 catch { }
             }
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                $"[LensTransparency] Restored {_hidden.Count} lens meshes");
+                $"[LensTransparency] Restored {_hidden.Count} lens meshes" +
+                (blackLens ? " (black lens applied)" : ""));
             _hidden.Clear();
         }
 
@@ -234,9 +304,20 @@ namespace ScopeHousingMeshSurgery
                 mf.sharedMesh = GetEmptyMesh();
             }
 
-            // Save original shared materials for restore
+            // Save the TRULY ORIGINAL shared materials only on first encounter.
+            // On subsequent scope-ins the renderer may already have the black material
+            // we applied on the previous scope-exit — we must not overwrite the cache.
+            int rid = r.GetInstanceID();
+            if (!_trulyOriginalMaterials.ContainsKey(rid))
+            {
+                Material[] firstSeenMats = null;
+                try { firstSeenMats = r.sharedMaterials; } catch { }
+                if (firstSeenMats != null)
+                    _trulyOriginalMaterials[rid] = firstSeenMats;
+            }
+
             Material[] origMats = null;
-            try { origMats = r.sharedMaterials; } catch { }
+            _trulyOriginalMaterials.TryGetValue(rid, out origMats);
 
             var entry = new HiddenEntry
             {
