@@ -7,7 +7,7 @@ namespace ScopeHousingMeshSurgery
 {
     /// <summary>
     /// Renders the scope reticle via a CommandBuffer injected at
-    /// CameraEvent.AfterEverything on the main FPS camera.
+    /// CameraEvent.BeforeImageEffects on the main FPS camera.
     ///
     /// ── CAMERA ALIGNMENT APPROACH ───────────────────────────────────────
     /// The root cause of reticle jitter is the mismatch between where the
@@ -252,7 +252,7 @@ namespace ScopeHousingMeshSurgery
             if (_cmdBuffer == null)
                 _cmdBuffer = new CommandBuffer { name = "ScopeReticleOverlay" };
 
-            mainCam.AddCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer);
+            mainCam.AddCommandBuffer(CameraEvent.BeforeImageEffects, _cmdBuffer);
             _attachedCamera = mainCam;
 
             if (!_preCullRegistered)
@@ -262,7 +262,7 @@ namespace ScopeHousingMeshSurgery
             }
 
             ScopeHousingMeshSurgeryPlugin.LogInfo(
-                $"[Reticle] CommandBuffer attached to '{mainCam.name}' at AfterEverything");
+                $"[Reticle] CommandBuffer attached to '{mainCam.name}' at BeforeImageEffects");
         }
 
         private static void DetachFromCamera()
@@ -275,7 +275,7 @@ namespace ScopeHousingMeshSurgery
 
             if (_attachedCamera != null && _cmdBuffer != null)
             {
-                try { _attachedCamera.RemoveCommandBuffer(CameraEvent.AfterEverything, _cmdBuffer); }
+                try { _attachedCamera.RemoveCommandBuffer(CameraEvent.BeforeImageEffects, _cmdBuffer); }
                 catch (System.Exception) { }
             }
 

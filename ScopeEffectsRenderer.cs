@@ -7,9 +7,8 @@ namespace ScopeHousingMeshSurgery
     /// Renders scope vignette and shadow effects via a CommandBuffer injected at
     /// CameraEvent.AfterEverything on Camera.main, using nonJitteredProjectionMatrix.
     ///
-    /// This is the same technique as ReticleRenderer — both effects are drawn after
-    /// all post-processing (TAA, DLSS, FSR) with explicitly non-jittered matrices,
-    /// eliminating edge flickering from TAA's jittered projection.
+    /// This uses the same command-buffer pattern as ReticleRenderer with explicitly
+    /// non-jittered matrices to keep overlays stable against TAA jitter.
     ///
     /// ── VIGNETTE ───────────────────────────────────────────────────────────────
     /// Screen-space quad centred in view with fixed on-screen size.
