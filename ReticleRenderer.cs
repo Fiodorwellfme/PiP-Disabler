@@ -59,6 +59,11 @@ namespace ScopeHousingMeshSurgery
         private static int  _debugFrameCount;
         private const  int  DebugLogFrames = 10;
 
+        // Coverage hysteresis — hide reticle when >80% covered, show again when <40% covered
+        private const  float CoverageHideThreshold = 0.80f;
+        private const  float CoverageShowThreshold = 0.40f;
+        private static bool  _coverageHidden;
+
         // Scale tracking
         private static float _baseScale;
         private static float _lastMag = 1f;
@@ -207,6 +212,7 @@ namespace ScopeHousingMeshSurgery
             Hide();
             _housingRenderers.Clear();
             _debugFrameCount   = 0;
+            _coverageHidden    = false;
             _savedMarkTex      = null;
             _savedMaskTex      = null;
             _opticTransform    = null;
@@ -364,6 +370,85 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
+        /// Compute what fraction (0..1) of the reticle's NDC area is covered by the
+        /// projected AABBs of all housing renderers.  Uses a conservative AABB-to-NDC
+        /// projection so the result may slightly over-estimate real stencil coverage,
+        /// which is acceptable for the hysteresis threshold logic.
+        /// </summary>
+        private static float ComputeReticleCoverage(Camera cam)
+        {
+            // Reticle NDC rect: _reticleMatrix is TRS with scale (m00, m11, 1).
+            // The unit quad spans [-0.5, 0.5] so the NDC half-extents are scale/2.
+            float halfW      = _reticleMatrix.m00 * 0.5f;
+            float halfH      = _reticleMatrix.m11 * 0.5f;
+            float retMinX    = -halfW;
+            float retMaxX    =  halfW;
+            float retMinY    = -halfH;
+            float retMaxY    =  halfH;
+            float reticleArea = _reticleMatrix.m00 * _reticleMatrix.m11;
+
+            if (reticleArea <= 0f) return 0f;
+
+            // VP matrix for projecting world-space corners to NDC.
+            Matrix4x4 vp = cam.nonJitteredProjectionMatrix * cam.worldToCameraMatrix;
+
+            float covered = 0f;
+
+            for (int i = 0; i < _housingRenderers.Count; i++)
+            {
+                var r = _housingRenderers[i];
+                if (r == null || !r.gameObject.activeInHierarchy) continue;
+
+                Bounds b = r.bounds; // world-space AABB
+                Vector3 c = b.center;
+                Vector3 e = b.extents;
+
+                // 8 corners of the AABB.
+                float ndcMinX =  float.MaxValue, ndcMaxX = -float.MaxValue;
+                float ndcMinY =  float.MaxValue, ndcMaxY = -float.MaxValue;
+                bool anyVisible = false;
+
+                for (int cx = -1; cx <= 1; cx += 2)
+                for (int cy = -1; cy <= 1; cy += 2)
+                for (int cz = -1; cz <= 1; cz += 2)
+                {
+                    Vector4 world = new Vector4(
+                        c.x + cx * e.x,
+                        c.y + cy * e.y,
+                        c.z + cz * e.z,
+                        1f);
+
+                    Vector4 clip = vp * world;
+                    if (clip.w <= 0f) continue; // behind camera
+
+                    float nx = clip.x / clip.w;
+                    float ny = clip.y / clip.w;
+
+                    if (nx < ndcMinX) ndcMinX = nx;
+                    if (nx > ndcMaxX) ndcMaxX = nx;
+                    if (ny < ndcMinY) ndcMinY = ny;
+                    if (ny > ndcMaxY) ndcMaxY = ny;
+                    anyVisible = true;
+                }
+
+                if (!anyVisible) continue;
+
+                // Intersect projected AABB rect with reticle rect.
+                float ix0 = Mathf.Max(ndcMinX, retMinX);
+                float ix1 = Mathf.Min(ndcMaxX, retMaxX);
+                float iy0 = Mathf.Max(ndcMinY, retMinY);
+                float iy1 = Mathf.Min(ndcMaxY, retMaxY);
+
+                float w = ix1 - ix0;
+                float h = iy1 - iy0;
+                if (w > 0f && h > 0f)
+                    covered += w * h;
+            }
+
+            return Mathf.Clamp01(covered / reticleArea);
+        }
+
+        /// <summary>
         /// Rebuild the CommandBuffer.
         ///
         /// When housing renderers are available and UI/Default was found (stencil-capable):
@@ -410,6 +495,22 @@ namespace ScopeHousingMeshSurgery
                 _debugFrameCount++;
             }
 
+            // ── Coverage hysteresis ──────────────────────────────────────────────────
+            // If housing renderers cover more than 80% of the reticle NDC area, hide it
+            // completely.  Only show again once coverage drops below 40%.
+            // This prevents a partially-visible "sliver" of reticle when the scope is
+            // rotated so the housing fills most of the sight picture.
+            if (_housingRenderers.Count > 0)
+            {
+                float cov = ComputeReticleCoverage(cam);
+                if      (cov >= CoverageHideThreshold) _coverageHidden = true;
+                else if (cov <= CoverageShowThreshold) _coverageHidden = false;
+            }
+            else
+            {
+                _coverageHidden = false;
+            }
+
             // Scale the unit quad (-0.5..0.5) to cover the full NDC range (-1..1).
             var fullScreenMatrix = Matrix4x4.TRS(
                 Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f));
@@ -429,24 +530,30 @@ namespace ScopeHousingMeshSurgery
                     _cmdBuffer.DrawRenderer(r, _housingStencilMat);
                 }
 
-                // ── Step 3: draw reticle with stencil test (clip-space) ─────────────
-                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
-
-                // ── Step 4: optional debug overlay — red tint where housing masked ───
-                // Renders anywhere stencil == 1, i.e. every pixel the housing suppressed.
-                // Enable via DebugShowHousingMask in BepInEx config.
-                if (ScopeHousingMeshSurgeryPlugin.GetDebugShowHousingMask()
-                    && _stencilDebugMat != null)
+                if (!_coverageHidden)
                 {
-                    _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
+                    // ── Step 3: draw reticle with stencil test (clip-space) ──────────
+                    _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                    _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+
+                    // ── Step 4: optional debug overlay — red tint where housing masked ─
+                    // Renders anywhere stencil == 1, i.e. every pixel the housing suppressed.
+                    // Enable via DebugShowHousingMask in BepInEx config.
+                    if (ScopeHousingMeshSurgeryPlugin.GetDebugShowHousingMask()
+                        && _stencilDebugMat != null)
+                    {
+                        _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
+                    }
                 }
             }
             else
             {
                 // Original path — no stencil.
-                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                if (!_coverageHidden)
+                {
+                    _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                    _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                }
             }
 
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
