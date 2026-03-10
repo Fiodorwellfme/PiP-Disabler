@@ -324,6 +324,11 @@ namespace ScopeHousingMeshSurgery
             // scope's look direction every frame.  We let LateUpdate run
             // (v4.5.2 fix), so the transform is always up to date even though
             // the optic camera itself can't render.
+            // Save the camera's natural rotation (player head/body aim direction)
+            // BEFORE we override it with the scope direction.  The angular
+            // difference = weapon sway magnitude, used for visibility hysteresis.
+            Quaternion preAlignmentRotation = cam.transform.rotation;
+
             if (_alignmentActive)
             {
                 // Primary source: optic camera transform kept in sync by EFT updater.
@@ -337,13 +342,13 @@ namespace ScopeHousingMeshSurgery
             }
 
             // ── Reticle coverage hysteresis ─────────────────────────────────
-            // Estimate what fraction of the reticle is visible through the scope
-            // aperture and apply configurable hide/show thresholds to prevent
-            // the reticle from appearing outside the scope during heavy sway.
+            // Measure how far the scope has swayed from the player's head
+            // direction and hide the reticle when the sway is so large that
+            // the housing can no longer mask it properly.
             float hideThreshold = ScopeHousingMeshSurgeryPlugin.GetReticleHideThreshold();
             if (hideThreshold > 0f)
             {
-                float visibility = EstimateVisibility(cam);
+                float visibility = EstimateVisibility(cam, preAlignmentRotation);
                 float showThreshold = ScopeHousingMeshSurgeryPlugin.GetReticleShowThreshold();
 
                 if (_reticleHiddenByCoverage)
@@ -492,46 +497,44 @@ namespace ScopeHousingMeshSurgery
         // ── Reticle visibility estimation ────────────────────────────────────
 
         /// <summary>
-        /// Estimates what fraction of the reticle is visible through the scope
-        /// aperture (not blocked by housing).  Returns 0..1 where 1 = fully
-        /// visible and 0 = fully occluded.
+        /// Estimates reticle visibility as a 0..1 value by measuring how far
+        /// the scope has swayed from the player's head direction.
         ///
-        /// The camera has already been rotated to look along the scope axis, so
-        /// the scope bore projects to screen centre.  Heavy sway shifts the
-        /// physical housing relative to the camera position, causing the aperture
-        /// circle to drift away from centre.  We project the optic position to
-        /// viewport space and compare the offset with the aperture's viewport
-        /// radius to estimate the visible fraction.
+        /// <paramref name="preAlignmentRotation"/> is the camera's rotation
+        /// before we overrode it with the scope direction.  The angular
+        /// difference between the two represents the weapon sway magnitude.
+        ///
+        /// The sway angle is normalised against the scope aperture's angular
+        /// extent (derived from ReticleBaseSize and eye-to-scope distance) so
+        /// that larger scopes tolerate more sway before hiding.
+        ///
+        /// Returns 1 when sway is zero (rest) and falls linearly to 0 when
+        /// the sway reaches the reference maximum.
         /// </summary>
-        private static float EstimateVisibility(Camera cam)
+        private static float EstimateVisibility(Camera cam, Quaternion preAlignmentRotation)
         {
             if (_opticTransform == null || cam == null) return 1f;
 
-            Vector3 viewportPos = cam.WorldToViewportPoint(_opticTransform.position);
+            // Degrees of angular difference between the player's natural aim
+            // direction and where the scope is actually pointing.
+            float swayAngle = Quaternion.Angle(preAlignmentRotation, cam.transform.rotation);
 
-            // Behind camera — treat as fully occluded
-            if (viewportPos.z <= 0f) return 0f;
+            // Reference angle: the scope's visual extent from the camera.
+            // ReticleBaseSize approximates the aperture diameter; we multiply
+            // by 2 to account for the housing wall that extends beyond the
+            // aperture opening.  Larger scopes give a larger reference angle
+            // and therefore tolerate more sway.
+            float distance = Vector3.Distance(cam.transform.position, _opticTransform.position);
+            if (distance < 0.01f) return 1f;
 
-            // Offset from viewport centre (0.5, 0.5)
-            float dx = viewportPos.x - 0.5f;
-            float dy = viewportPos.y - 0.5f;
-            float offset = Mathf.Sqrt(dx * dx + dy * dy);
+            float reticleBaseSize = ScopeHousingMeshSurgeryPlugin.GetReticleBaseSize();
+            if (reticleBaseSize < 0.001f)
+                reticleBaseSize = ScopeHousingMeshSurgeryPlugin.GetCylinderRadius() * 2f;
 
-            // Compute the aperture radius in viewport space by projecting a
-            // point on the aperture edge and measuring the screen distance.
-            float cylinderRadius = ScopeHousingMeshSurgeryPlugin.GetCylinderRadius();
-            Vector3 edgeWorld = _opticTransform.position + _opticTransform.right * cylinderRadius;
-            Vector3 edgeViewport = cam.WorldToViewportPoint(edgeWorld);
-            float apertureViewportRadius = Vector2.Distance(
-                new Vector2(viewportPos.x, viewportPos.y),
-                new Vector2(edgeViewport.x, edgeViewport.y));
+            float maxSwayDeg = Mathf.Atan2(reticleBaseSize * 2f, distance) * Mathf.Rad2Deg;
+            if (maxSwayDeg < 0.1f) return 1f;
 
-            if (apertureViewportRadius < 0.0001f) return 1f;
-
-            // Linear estimate: visibility = 1 when aperture is centred,
-            // drops to 0 when the offset reaches twice the aperture radius
-            // (at which point the aperture circle no longer overlaps centre).
-            return Mathf.Clamp01(1f - offset / (apertureViewportRadius * 2f));
+            return Mathf.Clamp01(1f - swayAngle / maxSwayDeg);
         }
 
         // ── Private helpers ─────────────────────────────────────────────────
