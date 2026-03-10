@@ -504,7 +504,9 @@ namespace ScopeHousingMeshSurgery
                 return true;
 
             if (ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value
-                && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
+                && (FovController.IsOpticAdjustable(os)
+                    || IsThermalOrNightVisionOptic(os)
+                    || IsAgsOptic(os)))
                 return true;
 
             return false;
@@ -528,6 +530,29 @@ namespace ScopeHousingMeshSurgery
             }
 
             return !allowed;
+        }
+
+        private static bool IsAgsOptic(OpticSight os)
+        {
+            if (os == null) return false;
+
+            string scopeKey = ResolveWhitelistScopeKey(os);
+            string templateName = FovController.GetOpticTemplateName(os);
+            string templateId = FovController.GetOpticTemplateId(os);
+            string opticName = os.name;
+
+            bool isAgs = ContainsCI(scopeKey, "ags")
+                || ContainsCI(templateName, "ags")
+                || ContainsCI(templateId, "ags")
+                || ContainsCI(opticName, "ags");
+
+            if (isAgs)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[ScopeLifecycle] AGS auto-bypass match: key='{scopeKey}' template='{templateName}' id='{templateId}' optic='{opticName}'");
+            }
+
+            return isAgs;
         }
 
         private static void RefreshScopeWhitelistCache()
