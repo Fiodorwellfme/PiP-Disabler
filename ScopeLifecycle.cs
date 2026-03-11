@@ -55,6 +55,10 @@ namespace ScopeHousingMeshSurgery
         private static readonly HashSet<string> _scopeWhitelistNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static string _scopeWhitelistRawCached;
 
+        // Cached parsed bypass pattern tokens (avoid re-splitting the config string each call)
+        private static string[] _bypassPatternTokens;
+        private static string _bypassPatternRawCached;
+
 
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
@@ -545,13 +549,28 @@ namespace ScopeHousingMeshSurgery
             string raw = ScopeHousingMeshSurgeryPlugin.AutoBypassNameContains?.Value;
             if (string.IsNullOrWhiteSpace(raw)) return false;
 
+            // Cache parsed tokens to avoid re-splitting the config string each call
+            if (!string.Equals(raw, _bypassPatternRawCached, StringComparison.Ordinal))
+            {
+                _bypassPatternRawCached = raw;
+                var parts = raw.Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var trimmed = new System.Collections.Generic.List<string>(parts.Length);
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    string t = parts[i].Trim();
+                    if (!string.IsNullOrEmpty(t)) trimmed.Add(t);
+                }
+                _bypassPatternTokens = trimmed.ToArray();
+            }
+
+            if (_bypassPatternTokens == null || _bypassPatternTokens.Length == 0) return false;
+
             string scopeKey   = ResolveWhitelistScopeKey(os) ?? string.Empty;
             string objectName = os.name ?? string.Empty;
 
-            foreach (string token in raw.Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            for (int i = 0; i < _bypassPatternTokens.Length; i++)
             {
-                string t = token.Trim();
-                if (string.IsNullOrEmpty(t)) continue;
+                string t = _bypassPatternTokens[i];
                 if (ContainsCI(scopeKey, t) || ContainsCI(objectName, t))
                 {
                     ScopeHousingMeshSurgeryPlugin.LogInfo(

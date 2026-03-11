@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -29,6 +28,8 @@ namespace ScopeHousingMeshSurgery
 
         private static readonly Dictionary<MeshFilter, MeshState> _tracked =
             new Dictionary<MeshFilter, MeshState>(64);
+        // Reusable temp list for restore operations (avoids per-call heap allocation)
+        private static readonly List<MeshFilter> _restoreTemp = new List<MeshFilter>(64);
         private static bool _loggedGpuCopy;
 
         public static void ClearPersistentCache()
@@ -491,29 +492,43 @@ namespace ScopeHousingMeshSurgery
                 }
             }
 
-            var toRestore = _tracked.Keys
-                .Where(mf => mf && mf.transform && mf.transform.IsChildOf(searchRoot))
-                .ToArray();
+            // Collect keys to restore without LINQ allocation.
+            // Reuse a temporary list to avoid per-call heap allocs.
+            var toRestore = _restoreTemp;
+            toRestore.Clear();
+            foreach (var kv in _tracked)
+            {
+                var mf = kv.Key;
+                if (mf && mf.transform && mf.transform.IsChildOf(searchRoot))
+                    toRestore.Add(mf);
+            }
 
-            if (toRestore.Length == 0) return;
+            if (toRestore.Count == 0) return;
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreForScope: {toRestore.Length} meshes to restore (searchRoot='{searchRoot.name}')");
+                $"[MeshSurgery] RestoreForScope: {toRestore.Count} meshes to restore (searchRoot='{searchRoot.name}')");
 
-            foreach (var mf in toRestore)
-                RestoreMeshFilter(mf);
+            for (int i = 0; i < toRestore.Count; i++)
+                RestoreMeshFilter(toRestore[i]);
+            toRestore.Clear();
         }
 
         public static void RestoreAll()
         {
-            var keys = _tracked.Keys.ToArray();
-            if (keys.Length == 0) return;
+            if (_tracked.Count == 0) return;
+
+            // Collect keys into temp list to avoid modifying dict during iteration
+            var keys = _restoreTemp;
+            keys.Clear();
+            foreach (var kv in _tracked)
+                keys.Add(kv.Key);
 
             ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreAll: {keys.Length} meshes to restore");
+                $"[MeshSurgery] RestoreAll: {keys.Count} meshes to restore");
 
-            foreach (var mf in keys)
-                RestoreMeshFilter(mf);
+            for (int i = 0; i < keys.Count; i++)
+                RestoreMeshFilter(keys[i]);
+            keys.Clear();
         }
 
         private static void RestoreMeshFilter(MeshFilter mf)

@@ -44,6 +44,15 @@ namespace ScopeHousingMeshSurgery
         private static readonly List<HiddenEntry> _hidden = new List<HiddenEntry>(16);
         private static Mesh _emptyMesh;
 
+        // Dirty flag: set to true when a mesh/renderer may have been restored by EFT.
+        // After EnsureHidden confirms all entries are still hidden, we clear the flag
+        // and skip iteration on subsequent frames until something triggers a re-check.
+        // The flag is conservatively set to true on any lens-related operation.
+        private static bool _ensureHiddenDirty = true;
+        private static int _ensureHiddenCleanFrame = -1;
+        // Re-verify every N frames even if not dirty, as a safety net
+        private const int ENSURE_HIDDEN_RECHECK_INTERVAL = 60;
+
         // Shader property IDs (cached for perf)
         private static readonly int _propColor = Shader.PropertyToID("_Color");
         private static readonly int _propSwitchToSight = Shader.PropertyToID("_SwitchToSight");
@@ -222,7 +231,17 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void EnsureHidden(Renderer excludeRenderer = null)
         {
+            if (_hidden.Count == 0) return;
+
+            // Skip iteration if we recently verified everything is still hidden
+            // and no external event has set the dirty flag.
+            int frame = UnityEngine.Time.frameCount;
+            if (!_ensureHiddenDirty
+                && frame - _ensureHiddenCleanFrame < ENSURE_HIDDEN_RECHECK_INTERVAL)
+                return;
+
             var emptyMesh = GetEmptyMesh();
+            bool allClean = true;
             for (int i = 0; i < _hidden.Count; i++)
             {
                 var e = _hidden[i];
@@ -234,12 +253,14 @@ namespace ScopeHousingMeshSurgery
                 if (e.Skinned != null && e.Skinned.sharedMesh != emptyMesh)
                 {
                     e.Skinned.sharedMesh = emptyMesh;
+                    allClean = false;
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
                         $"[LensTransparency] Re-emptied skinned mesh on '{e.Skinned.gameObject.name}'");
                 }
                 else if (e.Filter != null && e.Filter.sharedMesh != emptyMesh)
                 {
                     e.Filter.sharedMesh = emptyMesh;
+                    allClean = false;
                     ScopeHousingMeshSurgeryPlugin.LogVerbose(
                         $"[LensTransparency] Re-emptied mesh on '{e.Filter.gameObject.name}'");
                 }
@@ -247,8 +268,18 @@ namespace ScopeHousingMeshSurgery
                 {
                     // Re-enforce forceRenderingOff (lightweight bool check, no alloc)
                     if (!e.Renderer.forceRenderingOff)
+                    {
                         e.Renderer.forceRenderingOff = true;
+                        allClean = false;
+                    }
                 }
+            }
+
+            // If nothing needed fixing, mark clean so we skip next frames
+            if (allClean)
+            {
+                _ensureHiddenDirty = false;
+                _ensureHiddenCleanFrame = frame;
             }
         }
 

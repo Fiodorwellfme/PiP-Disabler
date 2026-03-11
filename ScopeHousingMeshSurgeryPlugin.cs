@@ -54,18 +54,28 @@ namespace ScopeHousingMeshSurgery
         /// correct main FPS camera.  Falls back to Camera.main if
         /// CameraClass isn't initialized yet (menus, loading).
         /// </summary>
+        // Per-frame cache for GetMainCamera (multiple systems call this each frame)
+        private static Camera _cachedMainCamera;
+        private static int _cachedMainCameraFrame = -1;
+
         internal static Camera GetMainCamera()
         {
+            int frame = Time.frameCount;
+            if (frame == _cachedMainCameraFrame && _cachedMainCamera != null)
+                return _cachedMainCamera;
+
+            _cachedMainCameraFrame = frame;
             try
             {
                 if (CameraClass.Exist)
                 {
                     var cam = CameraClass.Instance.Camera;
-                    if (cam != null) return cam;
+                    if (cam != null) { _cachedMainCamera = cam; return cam; }
                 }
             }
             catch { }
-            return Camera.main;
+            _cachedMainCamera = Camera.main;
+            return _cachedMainCamera;
         }
 
         // --- 0. Global ---
@@ -183,6 +193,12 @@ namespace ScopeHousingMeshSurgery
         internal static ConfigEntry<bool> VerboseLogging;
 
         private bool _wasInRaid;
+
+        // Throttle the safety-net CheckAndUpdate to every N frames instead of every frame.
+        // Actual scope transitions are caught by event-driven patches (OnOpticEnabled,
+        // OnOpticDisabled, ChangeAimingMode), so the per-frame check is only a safety net.
+        private const int SAFETY_NET_CHECK_INTERVAL = 30;
+        private int _safetyNetCounter;
 
         private void Awake()
         {
@@ -717,8 +733,13 @@ namespace ScopeHousingMeshSurgery
             // --- Per-frame logic ---
             PiPDisabler.TickBaseOpticCamera();
 
-            // Safety-net: re-check scope state every frame in case we missed an event.
-            ScopeLifecycle.CheckAndUpdate("Update");
+            // Safety-net: re-check scope state periodically in case we missed an event.
+            // Actual transitions are caught by event-driven patches — this is just a fallback.
+            if (++_safetyNetCounter >= SAFETY_NET_CHECK_INTERVAL)
+            {
+                _safetyNetCounter = 0;
+                ScopeLifecycle.CheckAndUpdate("Update");
+            }
 
             // Per-frame maintenance (ensure lens hidden, update variable zoom, etc.)
             ScopeLifecycle.Tick();

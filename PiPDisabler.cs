@@ -40,6 +40,14 @@ namespace ScopeHousingMeshSurgery
         private static int _nextBaseScanFrame = -1;
         private static bool _loggedBase;
 
+        // Track whether all base optic cameras are already force-disabled,
+        // so we can skip the per-frame ForceDisable loop when nothing changed.
+        private static bool _baseOpticCamsDisabled;
+
+        // Per-frame cache for ShouldAllowVanillaPiP (called from multiple paths per frame)
+        private static bool _cachedShouldAllowVanillaPiP;
+        private static int _cachedShouldAllowVanillaPiPFrame = -1;
+
         /// <summary>
         /// The optic camera's Transform — synced to the scope's look direction
         /// every frame by OpticComponentUpdater.LateUpdate().
@@ -75,15 +83,24 @@ internal static void TickBaseOpticCamera()
             {
                 TryFindBaseOpticCameras();
                 _nextBaseScanFrame = Time.frameCount + 60; // ~1s @ 60fps
+                _baseOpticCamsDisabled = false; // force re-check after scan
             }
 
-            // Re-apply disable every frame for the cached cameras (cheap).
+            // Skip the per-frame disable loop if all cameras are already disabled.
+            // ForceDisable is idempotent but still does a linear scan of _cams each call.
+            if (_baseOpticCamsDisabled) return;
+
+            bool allDisabled = true;
             for (int i = 0; i < _baseOpticCams.Count; i++)
             {
                 var cam = _baseOpticCams[i];
                 if (cam == null) continue;
                 ForceDisable(cam);
+                // Check if camera is now truly disabled
+                if (cam.enabled || cam.cullingMask != 0)
+                    allDisabled = false;
             }
+            _baseOpticCamsDisabled = allDisabled && _baseOpticCams.Count > 0;
         }
 
 
@@ -146,7 +163,10 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
             try
             {
-                var cams = Resources.FindObjectsOfTypeAll<Camera>();
+                // Use FindObjectsOfType instead of Resources.FindObjectsOfTypeAll:
+                // FindObjectsOfType only returns active scene objects (cheaper),
+                // while FindObjectsOfTypeAll also scans prefabs/assets/destroyed objects.
+                var cams = UnityEngine.Object.FindObjectsOfType<Camera>();
                 for (int i = 0; i < cams.Length; i++)
                 {
                     var cam = cams[i];
@@ -278,8 +298,10 @@ _ignoreOnDisableFrame.Clear();
             _cams.Clear();
 
             _baseOpticCams.Clear();
+            _baseOpticCamsDisabled = false;
             _loggedBase = false;
             _nextBaseScanFrame = -1;
+            _cachedShouldAllowVanillaPiPFrame = -1;
             OpticCameraTransform = null;
             Debug_LastOpticCameraTransform = null;
             Debug_LastOpticCameraSetBy = null;
@@ -318,10 +340,17 @@ _ignoreOnDisableFrame.Clear();
 
         private static bool ShouldAllowVanillaPiP()
         {
-            return !ScopeHousingMeshSurgeryPlugin.ModEnabled.Value
+            int frame = UnityEngine.Time.frameCount;
+            if (frame == _cachedShouldAllowVanillaPiPFrame)
+                return _cachedShouldAllowVanillaPiP;
+
+            _cachedShouldAllowVanillaPiPFrame = frame;
+            _cachedShouldAllowVanillaPiP =
+                !ScopeHousingMeshSurgeryPlugin.ModEnabled.Value
                 || !ScopeHousingMeshSurgeryPlugin.DisablePiP.Value
                 || ScopeLifecycle.IsModBypassedForCurrentScope
                 || ScopeLifecycle.IsLastOpticNameBypassed();
+            return _cachedShouldAllowVanillaPiP;
         }
 
         internal sealed class OpticComponentUpdaterCopyComponentFromOptic_DisablePiP : ModulePatch
