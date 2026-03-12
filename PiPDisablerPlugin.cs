@@ -183,6 +183,7 @@ namespace PiPDisabler
         // --- Debug ---
         internal static ConfigEntry<bool> VerboseLogging;
         internal static ConfigEntry<bool> DebugLogCutCandidates;
+        internal static ConfigEntry<bool> DebugReticleAfterEverything;
 
         private bool _wasInRaid;
 
@@ -516,6 +517,9 @@ namespace PiPDisabler
             DebugLogCutCandidates = Config.Bind("7. Debug", "DebugLogCutCandidates", false,
                 "When enabled, logs every mesh candidate found by mesh surgery (path, mesh name, vertices, active state), " +
                 "plus per-candidate radius checks. Useful to diagnose attachments that are not being cut.");
+            DebugReticleAfterEverything = Config.Bind("7. Debug", "DebugReticleAfterEverything", false,
+                "DEBUG: Draw reticle at CameraEvent.AfterEverything instead of AfterForwardAlpha. " +
+                "Use for render-order diagnostics (e.g. if post-processing or masks are affecting the reticle unexpectedly).");
 
             Patches.Patcher.Enable();
 
@@ -575,6 +579,9 @@ namespace PiPDisabler
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
         internal static bool GetDebugLogCutCandidates() => DebugLogCutCandidates?.Value ?? false;
+        internal static CameraEvent GetReticleCameraEvent() => (DebugReticleAfterEverything?.Value ?? false)
+            ? CameraEvent.AfterEverything
+            : CameraEvent.AfterForwardAlpha;
 
         private void OnDestroy()
         {

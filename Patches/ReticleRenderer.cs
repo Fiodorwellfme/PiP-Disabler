@@ -7,7 +7,8 @@ namespace PiPDisabler
 {
     /// <summary>
     /// Renders the scope reticle via a CommandBuffer injected at
-    /// CameraEvent.AfterForwardAlpha on the main FPS camera.
+    /// a configurable CameraEvent on the main FPS camera
+    /// (AfterForwardAlpha by default, or AfterEverything via debug toggle).
     ///
     /// ── CAMERA ALIGNMENT APPROACH ───────────────────────────────────────
     /// The root cause of reticle jitter is the mismatch between where the
@@ -69,6 +70,7 @@ namespace PiPDisabler
         // CommandBuffer state
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
+        private static CameraEvent   _attachedCameraEvent = CameraEvent.AfterForwardAlpha;
         private static bool          _preCullRegistered;
 
         // World-space TRS for the reticle quad (rebuilt in onPreCull)
@@ -254,16 +256,27 @@ namespace PiPDisabler
             var mainCam = PiPDisablerPlugin.GetMainCamera();
             if (mainCam == null) return;
 
+            CameraEvent desiredEvent = PiPDisablerPlugin.GetReticleCameraEvent();
+
+            if (_attachedCamera == mainCam && _cmdBuffer != null && _attachedCameraEvent == desiredEvent)
+                return;
+
             if (_attachedCamera != null && _attachedCamera != mainCam)
                 DetachFromCamera();
 
-            if (_attachedCamera == mainCam) return;
+            if (_attachedCamera != null && _cmdBuffer != null && _attachedCameraEvent != desiredEvent)
+            {
+                try { _attachedCamera.RemoveCommandBuffer(_attachedCameraEvent, _cmdBuffer); }
+                catch (System.Exception) { }
+                _attachedCamera = null;
+            }
 
             if (_cmdBuffer == null)
                 _cmdBuffer = new CommandBuffer { name = "ScopeReticleOverlay" };
 
-            mainCam.AddCommandBuffer(CameraEvent.AfterForwardAlpha, _cmdBuffer);
+            mainCam.AddCommandBuffer(desiredEvent, _cmdBuffer);
             _attachedCamera = mainCam;
+            _attachedCameraEvent = desiredEvent;
 
             if (!_preCullRegistered)
             {
@@ -272,7 +285,7 @@ namespace PiPDisabler
             }
 
             PiPDisablerPlugin.LogInfo(
-                $"[Reticle] CommandBuffer attached to '{mainCam.name}' at AfterForwardAlpha");
+                $"[Reticle] CommandBuffer attached to '{mainCam.name}' at {_attachedCameraEvent}");
         }
 
         private static void DetachFromCamera()
@@ -285,7 +298,7 @@ namespace PiPDisabler
 
             if (_attachedCamera != null && _cmdBuffer != null)
             {
-                try { _attachedCamera.RemoveCommandBuffer(CameraEvent.AfterForwardAlpha, _cmdBuffer); }
+                try { _attachedCamera.RemoveCommandBuffer(_attachedCameraEvent, _cmdBuffer); }
                 catch (System.Exception) { }
             }
 
