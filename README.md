@@ -2,6 +2,20 @@
   
 Runtime meshcutting combined with FOV zoom (incompatible with Fontaine's FOV fix) to reduce the FPS cost of ADSing with optic scopes.
 
+# How it works (In progress):  
+
+When ADS, identify if scope is optic or not.  
+If Optic then check if thermal or NVG or variable scope or part of blacklisted scopes. If any of those is true then bypass mod.  
+Extract reticle, flip the texture horizontally and display it center screen in a command buffer.  
+  
+Set a 4 diameter cutting plane along the scope axis using the lens closest to the camera as the origin (this has to be configured manually for each scope).  
+The meshcutter cuts through all the meshes that are found between hands and the scope and is then cached for reusal during the raid.  
+  
+Once the mesh has been cut, use it to create a mask that hides the reticle when it intersects with scope housing/Weapon mesh.  
+Then set main camera rotation axis aligned with weapon axis, extract reticle at runtime and display it center screen in a command buffer.  
+Magnification is found in Template.Zooms to be consistent across scopes, sometimes it may not be the same as the PiP scopes because of BSG Jank.  
+Calculate FOV by dividing reference FOV (50°) by magnification and then set main cam FOV to that value.
+
 <h1>Current features:</h1>    
   
 Reliable magnification level through scope json (may not be exactly same as PiP).  
@@ -30,9 +44,10 @@ Per scope reticle size.
 -~~Add per scope config~~ **(maybe even per mag level ?)**    
 -~~Hide reticle when swaying across scope housing/weapon~~ Done  
 -~~Find way to make vignette stick to scope.~~ Kind of, all the guns scale approximately the same so one vignette/shadow size fits all  
+-~~Release 0.1~~  
+-Try to make lens transparent + render reticle on it instead of the center of screen + camera alignment method  
 -Hide multiple options under advanced BepInEx settings  
 -Find best settings for different scopes. (Help welcome)  
--Release 0.1  
 
 <h1>FPS Comparison:</h1>     
   
