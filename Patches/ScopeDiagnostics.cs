@@ -5,7 +5,7 @@ using EFT;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// On-demand diagnostics dump, triggered by DiagnosticsKey.
@@ -81,7 +81,7 @@ namespace ScopeHousingMeshSurgery
             {
                 sb.AppendLine("[Diagnostics] No active OpticSight — not currently scoped.");
                 sb.AppendLine("[Diagnostics] ==========================================");
-                ScopeHousingMeshSurgeryPlugin.LogInfo(sb.ToString());
+                PiPDisablerPlugin.LogInfo(sb.ToString());
                 return;
             }
 
@@ -107,7 +107,7 @@ namespace ScopeHousingMeshSurgery
                 }
                 else
                 {
-                    sb.AppendLine($"[Diagnostics] Magnification   : no ScopeZoomHandler — using DefaultZoom ({ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value:F1}x)");
+                    sb.AppendLine($"[Diagnostics] Magnification   : no ScopeZoomHandler — using DefaultZoom ({PiPDisablerPlugin.DefaultZoom.Value:F1}x)");
                 }
             }
             catch (System.Exception ex)
@@ -117,16 +117,16 @@ namespace ScopeHousingMeshSurgery
 
             // ── Cut plane ─────────────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Cut Plane Config ---");
-            sb.AppendLine($"[Diagnostics]   CutMode          : {ScopeHousingMeshSurgeryPlugin.GetCutMode()}");
-            sb.AppendLine($"[Diagnostics]   PlaneNormalAxis  : {ScopeHousingMeshSurgeryPlugin.GetPlaneNormalAxis()}");
-            sb.AppendLine($"[Diagnostics]   PlaneOffsetMeters: {ScopeHousingMeshSurgeryPlugin.GetPlaneOffsetMeters():F4}");
-            sb.AppendLine($"[Diagnostics]   CylinderRadius   : {ScopeHousingMeshSurgeryPlugin.GetCylinderRadius():F4}");
-            sb.AppendLine($"[Diagnostics]   MidCylinderRadius: {ScopeHousingMeshSurgeryPlugin.GetMidCylinderRadius():F4} @ pos={ScopeHousingMeshSurgeryPlugin.GetMidCylinderPosition():F2}");
-            sb.AppendLine($"[Diagnostics]   FarCylinderRadius: {ScopeHousingMeshSurgeryPlugin.GetFarCylinderRadius():F4}");
-            sb.AppendLine($"[Diagnostics]   CutStartOffset   : {ScopeHousingMeshSurgeryPlugin.GetCutStartOffset():F4}");
-            sb.AppendLine($"[Diagnostics]   CutLength        : {ScopeHousingMeshSurgeryPlugin.GetCutLength():F4}");
-            sb.AppendLine($"[Diagnostics]   NearPreserveDepth: {ScopeHousingMeshSurgeryPlugin.GetNearPreserveDepth():F4}");
-            sb.AppendLine($"[Diagnostics]   CutRadius        : {ScopeHousingMeshSurgeryPlugin.GetCutRadius():F4}");
+            sb.AppendLine($"[Diagnostics]   CutMode          : {PiPDisablerPlugin.GetCutMode()}");
+            sb.AppendLine($"[Diagnostics]   PlaneNormalAxis  : {PiPDisablerPlugin.GetPlaneNormalAxis()}");
+            sb.AppendLine($"[Diagnostics]   PlaneOffsetMeters: {PiPDisablerPlugin.GetPlaneOffsetMeters():F4}");
+            sb.AppendLine($"[Diagnostics]   CylinderRadius   : {PiPDisablerPlugin.GetCylinderRadius():F4}");
+            sb.AppendLine($"[Diagnostics]   MidCylinderRadius: {PiPDisablerPlugin.GetMidCylinderRadius():F4} @ pos={PiPDisablerPlugin.GetMidCylinderPosition():F2}");
+            sb.AppendLine($"[Diagnostics]   FarCylinderRadius: {PiPDisablerPlugin.GetFarCylinderRadius():F4}");
+            sb.AppendLine($"[Diagnostics]   CutStartOffset   : {PiPDisablerPlugin.GetCutStartOffset():F4}");
+            sb.AppendLine($"[Diagnostics]   CutLength        : {PiPDisablerPlugin.GetCutLength():F4}");
+            sb.AppendLine($"[Diagnostics]   NearPreserveDepth: {PiPDisablerPlugin.GetNearPreserveDepth():F4}");
+            sb.AppendLine($"[Diagnostics]   CutRadius        : {PiPDisablerPlugin.GetCutRadius():F4}");
 
             // ── Plane resolution ──────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Plane Resolution ---");
@@ -145,7 +145,7 @@ namespace ScopeHousingMeshSurgery
                 if (ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode ?? scopeRoot,
                     out var pp, out var pn, out _))
                 {
-                    pp += pn * ScopeHousingMeshSurgeryPlugin.GetPlaneOffsetMeters();
+                    pp += pn * PiPDisablerPlugin.GetPlaneOffsetMeters();
                     sb.AppendLine($"[Diagnostics]   Plane point     : {pp:F4}");
                     sb.AppendLine($"[Diagnostics]   Plane normal    : {pn:F4}");
                 }
@@ -187,11 +187,11 @@ namespace ScopeHousingMeshSurgery
 
             // ── Reticle ───────────────────────────────────────────────────────
             sb.AppendLine("[Diagnostics] --- Reticle ---");
-            sb.AppendLine($"[Diagnostics]   ShowReticle      : {ScopeHousingMeshSurgeryPlugin.GetShowReticle()}");
-            sb.AppendLine($"[Diagnostics]   ReticleBaseSize  : {ScopeHousingMeshSurgeryPlugin.GetReticleBaseSize():F4}");
+            sb.AppendLine($"[Diagnostics]   ShowReticle      : {PiPDisablerPlugin.GetShowReticle()}");
+            sb.AppendLine($"[Diagnostics]   ReticleBaseSize  : {PiPDisablerPlugin.GetReticleBaseSize():F4}");
             sb.AppendLine("[Diagnostics] ==========================================");
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(sb.ToString());
+            PiPDisablerPlugin.LogInfo(sb.ToString());
         }
 
         private static string GetPath(Transform t)

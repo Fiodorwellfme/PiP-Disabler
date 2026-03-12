@@ -4,7 +4,7 @@ using EFT.CameraControl;
 using HarmonyLib;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// Swaps main camera LOD bias and culling settings with scope-appropriate values during ADS.
@@ -51,7 +51,7 @@ namespace ScopeHousingMeshSurgery
         {
             if (os == null) return;
 
-            var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            var cam = PiPDisablerPlugin.GetMainCamera();
             if (cam == null) return;
 
             // Save originals (only on first apply, not re-apply from mode switch)
@@ -65,7 +65,7 @@ namespace ScopeHousingMeshSurgery
                 _savedMaxLodLevel = QualitySettings.maximumLODLevel;
                 _applied = true;
 
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[CameraSettings] Saved: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0} " +
                     $"maxLOD={_savedMaxLodLevel}");
             }
@@ -76,7 +76,7 @@ namespace ScopeHousingMeshSurgery
 
             if (TryGetScopeCameraData(os, out scopeFov, out scopeFarClip))
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[CameraSettings] ScopeCameraData: FOV={scopeFov:F2} FarClip={scopeFarClip:F0}");
             }
 
@@ -88,8 +88,8 @@ namespace ScopeHousingMeshSurgery
             // === Apply LOD bias ===
             // Increase LOD bias proportionally to magnification.
             // At 4x zoom, objects at distance appear 4x larger → use 4x finer LODs.
-            float manualLodBias = ScopeHousingMeshSurgeryPlugin.ManualLodBias != null
-                ? ScopeHousingMeshSurgeryPlugin.ManualLodBias.Value
+            float manualLodBias = PiPDisablerPlugin.ManualLodBias != null
+                ? PiPDisablerPlugin.ManualLodBias.Value
                 : 0f;
             float newLodBias = manualLodBias > 0f
                 ? manualLodBias
@@ -97,8 +97,8 @@ namespace ScopeHousingMeshSurgery
             QualitySettings.lodBias = newLodBias;
 
             // Force highest LOD by default unless overridden by manual max LOD level.
-            int manualMaxLod = ScopeHousingMeshSurgeryPlugin.ManualMaximumLodLevel != null
-                ? ScopeHousingMeshSurgeryPlugin.ManualMaximumLodLevel.Value
+            int manualMaxLod = PiPDisablerPlugin.ManualMaximumLodLevel != null
+                ? PiPDisablerPlugin.ManualMaximumLodLevel.Value
                 : -1;
             int appliedMaxLod = manualMaxLod >= 0 ? manualMaxLod : 0;
             QualitySettings.maximumLODLevel = appliedMaxLod;
@@ -111,8 +111,8 @@ namespace ScopeHousingMeshSurgery
             // Increase cull distances proportionally so objects stay visible when zoomed
             if (_savedCullDistances != null)
             {
-                float manualCullMultiplier = ScopeHousingMeshSurgeryPlugin.ManualCullingMultiplier != null
-                    ? ScopeHousingMeshSurgeryPlugin.ManualCullingMultiplier.Value
+                float manualCullMultiplier = PiPDisablerPlugin.ManualCullingMultiplier != null
+                    ? PiPDisablerPlugin.ManualCullingMultiplier.Value
                     : 0f;
                 float cullingMultiplier = manualCullMultiplier > 0f
                     ? manualCullMultiplier
@@ -127,7 +127,7 @@ namespace ScopeHousingMeshSurgery
                 cam.layerCullDistances = newCull;
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[CameraSettings] Applied: lodBias {_savedLodBias:F2}→{newLodBias:F2} " +
                 $"(mag={magnification:F1}x) farClip={cam.farClipPlane:F0} maxLOD={appliedMaxLod}");
         }
@@ -142,14 +142,14 @@ namespace ScopeHousingMeshSurgery
             QualitySettings.lodBias = _savedLodBias;
             QualitySettings.maximumLODLevel = _savedMaxLodLevel;
 
-            var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();            if (cam != null)
+            var cam = PiPDisablerPlugin.GetMainCamera();            if (cam != null)
             {
                 cam.farClipPlane = _savedFarClip;
                 if (_savedCullDistances != null)
                     cam.layerCullDistances = _savedCullDistances;
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[CameraSettings] Restored: lodBias={_savedLodBias:F2} " +
                 $"farClip={_savedFarClip:F0} maxLOD={_savedMaxLodLevel}");
 
@@ -260,7 +260,7 @@ namespace ScopeHousingMeshSurgery
                         if (f1.FieldType != typeof(float)) continue;
 
                         CacheFields(type);
-                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        PiPDisablerPlugin.LogInfo(
                             $"[CameraSettings] Found ScopeCameraData: {type.FullName}");
                         return;
                     }

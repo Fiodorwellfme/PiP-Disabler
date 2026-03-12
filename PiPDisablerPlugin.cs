@@ -5,6 +5,7 @@ using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
 using System.IO;
+using PiPDisabler;
 using UnityEngine;
 
 namespace PiPDisabler
@@ -181,6 +182,7 @@ namespace PiPDisabler
 
         // --- Debug ---
         internal static ConfigEntry<bool> VerboseLogging;
+        internal static ConfigEntry<bool> DebugLogCutCandidates;
 
         private bool _wasInRaid;
 
@@ -511,6 +513,9 @@ namespace PiPDisabler
             // --- Debug ---
             VerboseLogging = Config.Bind("7. Debug", "VerboseLogging", false,
                 "Enable detailed logging. Turn on to diagnose lens/zoom issues.");
+            DebugLogCutCandidates = Config.Bind("7. Debug", "DebugLogCutCandidates", false,
+                "When enabled, logs every mesh candidate found by mesh surgery (path, mesh name, vertices, active state), " +
+                "plus per-candidate radius checks. Useful to diagnose attachments that are not being cut.");
 
             Patches.Patcher.Enable();
 
@@ -525,7 +530,7 @@ namespace PiPDisabler
             EnableWeaponScaling.SettingChanged += OnWeaponScalingToggled;
             ScopeWhitelistNames.SettingChanged += OnWhitelistSettingsChanged;
 
-            Logger.LogInfo("ScopeHousingMeshSurgery v4.7.0 loaded.");
+            Logger.LogInfo("PiPDisabler v4.7.0 loaded.");
             Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
             Logger.LogInfo($"  WhitelistNames='{ScopeWhitelistNames.Value}'");
             Logger.LogInfo($"  EnableZoom={EnableZoom.Value}");
@@ -569,6 +574,7 @@ namespace PiPDisabler
         internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : RestoreOnUnscope.Value;
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
+        internal static bool GetDebugLogCutCandidates() => DebugLogCutCandidates?.Value ?? false;
 
         private void OnDestroy()
         {

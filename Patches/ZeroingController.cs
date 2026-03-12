@@ -9,7 +9,7 @@ using Comfort.Common;
 using HarmonyLib;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// Handles optic zeroing (calibration distance) via the proper EFT pathway.
@@ -58,15 +58,15 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void Tick()
         {
-            if (!ScopeHousingMeshSurgeryPlugin.EnableZeroing.Value) return;
+            if (!PiPDisablerPlugin.EnableZeroing.Value) return;
             if (!ScopeLifecycle.IsScoped) return;
 
             // Cooldown
             if (Time.unscaledTime - _lastZeroingTime < ZEROING_COOLDOWN) return;
 
             // Poll input
-            KeyCode upKey   = ScopeHousingMeshSurgeryPlugin.ZeroingUpKey.Value;
-            KeyCode downKey = ScopeHousingMeshSurgeryPlugin.ZeroingDownKey.Value;
+            KeyCode upKey   = PiPDisablerPlugin.ZeroingUpKey.Value;
+            KeyCode downKey = PiPDisablerPlugin.ZeroingDownKey.Value;
 
             bool wantsUp   = UnityEngine.Input.GetKeyDown(upKey);
             bool wantsDown = UnityEngine.Input.GetKeyDown(downKey);
@@ -92,12 +92,12 @@ namespace ScopeHousingMeshSurgery
                 if (wantsUp)
                 {
                     _opticCalibUpMethod.Invoke(fc, new object[] { scopeStates });
-                    ScopeHousingMeshSurgeryPlugin.LogInfo("[Zeroing] OpticCalibrationSwitchUp called");
+                    PiPDisablerPlugin.LogInfo("[Zeroing] OpticCalibrationSwitchUp called");
                 }
                 else
                 {
                     _opticCalibDownMethod.Invoke(fc, new object[] { scopeStates });
-                    ScopeHousingMeshSurgeryPlugin.LogInfo("[Zeroing] OpticCalibrationSwitchDown called");
+                    PiPDisablerPlugin.LogInfo("[Zeroing] OpticCalibrationSwitchDown called");
                 }
 
                 _lastZeroingTime = Time.unscaledTime;
@@ -107,7 +107,7 @@ namespace ScopeHousingMeshSurgery
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError($"[Zeroing] Tick failed: {ex.Message}");
+                PiPDisablerPlugin.LogError($"[Zeroing] Tick failed: {ex.Message}");
             }
         }
 
@@ -139,14 +139,14 @@ namespace ScopeHousingMeshSurgery
                     if (meters != CurrentZeroingMeters)
                     {
                         CurrentZeroingMeters = meters;
-                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        PiPDisablerPlugin.LogInfo(
                             $"[Zeroing] Current distance: {meters}m");
                     }
                 }
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[Zeroing] ReadCurrentZeroing failed: {ex.Message}");
             }
         }
@@ -225,7 +225,7 @@ namespace ScopeHousingMeshSurgery
 
                 if (_opticCalibUpMethod == null || _opticCalibDownMethod == null)
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogError(
+                    PiPDisablerPlugin.LogError(
                         "[Zeroing] Could not find OpticCalibrationSwitchUp/Down methods");
                     return false;
                 }
@@ -241,7 +241,7 @@ namespace ScopeHousingMeshSurgery
                     if (_scopeStateId == null || _scopeStateScopeIndex == null ||
                         _scopeStateScopeMode == null || _scopeStateCalibIndex == null)
                     {
-                        ScopeHousingMeshSurgeryPlugin.LogWarn(
+                        PiPDisablerPlugin.LogWarn(
                             $"[Zeroing] FirearmScopeStateStruct fields incomplete. " +
                             $"Id={_scopeStateId != null} ScopeIndex={_scopeStateScopeIndex != null} " +
                             $"Mode={_scopeStateScopeMode != null} CalibIdx={_scopeStateCalibIndex != null}. " +
@@ -268,7 +268,7 @@ namespace ScopeHousingMeshSurgery
                         }
                     }
 
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    PiPDisablerPlugin.LogInfo(
                         $"[Zeroing] Struct type: {_scopeStateStructType.Name} " +
                         $"Id={_scopeStateId?.Name} ScopeIndex={_scopeStateScopeIndex?.Name} " +
                         $"Mode={_scopeStateScopeMode?.Name} CalibIdx={_scopeStateCalibIndex?.Name}");
@@ -285,7 +285,7 @@ namespace ScopeHousingMeshSurgery
                                    _opticCalibDownMethod != null &&
                                    _scopeStateStructType != null;
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[Zeroing] Reflection ready={_reflectionReady} " +
                     $"Up={_opticCalibUpMethod?.Name} Down={_opticCalibDownMethod?.Name}");
 
@@ -293,7 +293,7 @@ namespace ScopeHousingMeshSurgery
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError($"[Zeroing] Reflection setup failed: {ex.Message}");
+                PiPDisablerPlugin.LogError($"[Zeroing] Reflection setup failed: {ex.Message}");
                 return false;
             }
         }
@@ -320,7 +320,7 @@ namespace ScopeHousingMeshSurgery
 
                 if (sights.Count == 0)
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose("[Zeroing] No sights found on weapon");
+                    PiPDisablerPlugin.LogVerbose("[Zeroing] No sights found on weapon");
                     return null;
                 }
 
@@ -344,14 +344,14 @@ namespace ScopeHousingMeshSurgery
                     stateArray.SetValue(state, i);
                 }
 
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[Zeroing] Built {sights.Count} scope states, aimIndex={currentAimIndex}");
 
                 return stateArray;
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError($"[Zeroing] BuildScopeStates failed: {ex.Message}");
+                PiPDisablerPlugin.LogError($"[Zeroing] BuildScopeStates failed: {ex.Message}");
                 return null;
             }
         }
@@ -426,7 +426,7 @@ namespace ScopeHousingMeshSurgery
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError($"[Zeroing] CollectSights failed: {ex.Message}");
+                PiPDisablerPlugin.LogError($"[Zeroing] CollectSights failed: {ex.Message}");
             }
         }
 
@@ -575,7 +575,7 @@ namespace ScopeHousingMeshSurgery
         {
             foreach (var f in fields)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[Zeroing] Struct field: {f.Name} type={f.FieldType.Name}");
             }
         }

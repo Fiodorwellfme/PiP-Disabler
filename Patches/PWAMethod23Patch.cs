@@ -6,7 +6,7 @@ using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 
-namespace ScopeHousingMeshSurgery.Patches
+namespace PiPDisabler.Patches
 {
     /// <summary>
     /// Rewrites ProceduralWeaponAnimation.method_23's SetFov call in-place so
@@ -56,8 +56,8 @@ namespace ScopeHousingMeshSurgery.Patches
                 return;
 
             if (pwa != null &&
-                ScopeHousingMeshSurgeryPlugin.ModEnabled.Value &&
-                ScopeHousingMeshSurgeryPlugin.EnableZoom.Value &&
+                PiPDisablerPlugin.ModEnabled.Value &&
+                PiPDisablerPlugin.EnableZoom.Value &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
                 pwa.IsAiming &&

@@ -7,7 +7,7 @@ using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery.Patches
+namespace PiPDisabler.Patches
 {
     /// <summary>
     /// Patches Player.SetCompensationScale to override the VISUAL ribcage scale
@@ -59,7 +59,7 @@ namespace ScopeHousingMeshSurgery.Patches
         /// </summary>
         public static void CaptureBaseState()
         {
-            if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value) return;
+            if (!PiPDisablerPlugin.EnableWeaponScaling.Value) return;
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) { _isActive = false; return; }
             _isActive = true;
@@ -73,7 +73,7 @@ namespace ScopeHousingMeshSurgery.Patches
         public static void UpdateScale()
         {
             if (!_isActive) return;
-            if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value) return;
+            if (!PiPDisablerPlugin.EnableWeaponScaling.Value) return;
 
             try
             {
@@ -113,12 +113,12 @@ namespace ScopeHousingMeshSurgery.Patches
                 player.CalculateScaleValueByFov(settingsFov);
                 player.SetCompensationScale(true);
 
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[WeaponScaling] Restored normal scaling (settingsFov={settingsFov:F1})");
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[WeaponScaling] RestoreScale error: {ex.Message}");
             }
         }
@@ -133,8 +133,8 @@ namespace ScopeHousingMeshSurgery.Patches
         {
             float halfRefRad = ZoomBaseline * 0.5f * Mathf.Deg2Rad;
             float halfCurRad = currentFov * 0.5f * Mathf.Deg2Rad;
-            float baseline = ScopeHousingMeshSurgeryPlugin.BaselineWeaponScale.Value;
-            float strength = ScopeHousingMeshSurgeryPlugin.WeaponScaleStrength.Value;
+            float baseline = PiPDisablerPlugin.BaselineWeaponScale.Value;
+            float strength = PiPDisablerPlugin.WeaponScaleStrength.Value;
             float tanRef = Mathf.Tan(halfRefRad);
             float tanCur = Mathf.Tan(halfCurRad);
             float invRatio = tanRef / tanCur;
@@ -158,7 +158,7 @@ namespace ScopeHousingMeshSurgery.Patches
             try
             {
                 if (!__instance.IsYourPlayer) return;
-                if (!ScopeHousingMeshSurgeryPlugin.EnableWeaponScaling.Value) return;
+                if (!PiPDisablerPlugin.EnableWeaponScaling.Value) return;
                 if (!ScopeLifecycle.IsScoped) return;
                 if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
                 if (!_isActive) return;

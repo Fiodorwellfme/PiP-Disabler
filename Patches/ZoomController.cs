@@ -2,7 +2,7 @@ using System;
 using EFT.CameraControl;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// Handles scope zoom math.
@@ -25,7 +25,7 @@ namespace ScopeHousingMeshSurgery
         /// <summary>Kept for API compatibility with existing startup flow.</summary>
         public static void LoadShader()
         {
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 "[ZoomController] Using template-based FOV zoom.");
         }
 
@@ -50,7 +50,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static float GetMagnification(OpticSight os)
         {
-            if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
+            if (os == null) return PiPDisablerPlugin.DefaultZoom.Value;
 
             // Ensure range is discovered
             if (!_rangeDiscovered)
@@ -70,7 +70,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static float GetMinFov(OpticSight os)
         {
-            if (os == null) return 35f / ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
+            if (os == null) return 35f / PiPDisablerPlugin.DefaultZoom.Value;
 
             // Try template zoom range first
             var (minZoom, maxZoom) = FovController.GetTemplateZoomRange();
@@ -136,7 +136,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static float GetMinMagnification(OpticSight os)
         {
-            if (os == null) return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
+            if (os == null) return PiPDisablerPlugin.DefaultZoom.Value;
 
             var (minZoom, maxZoom) = FovController.GetTemplateZoomRange();
             if (minZoom > 0.1f)
@@ -184,7 +184,7 @@ namespace ScopeHousingMeshSurgery
             {
                 _nativeMinMag = minZoom;
                 _nativeMaxMag = maxZoom;
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[ZoomController] Discovered template zoom range: {minZoom:F2}x - {maxZoom:F2}x (variable)");
                 return;
             }
@@ -196,7 +196,7 @@ namespace ScopeHousingMeshSurgery
                 if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
                 if (szh == null)
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    PiPDisablerPlugin.LogVerbose(
                         "[ZoomController] No ScopeZoomHandler — fixed scope");
                     return;
                 }
@@ -245,19 +245,19 @@ namespace ScopeHousingMeshSurgery
                     // Convert FOV range to magnification range (35° optic camera baseline)
                     _nativeMinMag = 35f / maxFov; // max FOV → min magnification
                     _nativeMaxMag = 35f / minFov; // min FOV → max magnification
-                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        PiPDisablerPlugin.LogInfo(
                         $"[ZoomController] Discovered FOV-based zoom range: " +
                         $"{_nativeMinMag:F2}x - {_nativeMaxMag:F2}x (from FOV {minFov:F2}°-{maxFov:F2}°)");
                 }
                 else
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    PiPDisablerPlugin.LogVerbose(
                         $"[ZoomController] Could not discover zoom range — fixed scope at {currentMag:F2}x");
                 }
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[ZoomController] DiscoverZoomRange exception: {ex.Message}");
             }
         }
