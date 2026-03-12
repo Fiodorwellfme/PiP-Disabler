@@ -3,8 +3,8 @@
     <TargetFramework>net472</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
-    <AssemblyName>PiPDisable</AssemblyName>
-    <RootNamespace>PiPDisable</RootNamespace>
+    <AssemblyName>PiPDisabler</AssemblyName>
+    <RootNamespace>PiPDisabler</RootNamespace>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
   <ItemGroup>
@@ -70,4 +70,5 @@
     <Message Importance="High" Text="Copied $(TargetFileName) → ..\..\BepInEx\plugins\PiP-Disabler\" />
   </Target>
 </Project>
+
 
