@@ -69,6 +69,7 @@ namespace PiPDisabler
         // CommandBuffer state
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
+        private static CameraEvent   _attachedEvent = CameraEvent.AfterForwardAlpha;
         private static bool          _preCullRegistered;
 
         // World-space TRS for the reticle quad (rebuilt in onPreCull)
@@ -183,6 +184,8 @@ namespace PiPDisabler
         {
             if (_cmdBuffer == null) return;
 
+            EnsureCorrectCameraEvent();
+
             if (magnification < 1f) magnification = 1f;
             if (Mathf.Abs(magnification - _lastMag) >= 0.01f)
                 _lastMag = magnification;
@@ -262,8 +265,10 @@ namespace PiPDisabler
             if (_cmdBuffer == null)
                 _cmdBuffer = new CommandBuffer { name = "ScopeReticleOverlay" };
 
-            mainCam.AddCommandBuffer(CameraEvent.AfterForwardAlpha, _cmdBuffer);
+            CameraEvent targetEvent = GetReticleCameraEvent();
+            mainCam.AddCommandBuffer(targetEvent, _cmdBuffer);
             _attachedCamera = mainCam;
+            _attachedEvent = targetEvent;
 
             if (!_preCullRegistered)
             {
@@ -272,7 +277,7 @@ namespace PiPDisabler
             }
 
             PiPDisablerPlugin.LogInfo(
-                $"[Reticle] CommandBuffer attached to '{mainCam.name}' at AfterForwardAlpha");
+                $"[Reticle] CommandBuffer attached to '{mainCam.name}' at {_attachedEvent}");
         }
 
         private static void DetachFromCamera()
@@ -285,7 +290,7 @@ namespace PiPDisabler
 
             if (_attachedCamera != null && _cmdBuffer != null)
             {
-                try { _attachedCamera.RemoveCommandBuffer(CameraEvent.AfterForwardAlpha, _cmdBuffer); }
+                try { _attachedCamera.RemoveCommandBuffer(_attachedEvent, _cmdBuffer); }
                 catch (System.Exception) { }
             }
 
@@ -297,6 +302,30 @@ namespace PiPDisabler
             }
 
             _attachedCamera = null;
+        }
+
+
+        private static CameraEvent GetReticleCameraEvent()
+        {
+            return PiPDisablerPlugin.GetDebugReticleAfterEverything()
+                ? CameraEvent.AfterEverything
+                : CameraEvent.AfterForwardAlpha;
+        }
+
+        private static void EnsureCorrectCameraEvent()
+        {
+            if (_attachedCamera == null || _cmdBuffer == null) return;
+
+            CameraEvent desiredEvent = GetReticleCameraEvent();
+            if (desiredEvent == _attachedEvent) return;
+
+            try { _attachedCamera.RemoveCommandBuffer(_attachedEvent, _cmdBuffer); }
+            catch (System.Exception) { }
+
+            _attachedCamera.AddCommandBuffer(desiredEvent, _cmdBuffer);
+            _attachedEvent = desiredEvent;
+
+            PiPDisablerPlugin.LogInfo($"[Reticle] CommandBuffer moved to {_attachedEvent} (debug toggle)");
         }
 
         // ── onPreCull — camera alignment + rebuild CommandBuffer ─────────────
