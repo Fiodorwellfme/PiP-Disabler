@@ -79,15 +79,14 @@ namespace ScopeHousingMeshSurgery
         }
 
         /// <summary>
-        /// Returns true if the most recently enabled OpticSight (as seen by the
-        /// OnEnable patch — set before CheckAndUpdate / PWA check) matches
-        /// AutoBypassNameContains and is still enabled in the scene.
+        /// Returns true if the best current optic candidate matches
+        /// AutoBypassNameContains and is still enabled.
         /// Used by PiPDisabler.ShouldAllowVanillaPiP() which has no concrete
         /// OpticSight but must decide per-frame whether to restore vanilla PiP.
         /// </summary>
         internal static bool IsLastOpticNameBypassed()
         {
-            var os = _lastEnabledOptic;
+            var os = FindEnabledOpticFromPWA();
             if (os == null) return false;
             try { if (!os.enabled) return false; } catch { return false; }
             return ScopeNameMatchesBypassPattern(os);
@@ -269,7 +268,7 @@ namespace ScopeHousingMeshSurgery
                 bool isOptic = _getIsOptic(currentScope);
                 if (!isOptic) { reason = "not optic"; goto evaluate; }
 
-                var enabledOs = FindEnabledOpticFromPWA();
+                var enabledOs = FindEnabledOpticFromPWA(pwa, currentScope);
                 if (enabledOs == null)
                 {
                     // Hybrid toggle case: CurrentScope may still report optic while the
@@ -1042,22 +1041,131 @@ namespace ScopeHousingMeshSurgery
             return null;
         }
 
-        /// <summary>
-        /// Finds an enabled OpticSight from cached references only.
-        /// No scene-wide FindObjectsOfType — those cause multi-ms hitches.
-        /// The OnEnable/OnDisable patches keep _lastEnabledOptic warm.
-        /// </summary>
-        private static OpticSight FindEnabledOpticFromPWA()
+        private static OpticSight ResolveOpticFromCurrentScope(object currentScope)
         {
+            if (currentScope == null) return null;
+
+            try
+            {
+                if (currentScope is OpticSight direct)
+                    return direct;
+
+                // Common EFT path: CurrentScope may expose an OpticSight-like member.
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                var t = currentScope.GetType();
+
+                foreach (var p in t.GetProperties(flags))
+                {
+                    if (p == null || p.GetIndexParameters().Length > 0 || !p.CanRead) continue;
+                    if (p.PropertyType != typeof(OpticSight)) continue;
+                    var value = p.GetValue(currentScope, null) as OpticSight;
+                    if (value != null) return value;
+                }
+
+                foreach (var f in t.GetFields(flags))
+                {
+                    if (f == null || f.FieldType != typeof(OpticSight)) continue;
+                    var value = f.GetValue(currentScope) as OpticSight;
+                    if (value != null) return value;
+                }
+
+                // Some runtime variants expose a transform/component; search locally from there.
+                foreach (var p in t.GetProperties(flags))
+                {
+                    if (p == null || p.GetIndexParameters().Length > 0 || !p.CanRead) continue;
+                    object value;
+                    try { value = p.GetValue(currentScope, null); }
+                    catch { continue; }
+
+                    if (value is Component c)
+                    {
+                        var os = c.GetComponentInChildren<OpticSight>(true);
+                        if (os != null) return os;
+                    }
+                    else if (value is GameObject go)
+                    {
+                        var os = go.GetComponentInChildren<OpticSight>(true);
+                        if (os != null) return os;
+                    }
+                    else if (value is Transform tr)
+                    {
+                        var os = tr.GetComponentInChildren<OpticSight>(true);
+                        if (os != null) return os;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    $"[ScopeLifecycle] ResolveOpticFromCurrentScope error: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private static OpticSight FindEnabledOpticFromWeaponLocalSearch(ProceduralWeaponAnimation pwa)
+        {
+            if (pwa == null) return null;
+
+            try
+            {
+                var optics = pwa.GetComponentsInChildren<OpticSight>(true);
+                if (optics == null || optics.Length == 0) return null;
+
+                // Prefer enabled/active optics first.
+                foreach (var os in optics)
+                {
+                    if (os != null && os.isActiveAndEnabled)
+                        return os;
+                }
+
+                // Transitional fallback: still return the first discovered optic.
+                foreach (var os in optics)
+                {
+                    if (os != null) return os;
+                }
+            }
+            catch (Exception ex)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    $"[ScopeLifecycle] FindEnabledOpticFromWeaponLocalSearch error: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Resolve the active optic with this priority:
+        /// 1) CurrentScope-derived optic
+        /// 2) weapon-local OpticSight child search
+        /// 3) cached active/last-enabled references
+        /// No scene-wide FindObjectsOfType scans are used.
+        /// </summary>
+        private static OpticSight FindEnabledOpticFromPWA(ProceduralWeaponAnimation pwa = null, object currentScope = null)
+        {
+            var scopeResolved = ResolveOpticFromCurrentScope(currentScope);
+            if (scopeResolved != null && scopeResolved.isActiveAndEnabled)
+                return scopeResolved;
+
+            var localSearch = FindEnabledOpticFromWeaponLocalSearch(pwa);
+            if (localSearch != null && localSearch.isActiveAndEnabled)
+                return localSearch;
+
             if (_activeOptic != null && _activeOptic.isActiveAndEnabled)
                 return _activeOptic;
 
             if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled)
                 return _lastEnabledOptic;
 
+            // Transitional fallback: use scope/local candidates even when not yet enabled.
+            if (scopeResolved != null)
+                return scopeResolved;
+
+            if (localSearch != null)
+                return localSearch;
+
             // During rapid transitions (mode switch), the incoming optic may not
             // be marked enabled yet. Trust the cache rather than doing a scene scan.
-            // The OnEnable patch will fire imminently and update the cache.
             return null;
         }
 
