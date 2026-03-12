@@ -647,6 +647,40 @@ namespace PiPDisabler
             return false;
         }
 
+        private static bool LooksLikeScopeRootByName(Transform t)
+        {
+            if (t == null || string.IsNullOrEmpty(t.name)) return false;
+
+            var lo = t.name.ToLowerInvariant();
+            return lo.Contains("scope")
+                || lo.Contains("optic")
+                || lo.Contains("sight")
+                || lo.Contains("collimator");
+        }
+
+        private static bool IsLikelyScopeRootForExclusion(Transform t)
+        {
+            // Many non-optic tactical devices (DBAL/flashlights/lasers) also expose
+            // mode_* children. For sibling-scope exclusion, require additional optic
+            // signals so those tactical attachments stay cuttable.
+            if (!HasModeChild(t)) return false;
+
+            if (LooksLikeScopeRootByName(t)) return true;
+
+            if (HasDirectChild(t, "backLens") || HasDirectChild(t, "backlens"))
+                return true;
+
+            if (FindDeepChild(t, "backLens") != null || FindDeepChild(t, "backlens") != null)
+                return true;
+
+            if (FindDeepChild(t, "optic_camera") != null)
+                return true;
+
+            // Parent container hint (e.g. mod_scope_XXX/<scopeRoot>)
+            var parentName = t.parent != null ? (t.parent.name ?? string.Empty).ToLowerInvariant() : string.Empty;
+            return parentName.Contains("scope") || parentName.Contains("optic");
+        }
+
         private static bool IsModeNode(string name)
         {
             if (name == null) return false;
@@ -984,8 +1018,9 @@ namespace PiPDisabler
                 var t = stack.Pop();
                 if (t == null) continue;
 
-                // If this is a scope root (has mode_* children) and it's not the active one, record it
-                if (t != activeScopeRoot && HasModeChild(t))
+                // If this is a likely scope root (not just any mode_* device) and it's not
+                // the active one, record it so we can skip sibling scope subtrees.
+                if (t != activeScopeRoot && IsLikelyScopeRootForExclusion(t))
                 {
                     results.Add(t);
                     continue; // don't recurse into other scopes
