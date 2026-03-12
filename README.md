@@ -20,6 +20,8 @@ Calculate FOV by dividing reference FOV (50°) by magnification and then set mai
 
 Scaling is done using the ribcage scaling method with some dark magic multipliers and offsets.
 
+When exiting ADS, the lens is made solid black to prevent reticle from flashing.  
+
 <h1>Current features:</h1>    
   
 Reliable magnification level through scope json (may not be exactly same as PiP).  
