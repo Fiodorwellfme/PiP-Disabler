@@ -470,7 +470,15 @@ namespace ScopeHousingMeshSurgery
             {
                 var pName = p.name ?? "";
                 var plo = pName.ToLowerInvariant();
-                if (plo.Contains("weapon") || plo.Contains("receiver") || plo.Contains("anim"))
+                // Receiver nodes usually parent the scope plus nearby attachments
+                // (mounts/handguards/lasers) that users expect to be cut too.
+                if (plo.Contains("receiver"))
+                {
+                    searchRoot = p;
+                    break;
+                }
+
+                if (plo.Contains("weapon") || plo.Contains("anim"))
                     break;
                 if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount"))
                 { searchRoot = p; continue; }
@@ -818,8 +826,16 @@ namespace ScopeHousingMeshSurgery
             {
                 var pName = p.name ?? "";
                 var plo = pName.ToLowerInvariant();
-                // Stop at weapon root, receiver, or anything that's clearly not scope-related
-                if (plo.Contains("weapon") || plo.Contains("receiver") || plo.Contains("anim"))
+                // Receiver nodes usually parent the scope plus nearby attachments
+                // (mounts/handguards/lasers) that users expect to be cut too.
+                if (plo.Contains("receiver"))
+                {
+                    searchRoot = p;
+                    break;
+                }
+
+                // Stop at weapon root/animation hierarchy or anything that's clearly not scope-related
+                if (plo.Contains("weapon") || plo.Contains("anim"))
                     break;
                 // Climb through scope/mod/optic/mount containers
                 if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount"))
