@@ -27,7 +27,8 @@ Per scope reticle size.
 -~~Improve reticle scaling~~ Per scope reticle size  
 -~~Make meshcutting more precise.~~ Per scope meshcutting   
 -~~Add whitelist system~~ Done   
--~~Add per scope config~~ **(maybe even per mag level ?)**  
+-~~Add per scope config~~ **(maybe even per mag level ?)**    
+-~~Hide reticle when swaying across scope housing/weapon~~ Done  
 -~~Find way to make vignette stick to scope.~~ Kind of, all the guns scale approximately the same so one vignette/shadow size fits all  
 -Hide multiple options under advanced BepInEx settings  
 -Find best settings for different scopes. (Help welcome)  
