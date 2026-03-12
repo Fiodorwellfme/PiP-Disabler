@@ -969,9 +969,17 @@ namespace PiPDisabler
                     continue;
                 }
 
-                // Skip meshes belonging to a DIFFERENT mode (not the active one)
+                // Skip meshes belonging to a DIFFERENT mode (not the active one),
+                // but only within the active scope subtree.
+                //
+                // Some tactical attachments (DBAL/flashlights/lasers) also use
+                // mode_* nodes for their own state variants. Those nodes are not
+                // optic magnification modes and should remain cuttable.
                 var modeAncestor = GetModeAncestor(mf.transform, searchRoot);
-                if (modeAncestor != null && activeMode != null && modeAncestor != activeMode)
+                bool modeAncestorIsOnActiveScope =
+                    modeAncestor != null && scopeRoot != null && modeAncestor.IsChildOf(scopeRoot);
+
+                if (modeAncestorIsOnActiveScope && activeMode != null && modeAncestor != activeMode)
                 {
                     skippedMode++;
                     if (logCandidates)
