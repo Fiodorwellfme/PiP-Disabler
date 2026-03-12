@@ -9,12 +9,16 @@ If Optic then check if thermal or NVG or variable scope or part of blacklisted s
 Extract reticle, flip the texture horizontally and display it center screen in a command buffer.  
   
 Set a 4 diameter cutting plane along the scope axis using the lens closest to the camera as the origin (this has to be configured manually for each scope).  
-The meshcutter cuts through all the meshes that are found between hands and the scope and is then cached for reusal during the raid.  
+The meshcutter cuts through all the meshes that are found between hands and the scope and the resulting meshes are then cached for reusal during the raid.  
   
 Once the mesh has been cut, use it to create a mask that hides the reticle when it intersects with scope housing/Weapon mesh.  
-Then set main camera rotation axis aligned with weapon axis, extract reticle at runtime and display it center screen in a command buffer.  
-Magnification is found in Template.Zooms to be consistent across scopes, sometimes it may not be the same as the PiP scopes because of BSG Jank.  
-Calculate FOV by dividing reference FOV (50°) by magnification and then set main cam FOV to that value.
+
+Set main camera rotation axis aligned with weapon axis to keep aiming consistent and reduce sway.  
+
+Magnification is searched for in Template.Zooms to be consistent across scopes, sometimes it may not be the same as the PiP scopes because of BSG Jank.  
+Calculate FOV by dividing reference FOV (50°) by magnification and then set main cam FOV to that value.  
+
+Scaling is done using the ribcage scaling method with some dark magic multipliers and offsets.
 
 <h1>Current features:</h1>    
   
