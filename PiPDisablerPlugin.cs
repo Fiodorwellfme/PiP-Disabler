@@ -533,21 +533,38 @@ namespace PiPDisabler
             Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}  ClearMeshCacheOnRaidEnd={ClearMeshCacheOnRaidEnd.Value}");
         }
 
-        private static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => PerScopeMeshSurgerySettings.GetActiveOverride();
+        private static object ActiveScopeOverride => PerScopeMeshSurgerySettings.GetActiveOverride();
 
-        internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : PlaneOffsetMeters.Value;
-        internal static string GetPlaneNormalAxis() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneNormalAxis : PlaneNormalAxis.Value;
-        internal static float GetCutRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.CutRadius : CutRadius.Value;
-        internal static bool GetShowCutPlane() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutPlane : ShowCutPlane.Value;
-        internal static bool GetShowCutVolume() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutVolume : ShowCutVolume.Value;
-        internal static float GetCutVolumeOpacity() => ActiveScopeOverride != null ? ActiveScopeOverride.CutVolumeOpacity : CutVolumeOpacity.Value;
-        internal static string GetCutMode() => ActiveScopeOverride != null ? ActiveScopeOverride.CutMode : CutMode.Value;
-        internal static float GetCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.CylinderRadius : CylinderRadius.Value;
-        internal static float GetMidCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.MidCylinderRadius : MidCylinderRadius.Value;
-        internal static float GetMidCylinderPosition() => ActiveScopeOverride != null ? ActiveScopeOverride.MidCylinderPosition : MidCylinderPosition.Value;
-        internal static float GetFarCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.FarCylinderRadius : FarCylinderRadius.Value;
-        internal static float GetPlane1OffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1OffsetMeters : Plane1OffsetMeters.Value;
-        internal static float GetPlane2Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Position : Plane2Position.Value;
+        private static T GetOverrideOrDefault<T>(string fieldName, ConfigEntry<T> fallback)
+        {
+            object entry = ActiveScopeOverride;
+            if (entry != null)
+            {
+                var field = entry.GetType().GetField(fieldName);
+                if (field != null)
+                {
+                    object value = field.GetValue(entry);
+                    if (value is T typedValue)
+                        return typedValue;
+                }
+            }
+
+            return fallback.Value;
+        }
+
+        internal static float GetPlaneOffsetMeters() => GetOverrideOrDefault("PlaneOffsetMeters", PlaneOffsetMeters);
+        internal static string GetPlaneNormalAxis() => GetOverrideOrDefault("PlaneNormalAxis", PlaneNormalAxis);
+        internal static float GetCutRadius() => GetOverrideOrDefault("CutRadius", CutRadius);
+        internal static bool GetShowCutPlane() => GetOverrideOrDefault("ShowCutPlane", ShowCutPlane);
+        internal static bool GetShowCutVolume() => GetOverrideOrDefault("ShowCutVolume", ShowCutVolume);
+        internal static float GetCutVolumeOpacity() => GetOverrideOrDefault("CutVolumeOpacity", CutVolumeOpacity);
+        internal static string GetCutMode() => GetOverrideOrDefault("CutMode", CutMode);
+        internal static float GetCylinderRadius() => GetOverrideOrDefault("CylinderRadius", CylinderRadius);
+        internal static float GetMidCylinderRadius() => GetOverrideOrDefault("MidCylinderRadius", MidCylinderRadius);
+        internal static float GetMidCylinderPosition() => GetOverrideOrDefault("MidCylinderPosition", MidCylinderPosition);
+        internal static float GetFarCylinderRadius() => GetOverrideOrDefault("FarCylinderRadius", FarCylinderRadius);
+        internal static float GetPlane1OffsetMeters() => GetOverrideOrDefault("Plane1OffsetMeters", Plane1OffsetMeters);
+        internal static float GetPlane2Position() => GetOverrideOrDefault("Plane2Position", Plane2Position);
         internal static float GetPlane2PositionNormalized(float cutLength)
         {
             const float legacyReferenceCutLength = 0.755493f;
@@ -555,19 +572,19 @@ namespace PiPDisabler
             float anchoredDepth = p2LegacyNormalized * legacyReferenceCutLength;
             return cutLength > 1e-5f ? Mathf.Clamp01(anchoredDepth / cutLength) : 0f;
         }
-        internal static float GetPlane2Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Radius : Plane2Radius.Value;
-        internal static float GetPlane3Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Position : Plane3Position.Value;
-        internal static float GetPlane3Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Radius : Plane3Radius.Value;
-        internal static float GetPlane4Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Position : Plane4Position.Value;
-        internal static float GetPlane4Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Radius : Plane4Radius.Value;
-        internal static float GetCutStartOffset() => ActiveScopeOverride != null ? ActiveScopeOverride.CutStartOffset : CutStartOffset.Value;
-        internal static float GetCutLength() => ActiveScopeOverride != null ? ActiveScopeOverride.CutLength : CutLength.Value;
-        internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : NearPreserveDepth.Value;
-        internal static bool GetShowReticle() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowReticle : ShowReticle.Value;
-        internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : ReticleBaseSize.Value;
-        internal static bool GetReticleOverlayCamera() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleOverlayCamera : ReticleOverlayCamera.Value;
-        internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : RestoreOnUnscope.Value;
-        internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
+        internal static float GetPlane2Radius() => GetOverrideOrDefault("Plane2Radius", Plane2Radius);
+        internal static float GetPlane3Position() => GetOverrideOrDefault("Plane3Position", Plane3Position);
+        internal static float GetPlane3Radius() => GetOverrideOrDefault("Plane3Radius", Plane3Radius);
+        internal static float GetPlane4Position() => GetOverrideOrDefault("Plane4Position", Plane4Position);
+        internal static float GetPlane4Radius() => GetOverrideOrDefault("Plane4Radius", Plane4Radius);
+        internal static float GetCutStartOffset() => GetOverrideOrDefault("CutStartOffset", CutStartOffset);
+        internal static float GetCutLength() => GetOverrideOrDefault("CutLength", CutLength);
+        internal static float GetNearPreserveDepth() => GetOverrideOrDefault("NearPreserveDepth", NearPreserveDepth);
+        internal static bool GetShowReticle() => GetOverrideOrDefault("ShowReticle", ShowReticle);
+        internal static float GetReticleBaseSize() => GetOverrideOrDefault("ReticleBaseSize", ReticleBaseSize);
+        internal static bool GetReticleOverlayCamera() => GetOverrideOrDefault("ReticleOverlayCamera", ReticleOverlayCamera);
+        internal static bool GetRestoreOnUnscope() => GetOverrideOrDefault("RestoreOnUnscope", RestoreOnUnscope);
+        internal static bool GetExpandSearchToWeaponRoot() => GetOverrideOrDefault("ExpandSearchToWeaponRoot", ExpandSearchToWeaponRoot);
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
 
         private void OnDestroy()
