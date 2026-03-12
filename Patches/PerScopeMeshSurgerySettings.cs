@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     [Serializable]
     internal sealed class ScopeMeshSurgerySettingsEntry
@@ -49,7 +49,7 @@ namespace ScopeHousingMeshSurgery
         private static bool _loaded;
         private static string _activeScopeKey;
 
-        private static string FilePath => Path.Combine(ScopeHousingMeshSurgeryPlugin.GetMeshCutCacheDirectory(), "custom_mesh_surgery_settings.json");
+        private static string FilePath => Path.Combine(PiPDisablerPlugin.GetMeshCutCacheDirectory(), "custom_mesh_surgery_settings.json");
 
         internal static void SetActiveScope(string scopeKey)
         {
@@ -69,39 +69,39 @@ namespace ScopeHousingMeshSurgery
 
             try
             {
-                ScopeHousingMeshSurgeryPlugin.CustomPlaneOffsetMeters.Value = entry.PlaneOffsetMeters;
+                PiPDisablerPlugin.CustomPlaneOffsetMeters.Value = entry.PlaneOffsetMeters;
                 if (!string.IsNullOrWhiteSpace(entry.PlaneNormalAxis))
-                    ScopeHousingMeshSurgeryPlugin.CustomPlaneNormalAxis.Value = entry.PlaneNormalAxis;
-                ScopeHousingMeshSurgeryPlugin.CustomCutRadius.Value = entry.CutRadius;
-                ScopeHousingMeshSurgeryPlugin.CustomShowCutPlane.Value = entry.ShowCutPlane;
-                ScopeHousingMeshSurgeryPlugin.CustomShowCutVolume.Value = entry.ShowCutVolume;
-                ScopeHousingMeshSurgeryPlugin.CustomCutVolumeOpacity.Value = entry.CutVolumeOpacity;
+                    PiPDisablerPlugin.CustomPlaneNormalAxis.Value = entry.PlaneNormalAxis;
+                PiPDisablerPlugin.CustomCutRadius.Value = entry.CutRadius;
+                PiPDisablerPlugin.CustomShowCutPlane.Value = entry.ShowCutPlane;
+                PiPDisablerPlugin.CustomShowCutVolume.Value = entry.ShowCutVolume;
+                PiPDisablerPlugin.CustomCutVolumeOpacity.Value = entry.CutVolumeOpacity;
                 if (!string.IsNullOrWhiteSpace(entry.CutMode))
-                    ScopeHousingMeshSurgeryPlugin.CustomCutMode.Value = entry.CutMode;
-                ScopeHousingMeshSurgeryPlugin.CustomCylinderRadius.Value = entry.CylinderRadius;
-                ScopeHousingMeshSurgeryPlugin.CustomMidCylinderRadius.Value = entry.MidCylinderRadius;
-                ScopeHousingMeshSurgeryPlugin.CustomMidCylinderPosition.Value = entry.MidCylinderPosition;
-                ScopeHousingMeshSurgeryPlugin.CustomFarCylinderRadius.Value = entry.FarCylinderRadius;
-                ScopeHousingMeshSurgeryPlugin.CustomPlane1OffsetMeters.Value = entry.Plane1OffsetMeters;
-                ScopeHousingMeshSurgeryPlugin.CustomPlane2Position.Value = entry.Plane2Position;
-                ScopeHousingMeshSurgeryPlugin.CustomPlane2Radius.Value = entry.Plane2Radius;
-                ScopeHousingMeshSurgeryPlugin.CustomPlane3Position.Value = entry.Plane3Position;
-                ScopeHousingMeshSurgeryPlugin.CustomPlane3Radius.Value = entry.Plane3Radius;
-                ScopeHousingMeshSurgeryPlugin.CustomPlane4Position.Value = entry.Plane4Position;
-                ScopeHousingMeshSurgeryPlugin.CustomPlane4Radius.Value = entry.Plane4Radius;
-                ScopeHousingMeshSurgeryPlugin.CustomCutStartOffset.Value = entry.CutStartOffset;
-                ScopeHousingMeshSurgeryPlugin.CustomCutLength.Value = entry.CutLength;
-                ScopeHousingMeshSurgeryPlugin.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
-                ScopeHousingMeshSurgeryPlugin.CustomShowReticle.Value = entry.ShowReticle;
-                ScopeHousingMeshSurgeryPlugin.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
-                ScopeHousingMeshSurgeryPlugin.CustomReticleOverlayCamera.Value = entry.ReticleOverlayCamera;
-                ScopeHousingMeshSurgeryPlugin.CustomRestoreOnUnscope.Value = entry.RestoreOnUnscope;
-                ScopeHousingMeshSurgeryPlugin.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
-                ScopeHousingMeshSurgeryPlugin.LogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
+                    PiPDisablerPlugin.CustomCutMode.Value = entry.CutMode;
+                PiPDisablerPlugin.CustomCylinderRadius.Value = entry.CylinderRadius;
+                PiPDisablerPlugin.CustomMidCylinderRadius.Value = entry.MidCylinderRadius;
+                PiPDisablerPlugin.CustomMidCylinderPosition.Value = entry.MidCylinderPosition;
+                PiPDisablerPlugin.CustomFarCylinderRadius.Value = entry.FarCylinderRadius;
+                PiPDisablerPlugin.CustomPlane1OffsetMeters.Value = entry.Plane1OffsetMeters;
+                PiPDisablerPlugin.CustomPlane2Position.Value = entry.Plane2Position;
+                PiPDisablerPlugin.CustomPlane2Radius.Value = entry.Plane2Radius;
+                PiPDisablerPlugin.CustomPlane3Position.Value = entry.Plane3Position;
+                PiPDisablerPlugin.CustomPlane3Radius.Value = entry.Plane3Radius;
+                PiPDisablerPlugin.CustomPlane4Position.Value = entry.Plane4Position;
+                PiPDisablerPlugin.CustomPlane4Radius.Value = entry.Plane4Radius;
+                PiPDisablerPlugin.CustomCutStartOffset.Value = entry.CutStartOffset;
+                PiPDisablerPlugin.CustomCutLength.Value = entry.CutLength;
+                PiPDisablerPlugin.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
+                PiPDisablerPlugin.CustomShowReticle.Value = entry.ShowReticle;
+                PiPDisablerPlugin.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
+                PiPDisablerPlugin.CustomReticleOverlayCamera.Value = entry.ReticleOverlayCamera;
+                PiPDisablerPlugin.CustomRestoreOnUnscope.Value = entry.RestoreOnUnscope;
+                PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
+                PiPDisablerPlugin.LogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogWarn($"[CustomMeshSettings] Failed to sync Custom config entries from override: {ex.Message}");
+                PiPDisablerPlugin.LogWarn($"[CustomMeshSettings] Failed to sync Custom config entries from override: {ex.Message}");
             }
         }
 
@@ -154,32 +154,32 @@ namespace ScopeHousingMeshSurgery
                 _file.Entries.Add(target);
             }
 
-            target.PlaneOffsetMeters = ScopeHousingMeshSurgeryPlugin.CustomPlaneOffsetMeters.Value;
-            target.PlaneNormalAxis = ScopeHousingMeshSurgeryPlugin.CustomPlaneNormalAxis.Value;
-            target.CutRadius = ScopeHousingMeshSurgeryPlugin.CustomCutRadius.Value;
-            target.ShowCutPlane = ScopeHousingMeshSurgeryPlugin.CustomShowCutPlane.Value;
-            target.ShowCutVolume = ScopeHousingMeshSurgeryPlugin.CustomShowCutVolume.Value;
-            target.CutVolumeOpacity = ScopeHousingMeshSurgeryPlugin.CustomCutVolumeOpacity.Value;
-            target.CutMode = ScopeHousingMeshSurgeryPlugin.CustomCutMode.Value;
-            target.CylinderRadius = ScopeHousingMeshSurgeryPlugin.CustomCylinderRadius.Value;
-            target.MidCylinderRadius = ScopeHousingMeshSurgeryPlugin.CustomMidCylinderRadius.Value;
-            target.MidCylinderPosition = ScopeHousingMeshSurgeryPlugin.CustomMidCylinderPosition.Value;
-            target.FarCylinderRadius = ScopeHousingMeshSurgeryPlugin.CustomFarCylinderRadius.Value;
-            target.Plane1OffsetMeters = ScopeHousingMeshSurgeryPlugin.CustomPlane1OffsetMeters.Value;
-            target.Plane2Position = ScopeHousingMeshSurgeryPlugin.CustomPlane2Position.Value;
-            target.Plane2Radius = ScopeHousingMeshSurgeryPlugin.CustomPlane2Radius.Value;
-            target.Plane3Position = ScopeHousingMeshSurgeryPlugin.CustomPlane3Position.Value;
-            target.Plane3Radius = ScopeHousingMeshSurgeryPlugin.CustomPlane3Radius.Value;
-            target.Plane4Position = ScopeHousingMeshSurgeryPlugin.CustomPlane4Position.Value;
-            target.Plane4Radius = ScopeHousingMeshSurgeryPlugin.CustomPlane4Radius.Value;
-            target.CutStartOffset = ScopeHousingMeshSurgeryPlugin.CustomCutStartOffset.Value;
-            target.CutLength = ScopeHousingMeshSurgeryPlugin.CustomCutLength.Value;
-            target.NearPreserveDepth = ScopeHousingMeshSurgeryPlugin.CustomNearPreserveDepth.Value;
-            target.ShowReticle = ScopeHousingMeshSurgeryPlugin.CustomShowReticle.Value;
-            target.ReticleBaseSize = ScopeHousingMeshSurgeryPlugin.CustomReticleBaseSize.Value;
-            target.ReticleOverlayCamera = ScopeHousingMeshSurgeryPlugin.CustomReticleOverlayCamera.Value;
-            target.RestoreOnUnscope = ScopeHousingMeshSurgeryPlugin.CustomRestoreOnUnscope.Value;
-            target.ExpandSearchToWeaponRoot = ScopeHousingMeshSurgeryPlugin.CustomExpandSearchToWeaponRoot.Value;
+            target.PlaneOffsetMeters = PiPDisablerPlugin.CustomPlaneOffsetMeters.Value;
+            target.PlaneNormalAxis = PiPDisablerPlugin.CustomPlaneNormalAxis.Value;
+            target.CutRadius = PiPDisablerPlugin.CustomCutRadius.Value;
+            target.ShowCutPlane = PiPDisablerPlugin.CustomShowCutPlane.Value;
+            target.ShowCutVolume = PiPDisablerPlugin.CustomShowCutVolume.Value;
+            target.CutVolumeOpacity = PiPDisablerPlugin.CustomCutVolumeOpacity.Value;
+            target.CutMode = PiPDisablerPlugin.CustomCutMode.Value;
+            target.CylinderRadius = PiPDisablerPlugin.CustomCylinderRadius.Value;
+            target.MidCylinderRadius = PiPDisablerPlugin.CustomMidCylinderRadius.Value;
+            target.MidCylinderPosition = PiPDisablerPlugin.CustomMidCylinderPosition.Value;
+            target.FarCylinderRadius = PiPDisablerPlugin.CustomFarCylinderRadius.Value;
+            target.Plane1OffsetMeters = PiPDisablerPlugin.CustomPlane1OffsetMeters.Value;
+            target.Plane2Position = PiPDisablerPlugin.CustomPlane2Position.Value;
+            target.Plane2Radius = PiPDisablerPlugin.CustomPlane2Radius.Value;
+            target.Plane3Position = PiPDisablerPlugin.CustomPlane3Position.Value;
+            target.Plane3Radius = PiPDisablerPlugin.CustomPlane3Radius.Value;
+            target.Plane4Position = PiPDisablerPlugin.CustomPlane4Position.Value;
+            target.Plane4Radius = PiPDisablerPlugin.CustomPlane4Radius.Value;
+            target.CutStartOffset = PiPDisablerPlugin.CustomCutStartOffset.Value;
+            target.CutLength = PiPDisablerPlugin.CustomCutLength.Value;
+            target.NearPreserveDepth = PiPDisablerPlugin.CustomNearPreserveDepth.Value;
+            target.ShowReticle = PiPDisablerPlugin.CustomShowReticle.Value;
+            target.ReticleBaseSize = PiPDisablerPlugin.CustomReticleBaseSize.Value;
+            target.ReticleOverlayCamera = PiPDisablerPlugin.CustomReticleOverlayCamera.Value;
+            target.RestoreOnUnscope = PiPDisablerPlugin.CustomRestoreOnUnscope.Value;
+            target.ExpandSearchToWeaponRoot = PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value;
 
             WriteToDisk();
             return true;
@@ -228,7 +228,7 @@ namespace ScopeHousingMeshSurgery
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogWarn($"[CustomMeshSettings] Failed to load settings json: {ex.Message}");
+                PiPDisablerPlugin.LogWarn($"[CustomMeshSettings] Failed to load settings json: {ex.Message}");
                 _file = new ScopeMeshSurgerySettingsFile();
             }
         }
@@ -242,7 +242,7 @@ namespace ScopeHousingMeshSurgery
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError($"[CustomMeshSettings] Failed to save settings json: {ex.Message}");
+                PiPDisablerPlugin.LogError($"[CustomMeshSettings] Failed to save settings json: {ex.Message}");
             }
         }
     }

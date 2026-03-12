@@ -5,7 +5,7 @@ using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery.Patches
+namespace PiPDisabler.Patches
 {
     internal sealed class OpticSightOnEnablePatch : ModulePatch
     {
@@ -16,11 +16,11 @@ namespace ScopeHousingMeshSurgery.Patches
         private static void Postfix(OpticSight __instance)
         {
             // Always cache the enabled optic (so it's ready if mod is toggled on later)
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[Patch] OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"enabled={__instance?.enabled} frame={Time.frameCount}");
 
-            if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticEnabled(__instance);
         }
     }
@@ -33,11 +33,11 @@ namespace ScopeHousingMeshSurgery.Patches
         [PatchPostfix]
         private static void Postfix(OpticSight __instance)
         {
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[Patch] OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"frame={Time.frameCount}");
 
-            if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticDisabled(__instance);
         }
     }
@@ -50,9 +50,9 @@ namespace ScopeHousingMeshSurgery.Patches
         [PatchPostfix]
         private static void Postfix()
         {
-            if (!ScopeHousingMeshSurgeryPlugin.ModEnabled.Value) return;
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
             ScopeLifecycle.CheckAndUpdate("ChangeAimingMode");
         }

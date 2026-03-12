@@ -8,7 +8,7 @@ using Comfort.Common;
 using HarmonyLib;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// Event-driven scope lifecycle. State machine with two states: scoped / not scoped.
@@ -151,13 +151,13 @@ namespace ScopeHousingMeshSurgery
                     }
                 }
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[ScopeLifecycle] Reflection: IsAiming={_isAimingProp != null}, " +
                     $"CurrentScope={_currentScopeProp != null}, IsOptic={_isOpticProp != null}");
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError($"[ScopeLifecycle] Init failed: {ex.Message}");
+                PiPDisablerPlugin.LogError($"[ScopeLifecycle] Init failed: {ex.Message}");
             }
         }
 
@@ -174,7 +174,7 @@ namespace ScopeHousingMeshSurgery
             // would falsely trigger a restore+recut cycle and cause a 1-2 frame mesh flash.
             if (_isScoped && os != null && os != _activeOptic)
             {
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[ScopeLifecycle] Mode switch while scoped: " +
                     $"'{(_activeOptic != null ? _activeOptic.name : "?")}'[{FovController.GetOpticTemplateId(_activeOptic)}] → " +
                     $"'{os.name}'[{FovController.GetOpticTemplateId(os)}]");
@@ -211,7 +211,7 @@ namespace ScopeHousingMeshSurgery
                 FovController.OnModeSwitch();
 
                 // RESTORE all meshes first, then re-cut with new mode's plane position.
-                if (ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
+                if (PiPDisablerPlugin.EnableMeshSurgery.Value)
                 {
                     MeshSurgeryManager.RestoreForScope(os.transform);
                     MeshSurgeryManager.ApplyForOptic(os);
@@ -293,7 +293,7 @@ namespace ScopeHousingMeshSurgery
             // Log every state CHANGE (not every frame)
             if (shouldBeScoped != _isScoped)
             {
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[ScopeLifecycle] State change: {(_isScoped ? "SCOPED" : "NOT_SCOPED")} → " +
                     $"{(shouldBeScoped ? "SCOPED" : "NOT_SCOPED")} reason='{reason}' " +
                     $"caller={_lastCaller} frame={Time.frameCount}");
@@ -405,14 +405,14 @@ namespace ScopeHousingMeshSurgery
 
             if (os == null)
             {
-                ScopeHousingMeshSurgeryPlugin.LogInfo("[ScopeLifecycle] Whitelist toggle ignored: no active scope");
+                PiPDisablerPlugin.LogInfo("[ScopeLifecycle] Whitelist toggle ignored: no active scope");
                 return;
             }
 
             string scopeName = ResolveWhitelistScopeKey(os);
             if (string.IsNullOrWhiteSpace(scopeName))
             {
-                ScopeHousingMeshSurgeryPlugin.LogWarn(
+                PiPDisablerPlugin.LogWarn(
                     $"[ScopeLifecycle] Whitelist toggle ignored: no usable scope key for '{os.name}'");
                 return;
             }
@@ -431,13 +431,13 @@ namespace ScopeHousingMeshSurgery
                 removed = false;
             }
 
-            ScopeHousingMeshSurgeryPlugin.ScopeWhitelistNames.Value = string.Join(",", _scopeWhitelistNames);
-            _scopeWhitelistRawCached = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistNames.Value ?? string.Empty;
+            PiPDisablerPlugin.ScopeWhitelistNames.Value = string.Join(",", _scopeWhitelistNames);
+            _scopeWhitelistRawCached = PiPDisablerPlugin.ScopeWhitelistNames.Value ?? string.Empty;
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] Whitelist {(removed ? "removed" : "added")}: scopeKey='{scopeName}'");
 
-            if (ScopeHousingMeshSurgeryPlugin.ModEnabled.Value && _isScoped)
+            if (PiPDisablerPlugin.ModEnabled.Value && _isScoped)
             {
                 ForceExit();
                 SyncState();
@@ -529,7 +529,7 @@ namespace ScopeHousingMeshSurgery
             if (ShouldBypassByWhitelist(os))
                 return true;
 
-            if (ScopeHousingMeshSurgeryPlugin.AutoDisableForVariableScopes.Value
+            if (PiPDisablerPlugin.AutoDisableForVariableScopes.Value
                 && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
                 return true;
 
@@ -542,7 +542,7 @@ namespace ScopeHousingMeshSurgery
         private static bool ScopeNameMatchesBypassPattern(OpticSight os)
         {
             if (os == null) return false;
-            string raw = ScopeHousingMeshSurgeryPlugin.AutoBypassNameContains?.Value;
+            string raw = PiPDisablerPlugin.AutoBypassNameContains?.Value;
             if (string.IsNullOrWhiteSpace(raw)) return false;
 
             string scopeKey   = ResolveWhitelistScopeKey(os) ?? string.Empty;
@@ -554,7 +554,7 @@ namespace ScopeHousingMeshSurgery
                 if (string.IsNullOrEmpty(t)) continue;
                 if (ContainsCI(scopeKey, t) || ContainsCI(objectName, t))
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    PiPDisablerPlugin.LogInfo(
                         $"[ScopeLifecycle] AutoBypassNameContains match: token='{t}'" +
                         $" objectName='{objectName}' scopeKey='{scopeKey}'");
                     return true;
@@ -576,7 +576,7 @@ namespace ScopeHousingMeshSurgery
 
             if (!allowed)
             {
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[ScopeLifecycle] Whitelist bypass: '{os.name}'[scopeKey={scopeName}] is not in ScopeWhitelistNames");
             }
 
@@ -585,7 +585,7 @@ namespace ScopeHousingMeshSurgery
 
         private static void RefreshScopeWhitelistCache()
         {
-            string raw = ScopeHousingMeshSurgeryPlugin.ScopeWhitelistNames.Value ?? string.Empty;
+            string raw = PiPDisablerPlugin.ScopeWhitelistNames.Value ?? string.Empty;
             if (string.Equals(raw, _scopeWhitelistRawCached, StringComparison.Ordinal))
                 return;
 
@@ -644,14 +644,14 @@ namespace ScopeHousingMeshSurgery
 
                 if (hasNightVision || hasThermal)
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    PiPDisablerPlugin.LogInfo(
                         $"[ScopeLifecycle] Thermal/NV auto-bypass match: nightVision={hasNightVision} thermal={hasThermal}");
                     return true;
                 }
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[ScopeLifecycle] Thermal/NV detection failed: {ex.Message}");
             }
 
@@ -708,7 +708,7 @@ namespace ScopeHousingMeshSurgery
         private static void ApplyBypassState(OpticSight os, float minFov, string reason)
         {
             string opticName = os != null ? os.name : "null";
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] Bypassing mod for current scope ({reason}): " +
                 $"'{opticName}'[{FovController.GetOpticTemplateId(os)}] " +
                 $"key='{ResolveWhitelistScopeKey(os)}' minFov={minFov:F2}° adjustable={FovController.IsOpticAdjustable(os)}");
@@ -725,7 +725,7 @@ namespace ScopeHousingMeshSurgery
             CameraSettingsManager.Restore();
             PiPDisabler.RestoreAllCameras();
 
-            if (ScopeHousingMeshSurgeryPlugin.GetRestoreOnUnscope())
+            if (PiPDisablerPlugin.GetRestoreOnUnscope())
             {
                 if (os != null)
                     MeshSurgeryManager.RestoreForScope(os.transform);
@@ -745,7 +745,7 @@ namespace ScopeHousingMeshSurgery
                 os = FindOpticFromPWA();
             if (os == null)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     "[ScopeLifecycle] ENTER aborted — no OpticSight found");
                 return;
             }
@@ -762,7 +762,7 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] ENTER: '{os.name}'[{FovController.GetOpticTemplateId(os)}] frame={Time.frameCount}");
 
             // 1. Restore any black lens materials so ExtractReticle can read OpticSight textures.
@@ -787,18 +787,18 @@ namespace ScopeHousingMeshSurgery
 
             // 4b. Show lens vignette + scope shadow effects
             Transform lensT = os.LensRenderer != null ? os.LensRenderer.transform : os.transform;
-            float baseSize = ScopeHousingMeshSurgeryPlugin.GetReticleBaseSize();
-            if (baseSize < 0.001f) baseSize = ScopeHousingMeshSurgeryPlugin.GetCylinderRadius() * 2f;
+            float baseSize = PiPDisablerPlugin.GetReticleBaseSize();
+            if (baseSize < 0.001f) baseSize = PiPDisablerPlugin.GetCylinderRadius() * 2f;
             if (baseSize < 0.001f) baseSize = 0.030f;
             ScopeEffectsRenderer.Show(lensT, baseSize, mag);
 
             // 5. Mesh surgery (once)
-            if (ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
+            if (PiPDisablerPlugin.EnableMeshSurgery.Value)
                 MeshSurgeryManager.ApplyForOptic(os);
 
             // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
-            if (ScopeHousingMeshSurgeryPlugin.GetShowCutPlane()
-                && !ScopeHousingMeshSurgeryPlugin.EnableMeshSurgery.Value)
+            if (PiPDisablerPlugin.GetShowCutPlane()
+                && !PiPDisablerPlugin.EnableMeshSurgery.Value)
             {
                 ShowPlaneOnly(os);
             }
@@ -821,7 +821,7 @@ namespace ScopeHousingMeshSurgery
             if (!_isScoped) return;
 
             var prevOptic = _activeOptic;
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] EXIT: '{(prevOptic != null ? prevOptic.name : "null")}'" +
                 $"[{FovController.GetOpticTemplateId(prevOptic)}] frame={Time.frameCount}");
 
@@ -859,7 +859,7 @@ namespace ScopeHousingMeshSurgery
             CameraSettingsManager.Restore();
 
             // 6. Restore meshes
-            if (ScopeHousingMeshSurgeryPlugin.GetRestoreOnUnscope())
+            if (PiPDisablerPlugin.GetRestoreOnUnscope())
             {
                 if (prevOptic != null)
                     MeshSurgeryManager.RestoreForScope(prevOptic.transform);
@@ -896,8 +896,8 @@ namespace ScopeHousingMeshSurgery
         private static List<Renderer> CollectStencilRenderers(OpticSight os)
         {
             var housing = LensTransparency.CollectHousingRenderers(os);
-            if (ScopeHousingMeshSurgeryPlugin.StencilIncludeWeaponMeshes != null
-                && ScopeHousingMeshSurgeryPlugin.StencilIncludeWeaponMeshes.Value)
+            if (PiPDisablerPlugin.StencilIncludeWeaponMeshes != null
+                && PiPDisablerPlugin.StencilIncludeWeaponMeshes.Value)
             {
                 housing.AddRange(LensTransparency.CollectWeaponRenderers(os, housing));
             }
@@ -913,7 +913,7 @@ namespace ScopeHousingMeshSurgery
             try
             {
                 if (_modBypassedForCurrentScope) return;
-                if (!ScopeHousingMeshSurgeryPlugin.EnableZoom.Value) return;
+                if (!PiPDisablerPlugin.EnableZoom.Value) return;
                 if (!CameraClass.Exist) return;
 
                 var player = GetLocalPlayer();
@@ -928,26 +928,26 @@ namespace ScopeHousingMeshSurgery
                 if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                 {
                     float duration = isTransition
-                        ? ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value
+                        ? PiPDisablerPlugin.FovAnimationDuration.Value
                         : 0.1f; // Short duration for variable zoom updates
 
                     CameraClass.Instance.SetFov(zoomedFov, duration, false);
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    PiPDisablerPlugin.LogInfo(
                         $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
                 }
                 else if (isTransition && zoomedFov >= zoomBaseFov)
                 {
                     // High-to-low mode switch where new mode has no zoom:
                     // restore to baseline with configured duration so both directions are consistent
-                    float duration = ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value;
+                    float duration = PiPDisablerPlugin.FovAnimationDuration.Value;
                     CameraClass.Instance.SetFov(zoomBaseFov, duration, false);
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    PiPDisablerPlugin.LogInfo(
                         $"[ScopeLifecycle] ApplyFov (restore baseline): {zoomBaseFov:F1}° dur={duration:F2}s");
                 }
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[ScopeLifecycle] ApplyFov error: {ex.Message}");
             }
         }
@@ -971,16 +971,16 @@ namespace ScopeHousingMeshSurgery
                 float baseFov = pwa.Single_2;
                 if (baseFov > 30f)
                 {
-                float duration = ScopeHousingMeshSurgeryPlugin.FovAnimationDuration.Value;
+                float duration = PiPDisablerPlugin.FovAnimationDuration.Value;
                     cc.SetFov(baseFov, duration, true);
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    PiPDisablerPlugin.LogVerbose(
                         $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° dur={duration:F2}s");
 
                 }
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[ScopeLifecycle] RestoreFov error: {ex.Message}");
             }
         }
@@ -1002,7 +1002,7 @@ namespace ScopeHousingMeshSurgery
                     out var planePoint, out var planeNormal, out var camPos))
                     return;
 
-                planePoint += planeNormal * ScopeHousingMeshSurgeryPlugin.GetPlaneOffsetMeters();
+                planePoint += planeNormal * PiPDisablerPlugin.GetPlaneOffsetMeters();
                 PlaneVisualizer.Show(planePoint, planeNormal);
             }
             catch { }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     public static class MeshPlaneCutter
     {
@@ -291,12 +291,12 @@ namespace ScopeHousingMeshSurgery
             // Log the radius profile so we can verify mid-radius is being applied
             if (midRadius > 0f)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[MeshCutter] Radius profile for '{mesh.name}': " +
                     $"localNear={localNearR:F5} localMid={localMidR:F5}@{localMidPos:F2} localFar={localFarR:F5} " +
                     $"avgScale={avgScale:F4} localLen={localLen:F4}");
                 // Sample the profile at 5 points for visual verification
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[MeshCutter] Profile samples: " +
                     $"t=0.0→r={RadiusAtT4(0f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +
                     $"t=0.25→r={RadiusAtT4(0.25f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +

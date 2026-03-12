@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using EFT.CameraControl;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// Makes scope lens surfaces invisible by REPLACING THEIR MESH with an empty mesh
@@ -130,7 +130,7 @@ namespace ScopeHousingMeshSurgery
                 }
             }
             _blackenedRenderers.Clear();
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 "[LensTransparency] Restored original materials before scope entry");
         }
 
@@ -143,7 +143,7 @@ namespace ScopeHousingMeshSurgery
         {
             RestoreBlackLensMaterials(); // also clears _blackenedRenderers
             _trulyOriginalMaterials.Clear();
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 "[LensTransparency] FullRestoreAll: caches cleared");
         }
 
@@ -156,8 +156,8 @@ namespace ScopeHousingMeshSurgery
         {
             if (os == null) return;
 
-            bool shouldHide = ScopeHousingMeshSurgeryPlugin.MakeLensesTransparent.Value
-                              || ScopeHousingMeshSurgeryPlugin.DisablePiP.Value;
+            bool shouldHide = PiPDisablerPlugin.MakeLensesTransparent.Value
+                              || PiPDisablerPlugin.DisablePiP.Value;
             if (!shouldHide) return;
 
             Transform searchRoot = FindScopeSearchRoot(os.transform);
@@ -191,7 +191,7 @@ namespace ScopeHousingMeshSurgery
             }
             catch { }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[LensTransparency] Destroyed geometry on {killed} lens surfaces (searchRoot='{searchRoot.name}')");
         }
 
@@ -201,8 +201,8 @@ namespace ScopeHousingMeshSurgery
         public static void HideLens(Renderer lens)
         {
             if (lens == null) return;
-            bool shouldHide = ScopeHousingMeshSurgeryPlugin.MakeLensesTransparent.Value
-                              || ScopeHousingMeshSurgeryPlugin.DisablePiP.Value;
+            bool shouldHide = PiPDisablerPlugin.MakeLensesTransparent.Value
+                              || PiPDisablerPlugin.DisablePiP.Value;
             if (!shouldHide) return;
             KillMesh(lens);
         }
@@ -234,13 +234,13 @@ namespace ScopeHousingMeshSurgery
                 if (e.Skinned != null && e.Skinned.sharedMesh != emptyMesh)
                 {
                     e.Skinned.sharedMesh = emptyMesh;
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    PiPDisablerPlugin.LogVerbose(
                         $"[LensTransparency] Re-emptied skinned mesh on '{e.Skinned.gameObject.name}'");
                 }
                 else if (e.Filter != null && e.Filter.sharedMesh != emptyMesh)
                 {
                     e.Filter.sharedMesh = emptyMesh;
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    PiPDisablerPlugin.LogVerbose(
                         $"[LensTransparency] Re-emptied mesh on '{e.Filter.gameObject.name}'");
                 }
                 if (e.Renderer != null)
@@ -267,8 +267,8 @@ namespace ScopeHousingMeshSurgery
         {
             if (_hidden.Count == 0) return;
 
-            bool blackLens = ScopeHousingMeshSurgeryPlugin.BlackLensWhenUnscoped != null
-                             && ScopeHousingMeshSurgeryPlugin.BlackLensWhenUnscoped.Value;
+            bool blackLens = PiPDisablerPlugin.BlackLensWhenUnscoped != null
+                             && PiPDisablerPlugin.BlackLensWhenUnscoped.Value;
 
             for (int i = 0; i < _hidden.Count; i++)
             {
@@ -279,13 +279,13 @@ namespace ScopeHousingMeshSurgery
                     if (e.Skinned != null && e.OriginalMesh != null)
                     {
                         e.Skinned.sharedMesh = e.OriginalMesh;
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[LensTransparency] Restored skinned mesh on '{e.Skinned.gameObject.name}' → {e.OriginalMesh.vertexCount} verts");
                     }
                     else if (e.Filter != null && e.OriginalMesh != null)
                     {
                         e.Filter.sharedMesh = e.OriginalMesh;
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[LensTransparency] Restored mesh on '{e.Filter.gameObject.name}' → {e.OriginalMesh.vertexCount} verts");
                     }
 
@@ -298,7 +298,7 @@ namespace ScopeHousingMeshSurgery
                         {
                             // Apply solid black material — no PiP texture, no reticle flash.
                             ApplyBlackMaterial(e.Renderer);
-                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                            PiPDisablerPlugin.LogVerbose(
                                 $"[LensTransparency] Applied black lens to '{e.Renderer.gameObject.name}'");
                         }
                         else
@@ -309,7 +309,7 @@ namespace ScopeHousingMeshSurgery
                                 try { e.Renderer.sharedMaterials = e.OriginalMaterials; }
                                 catch { }
                             }
-                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                            PiPDisablerPlugin.LogVerbose(
                                 $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' forceOff={e.WasForceOff}");
                         }
                     }
@@ -317,7 +317,7 @@ namespace ScopeHousingMeshSurgery
                 catch { }
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[LensTransparency] Restored {_hidden.Count} lens meshes" +
                 (blackLens ? " (black lens applied)" : ""));
             _hidden.Clear();
@@ -384,7 +384,7 @@ namespace ScopeHousingMeshSurgery
             // reference — even with empty mesh, the material state gets cleaned up.
             ForceMaterialTransparent(r);
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[LensTransparency] MESH DESTROYED: '{r.gameObject.name}' " +
                 $"(had {(origMesh != null ? origMesh.vertexCount.ToString() : "?")} verts → 0) " +
                 $"MeshFilter={(mf != null ? "yes" : "NO")}, Skinned={(smr != null ? "yes" : "NO")}");
@@ -622,26 +622,26 @@ namespace ScopeHousingMeshSurgery
 
                 if (ContainsCI(meshName, "LOD1"))
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    PiPDisablerPlugin.LogInfo(
                         $"[LensTransparency] HousingMask -skip LOD1 mesh: go='{goName}' mesh='{meshName}'");
                     continue;
                 }
 
                 if (LooksLikeLensName(meshName) || LooksLikeLensName(goName))
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    PiPDisablerPlugin.LogInfo(
                         $"[LensTransparency] HousingMask -skip lens-like mesh: go='{goName}' mesh='{meshName}'");
                     continue;
                 }
 
                 result.Add(r);
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[LensTransparency] HousingMask +renderer: go='{r.gameObject.name}'" +
                     $" mesh='{mesh.name}' verts={mesh.vertexCount}" +
                     $" shader='{(r.sharedMaterial?.shader?.name ?? "null")}'");
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[LensTransparency] CollectHousingRenderers: {result.Count} renderer(s)" +
                 $" (searchRoot='{searchRoot?.name ?? "null"}' from '{os.name}')");
 
@@ -686,7 +686,7 @@ namespace ScopeHousingMeshSurgery
             Transform weaponRoot = FindWeaponRoot(os.transform);
             if (weaponRoot == null)
             {
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     "[LensTransparency] CollectWeaponRenderers: no 'weapon' root found");
                 return result;
             }
@@ -716,12 +716,12 @@ namespace ScopeHousingMeshSurgery
                 if (LooksLikeLensName(meshName) || LooksLikeLensName(goName)) continue;
 
                 result.Add(r);
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[LensTransparency] WeaponMask +renderer: go='{goName}'" +
                     $" mesh='{meshName}' verts={mesh.vertexCount}");
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[LensTransparency] CollectWeaponRenderers: {result.Count} renderer(s)" +
                 $" (weaponRoot='{weaponRoot.name}')");
 
@@ -733,11 +733,11 @@ namespace ScopeHousingMeshSurgery
         private static bool _dumpedOnce;
         private static void DumpHierarchy(Transform root)
         {
-            if (_dumpedOnce && !ScopeHousingMeshSurgeryPlugin.VerboseLogging.Value)
+            if (_dumpedOnce && !PiPDisablerPlugin.VerboseLogging.Value)
                 return;
             _dumpedOnce = true;
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[LensTransparency] === SCOPE HIERARCHY DUMP: '{root.name}' ===");
 
             var allRenderers = root.GetComponentsInChildren<Renderer>(true);
@@ -775,14 +775,14 @@ namespace ScopeHousingMeshSurgery
                 bool isLens = IsLensSurface(r);
                 string path = GetRelativePath(r.transform, root);
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[LensTransparency]   {(isLens ? "★LENS★" : "      ")} " +
                     $"'{path}' mesh='{meshName}' verts={verts} enabled={r.enabled} " +
                     $"active={r.gameObject.activeSelf} layer={r.gameObject.layer} " +
                     $"mats=[{matInfo}]");
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[LensTransparency] === END DUMP ({allRenderers.Length} renderers) ===");
         }
 

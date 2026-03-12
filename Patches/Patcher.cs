@@ -1,7 +1,7 @@
 using System;
 using SPT.Reflection.Patching;
 
-namespace ScopeHousingMeshSurgery.Patches
+namespace PiPDisabler.Patches
 {
     internal static class Patcher
     {
@@ -37,7 +37,7 @@ namespace ScopeHousingMeshSurgery.Patches
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
+                PiPDisablerPlugin.LogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
             }
         }
     }

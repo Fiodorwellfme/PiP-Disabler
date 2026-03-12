@@ -7,7 +7,7 @@ using System.Text;
 using EFT.CameraControl;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     public static class MeshSurgeryManager
     {
@@ -33,7 +33,7 @@ namespace ScopeHousingMeshSurgery
 
         public static void ClearPersistentCache()
         {
-            string cacheDir = ScopeHousingMeshSurgeryPlugin.GetMeshCutCacheDirectory();
+            string cacheDir = PiPDisablerPlugin.GetMeshCutCacheDirectory();
             if (!Directory.Exists(cacheDir)) return;
 
             try
@@ -45,12 +45,12 @@ namespace ScopeHousingMeshSurgery
                     removed++;
                 }
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[MeshSurgery] Cleared persistent mesh cache: removed {removed} file(s).");
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogWarn(
+                PiPDisablerPlugin.LogWarn(
                     $"[MeshSurgery] Failed to clear persistent cache: {ex.Message}");
             }
         }
@@ -122,7 +122,7 @@ namespace ScopeHousingMeshSurgery
                 }
                 catch (Exception ex)
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose($"[MeshSurgery] Cache load failed '{path}': {ex.Message}");
+                    PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Cache load failed '{path}': {ex.Message}");
                     return false;
                 }
             }
@@ -189,7 +189,7 @@ namespace ScopeHousingMeshSurgery
                 }
                 catch (Exception ex)
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose($"[MeshSurgery] Cache save failed '{path}': {ex.Message}");
+                    PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Cache save failed '{path}': {ex.Message}");
                     try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
                 }
             }
@@ -209,21 +209,21 @@ namespace ScopeHousingMeshSurgery
 
                 if (isCylinder)
                 {
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetCylinderRadius());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetCutStartOffset());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetCutLength());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetNearPreserveDepth());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane2PositionNormalized(ScopeHousingMeshSurgeryPlugin.GetCutLength()));
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane2Radius());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane3Position());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane3Radius());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane4Position());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane4Radius());
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlane1OffsetMeters());
+                    AppendFloat(sb, PiPDisablerPlugin.GetCylinderRadius());
+                    AppendFloat(sb, PiPDisablerPlugin.GetCutStartOffset());
+                    AppendFloat(sb, PiPDisablerPlugin.GetCutLength());
+                    AppendFloat(sb, PiPDisablerPlugin.GetNearPreserveDepth());
+                    AppendFloat(sb, PiPDisablerPlugin.GetPlane2PositionNormalized(PiPDisablerPlugin.GetCutLength()));
+                    AppendFloat(sb, PiPDisablerPlugin.GetPlane2Radius());
+                    AppendFloat(sb, PiPDisablerPlugin.GetPlane3Position());
+                    AppendFloat(sb, PiPDisablerPlugin.GetPlane3Radius());
+                    AppendFloat(sb, PiPDisablerPlugin.GetPlane4Position());
+                    AppendFloat(sb, PiPDisablerPlugin.GetPlane4Radius());
+                    AppendFloat(sb, PiPDisablerPlugin.GetPlane1OffsetMeters());
                 }
                 else
                 {
-                    AppendFloat(sb, ScopeHousingMeshSurgeryPlugin.GetPlaneOffsetMeters());
+                    AppendFloat(sb, PiPDisablerPlugin.GetPlaneOffsetMeters());
                 }
 
                 using (var sha = SHA256.Create())
@@ -241,7 +241,7 @@ namespace ScopeHousingMeshSurgery
 
             private static string GetPath(string key)
             {
-                return Path.Combine(ScopeHousingMeshSurgeryPlugin.GetMeshCutCacheDirectory(), key + ".bin");
+                return Path.Combine(PiPDisablerPlugin.GetMeshCutCacheDirectory(), key + ".bin");
             }
 
             private static string GetRelativePath(Transform root, Transform child)
@@ -304,14 +304,14 @@ namespace ScopeHousingMeshSurgery
             if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
                 out var planePoint, out var planeNormal, out var camPos))
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose("[MeshSurgery] TryGetPlane failed — no plane found.");
+                PiPDisablerPlugin.LogVerbose("[MeshSurgery] TryGetPlane failed — no plane found.");
                 return;
             }
 
-            bool isCylinderMode = ScopeHousingMeshSurgeryPlugin.GetCutMode() == "Cylinder";
+            bool isCylinderMode = PiPDisablerPlugin.GetCutMode() == "Cylinder";
             float plane1Offset = isCylinderMode
-                ? ScopeHousingMeshSurgeryPlugin.GetPlane1OffsetMeters()
-                : ScopeHousingMeshSurgeryPlugin.GetPlaneOffsetMeters();
+                ? PiPDisablerPlugin.GetPlane1OffsetMeters()
+                : PiPDisablerPlugin.GetPlaneOffsetMeters();
             planePoint += planeNormal * plane1Offset;
 
             bool keepPositive = DecideKeepPositive(planePoint, planeNormal, camPos);
@@ -319,14 +319,14 @@ namespace ScopeHousingMeshSurgery
                 ? MeshPlaneCutter.KeepSide.Positive
                 : MeshPlaneCutter.KeepSide.Negative;
 
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 $"[MeshSurgery] Plane: point={planePoint:F4} normal={planeNormal:F4} keepSide={keepSide}");
 
             // Show visualizer (if enabled)
             PlaneVisualizer.Show(planePoint, planeNormal);
 
             var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
-            float cutRadius = ScopeHousingMeshSurgeryPlugin.GetCutRadius();
+            float cutRadius = PiPDisablerPlugin.GetCutRadius();
 
             foreach (var mf in targets)
             {
@@ -339,7 +339,7 @@ namespace ScopeHousingMeshSurgery
                     float dist = Vector3.Distance(boundsCenter, planePoint);
                     if (dist > cutRadius)
                     {
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[MeshSurgery] Skipping '{mf.sharedMesh.name}' — dist={dist:F4} > radius={cutRadius:F4}");
                         continue;
                     }
@@ -354,7 +354,7 @@ namespace ScopeHousingMeshSurgery
 
                 try
                 {
-                    bool isCylinder = ScopeHousingMeshSurgeryPlugin.GetCutMode() == "Cylinder";
+                    bool isCylinder = PiPDisablerPlugin.GetCutMode() == "Cylinder";
                     string cacheKey = MeshCutCache.BuildKey(scopeRoot, activeMode, mf, originalAsset, keepSide, isCylinder);
 
                     Mesh readable;
@@ -362,7 +362,7 @@ namespace ScopeHousingMeshSurgery
                     {
                         readable = cachedMesh;
                         readable.name = originalAsset.name + "_CUT_CACHED";
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[MeshSurgery] Loaded cached cut mesh for '{originalAsset.name}'.");
                     }
                     else
@@ -371,7 +371,7 @@ namespace ScopeHousingMeshSurgery
                         readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
                         if (readable == null)
                         {
-                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                            PiPDisablerPlugin.LogVerbose(
                                 $"[MeshSurgery] GPU copy returned null for '{originalAsset.name}' — skipping.");
                             continue;
                         }
@@ -381,7 +381,7 @@ namespace ScopeHousingMeshSurgery
                         if (!_loggedGpuCopy)
                         {
                             _loggedGpuCopy = true;
-                            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            PiPDisablerPlugin.LogInfo(
                                 "[MeshSurgery] Created readable mesh copies via GPU buffer. Plane cutting enabled.");
                         }
 
@@ -392,23 +392,23 @@ namespace ScopeHousingMeshSurgery
 
                         if (isCylinder)
                         {
-                            float nearR = ScopeHousingMeshSurgeryPlugin.GetCylinderRadius();
-                            float startOff = ScopeHousingMeshSurgeryPlugin.GetCutStartOffset();
-                            float cutLen = ScopeHousingMeshSurgeryPlugin.GetCutLength();
-                            float preserve = ScopeHousingMeshSurgeryPlugin.GetNearPreserveDepth();
-                            float p2 = ScopeHousingMeshSurgeryPlugin.GetPlane2PositionNormalized(cutLen);
-                            float r2 = ScopeHousingMeshSurgeryPlugin.GetPlane2Radius();
-                            float p3 = ScopeHousingMeshSurgeryPlugin.GetPlane3Position();
-                            float r3 = ScopeHousingMeshSurgeryPlugin.GetPlane3Radius();
-                            float p4 = ScopeHousingMeshSurgeryPlugin.GetPlane4Position();
-                            float r4 = ScopeHousingMeshSurgeryPlugin.GetPlane4Radius();
+                            float nearR = PiPDisablerPlugin.GetCylinderRadius();
+                            float startOff = PiPDisablerPlugin.GetCutStartOffset();
+                            float cutLen = PiPDisablerPlugin.GetCutLength();
+                            float preserve = PiPDisablerPlugin.GetNearPreserveDepth();
+                            float p2 = PiPDisablerPlugin.GetPlane2PositionNormalized(cutLen);
+                            float r2 = PiPDisablerPlugin.GetPlane2Radius();
+                            float p3 = PiPDisablerPlugin.GetPlane3Position();
+                            float r3 = PiPDisablerPlugin.GetPlane3Radius();
+                            float p4 = PiPDisablerPlugin.GetPlane4Position();
+                            float r4 = PiPDisablerPlugin.GetPlane4Radius();
 
                             ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
                                 planePoint, planeNormal, nearR, r4, startOff, cutLen,
                                 keepInside: false, midRadius: r2, midPosition: p2,
                                 nearPreserveDepth: preserve,
                                 plane3Radius: r3, plane3Position: p3, plane4Position: p4);
-                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                            PiPDisablerPlugin.LogVerbose(
                                 $"[MeshSurgery] Frustum cut '{originalAsset.name}': p1R={nearR:F4}@0.00 " +
                                 $"p2R={r2:F4}@{p2:F2} p3R={r3:F4}@{p3:F2} p4R={r4:F4}@{p4:F2} " +
                                 $"start={startOff:F4} len={cutLen:F4} offset={plane1Offset:F4}" +
@@ -425,7 +425,7 @@ namespace ScopeHousingMeshSurgery
                             // Cut removed everything — clear the mesh to make it empty
                             readable.Clear();
                             readable.name = originalAsset.name + "_CUT_EMPTY";
-                            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                            PiPDisablerPlugin.LogVerbose(
                                 $"[MeshSurgery] Cut removed all geometry from '{originalAsset.name}' — applying empty mesh.");
                         }
                         else
@@ -433,7 +433,7 @@ namespace ScopeHousingMeshSurgery
                             readable.name = originalAsset.name + "_CUT";
                         }
 
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
 
                         MeshCutCache.Save(cacheKey, readable);
@@ -452,7 +452,7 @@ namespace ScopeHousingMeshSurgery
                 }
                 catch (Exception ex)
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogError(
+                    PiPDisablerPlugin.LogError(
                         $"[MeshSurgery] Failed on '{originalAsset.name}': {ex.Message}");
                 }
             }
@@ -479,7 +479,7 @@ namespace ScopeHousingMeshSurgery
 
             // Mirror the ExpandSearchToWeaponRoot expansion from FindTargetMeshFilters
             // so weapon-body meshes that were cut can also be restored.
-            if (ScopeHousingMeshSurgeryPlugin.GetExpandSearchToWeaponRoot())
+            if (PiPDisablerPlugin.GetExpandSearchToWeaponRoot())
             {
                 for (var p = searchRoot.parent; p != null; p = p.parent)
                 {
@@ -497,7 +497,7 @@ namespace ScopeHousingMeshSurgery
 
             if (toRestore.Length == 0) return;
 
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 $"[MeshSurgery] RestoreForScope: {toRestore.Length} meshes to restore (searchRoot='{searchRoot.name}')");
 
             foreach (var mf in toRestore)
@@ -509,7 +509,7 @@ namespace ScopeHousingMeshSurgery
             var keys = _tracked.Keys.ToArray();
             if (keys.Length == 0) return;
 
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 $"[MeshSurgery] RestoreAll: {keys.Length} meshes to restore");
 
             foreach (var mf in keys)
@@ -525,12 +525,12 @@ namespace ScopeHousingMeshSurgery
             try
             {
                 mf.sharedMesh = st.OriginalAssetMesh;
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[MeshSurgery] Restored '{st.OriginalAssetMesh?.name}' on {mf.gameObject.name}");
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError(
+                PiPDisablerPlugin.LogError(
                     $"[MeshSurgery] Restore failed: {ex.Message}");
             }
 
@@ -575,7 +575,7 @@ namespace ScopeHousingMeshSurgery
             {
                 if (HasDirectChild(t, "backLens") || HasDirectChild(t, "backlens"))
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    PiPDisablerPlugin.LogVerbose(
                         $"[ScopeHierarchy] FindScopeRoot fallback (backLens child): '{t.name}'");
                     return t;
                 }
@@ -589,14 +589,14 @@ namespace ScopeHousingMeshSurgery
                     var lo = t.name.ToLowerInvariant();
                     if (lo.Contains("scope"))
                     {
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[ScopeHierarchy] FindScopeRoot fallback (name match): '{t.name}'");
                         return t;
                     }
                 }
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindScopeRoot FAILED for '{any?.name}' — no scope root found");
             return null;
         }
@@ -699,7 +699,7 @@ namespace ScopeHousingMeshSurgery
             try { viewerTf = os != null ? os.ScopeTransform : null; } catch { }
 
             if (viewerTf != null) camPos = viewerTf.position;
-            else { var mc = ScopeHousingMeshSurgeryPlugin.GetMainCamera(); camPos = mc != null ? mc.transform.position : activeMode.position; }
+            else { var mc = PiPDisablerPlugin.GetMainCamera(); camPos = mc != null ? mc.transform.position : activeMode.position; }
 
             // Find the best reference transform for the cut plane.
             Transform refTransform = null;
@@ -757,9 +757,9 @@ namespace ScopeHousingMeshSurgery
             // Determine the plane normal based on config.
             planeNormal = GetConfiguredNormal(refTransform);
 
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] TryGetPlane: ref='{refTransform.name}', " +
-                $"axis={ScopeHousingMeshSurgeryPlugin.GetPlaneNormalAxis()}, " +
+                $"axis={PiPDisablerPlugin.GetPlaneNormalAxis()}, " +
                 $"normal={planeNormal:F3}");
 
             return true;
@@ -772,7 +772,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         private static Vector3 GetConfiguredNormal(Transform refTransform)
         {
-            string axis = ScopeHousingMeshSurgeryPlugin.GetPlaneNormalAxis() ?? "Auto";
+            string axis = PiPDisablerPlugin.GetPlaneNormalAxis() ?? "Auto";
 
             switch (axis)
             {
@@ -830,7 +830,7 @@ namespace ScopeHousingMeshSurgery
                 break; // unknown parent — stop
             }
             if (searchRoot != scopeRoot)
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[ScopeHierarchy] Expanded search root: '{scopeRoot.name}' → '{searchRoot.name}'");
 
             // Optional: climb further up to the Weapon_root node to include weapon body meshes.
@@ -838,14 +838,14 @@ namespace ScopeHousingMeshSurgery
             // With ExpandSearchToWeaponRoot the search climbs through those intermediate nodes
             // until it finds a transform whose name starts with "Weapon_root".
             // Path example: Weapon_root/Weapon_root_anim/weapon/mod_scope/<scope>
-            if (ScopeHousingMeshSurgeryPlugin.GetExpandSearchToWeaponRoot())
+            if (PiPDisablerPlugin.GetExpandSearchToWeaponRoot())
             {
                 for (var p = searchRoot.parent; p != null; p = p.parent)
                 {
                     if ((p.name ?? "").StartsWith("Weapon_root", StringComparison.OrdinalIgnoreCase))
                     {
                         searchRoot = p;
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[ScopeHierarchy] ExpandSearchToWeaponRoot: climbed to '{searchRoot.name}'");
                         break;
                     }
@@ -858,7 +858,7 @@ namespace ScopeHousingMeshSurgery
             {
                 CollectOtherScopeRoots(searchRoot, scopeRoot, otherScopeRoots);
                 if (otherScopeRoots.Count > 0)
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    PiPDisablerPlugin.LogVerbose(
                         $"[ScopeHierarchy] Found {otherScopeRoots.Count} sibling scope root(s) — will exclude their subtrees");
             }
 
@@ -888,7 +888,7 @@ namespace ScopeHousingMeshSurgery
                 result.Add(mf);
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
                 $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther}");
 

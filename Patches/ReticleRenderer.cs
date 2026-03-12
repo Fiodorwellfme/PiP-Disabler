@@ -3,7 +3,7 @@ using EFT.CameraControl;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// Renders the scope reticle via a CommandBuffer injected at
@@ -88,7 +88,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void ExtractReticle(OpticSight os)
         {
-            if (!ScopeHousingMeshSurgeryPlugin.GetShowReticle()) return;
+            if (!PiPDisablerPlugin.GetShowReticle()) return;
             if (os == null) return;
 
             _savedMarkTex = null;
@@ -119,7 +119,7 @@ namespace ScopeHousingMeshSurgery
                     _savedMarkTex.anisoLevel = 16;
                 }
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[Reticle] Extracted: _MarkTex={(_savedMarkTex != null ? _savedMarkTex.name : "null")} " +
                     $"({(_savedMarkTex != null ? $"{_savedMarkTex.width}x{_savedMarkTex.height}" : "?")}) " +
                     $"_MaskTex={(_savedMaskTex != null ? _savedMaskTex.name : "null")} " +
@@ -127,7 +127,7 @@ namespace ScopeHousingMeshSurgery
             }
             catch (System.Exception e)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError($"[Reticle] Extract failed: {e.Message}");
+                PiPDisablerPlugin.LogError($"[Reticle] Extract failed: {e.Message}");
             }
         }
 
@@ -137,7 +137,7 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         public static void Show(OpticSight os, float magnification = 1f)
         {
-            if (!ScopeHousingMeshSurgeryPlugin.GetShowReticle()) return;
+            if (!PiPDisablerPlugin.GetShowReticle()) return;
             if (_savedMarkTex == null || os == null) return;
 
             try
@@ -150,10 +150,10 @@ namespace ScopeHousingMeshSurgery
                 ApplyHorizontalFlip();
 
                 // Scale
-                float configBase = ScopeHousingMeshSurgeryPlugin.GetReticleBaseSize();
+                float configBase = PiPDisablerPlugin.GetReticleBaseSize();
                 _baseScale = (configBase > 0f)
                     ? configBase
-                    : ScopeHousingMeshSurgeryPlugin.GetCylinderRadius() * 2f;
+                    : PiPDisablerPlugin.GetCylinderRadius() * 2f;
                 if (_baseScale < 0.001f) _baseScale = 0.030f;
 
                 if (magnification < 1f) magnification = 1f;
@@ -165,13 +165,13 @@ namespace ScopeHousingMeshSurgery
                 _settled = true;
                 _alignmentActive = true;
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[Reticle] Showing: base={_baseScale:F4} mag={magnification:F1}x " +
                     $"(camera-aligned centered rendering)");
             }
             catch (System.Exception e)
             {
-                ScopeHousingMeshSurgeryPlugin.LogError($"[Reticle] Show failed: {e.Message}");
+                PiPDisablerPlugin.LogError($"[Reticle] Show failed: {e.Message}");
             }
         }
 
@@ -187,7 +187,7 @@ namespace ScopeHousingMeshSurgery
             if (Mathf.Abs(magnification - _lastMag) >= 0.01f)
                 _lastMag = magnification;
 
-            var mainCam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            var mainCam = PiPDisablerPlugin.GetMainCamera();
             if (mainCam != null && mainCam != _attachedCamera)
                 AttachToCamera();
         }
@@ -242,7 +242,7 @@ namespace ScopeHousingMeshSurgery
             if (renderers != null)
                 _housingRenderers.AddRange(renderers);
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[Reticle] Housing mask: {_housingRenderers.Count} renderer(s) registered" +
                 $" stencilSupport={_hasStencilSupport}");
         }
@@ -251,7 +251,7 @@ namespace ScopeHousingMeshSurgery
 
         private static void AttachToCamera()
         {
-            var mainCam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            var mainCam = PiPDisablerPlugin.GetMainCamera();
             if (mainCam == null) return;
 
             if (_attachedCamera != null && _attachedCamera != mainCam)
@@ -271,7 +271,7 @@ namespace ScopeHousingMeshSurgery
                 _preCullRegistered = true;
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[Reticle] CommandBuffer attached to '{mainCam.name}' at AfterForwardAlpha");
         }
 
@@ -403,7 +403,7 @@ namespace ScopeHousingMeshSurgery
                     if (r != null && r.gameObject.activeInHierarchy) activeCount++;
                 }
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[Reticle] Frame {_debugFrameCount + 1}/{DebugLogFrames}: " +
                     $"useStencil={useStencil} housingTotal={_housingRenderers.Count} " +
                     $"housingActive={activeCount} stencilSupport={_hasStencilSupport}");
@@ -436,7 +436,7 @@ namespace ScopeHousingMeshSurgery
                 // ── Step 4: optional debug overlay — red tint where housing masked ───
                 // Renders anywhere stencil == 1, i.e. every pixel the housing suppressed.
                 // Enable via DebugShowHousingMask in BepInEx config.
-                if (ScopeHousingMeshSurgeryPlugin.GetDebugShowHousingMask()
+                if (PiPDisablerPlugin.GetDebugShowHousingMask()
                     && _stencilDebugMat != null)
                 {
                     _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
@@ -529,7 +529,7 @@ namespace ScopeHousingMeshSurgery
                         Shader.Find("Particles/Additive") ??
                         Shader.Find("Legacy Shaders/Particles/Additive");
 
-                    ScopeHousingMeshSurgeryPlugin.LogWarn(
+                    PiPDisablerPlugin.LogWarn(
                         "[Reticle] No alpha-blend shader found; falling back to Particles/Additive.");
                 }
 
@@ -552,7 +552,7 @@ namespace ScopeHousingMeshSurgery
                     _reticleMat.SetFloat("_StencilWriteMask", 0f);   // don't write
                 }
 
-                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                PiPDisablerPlugin.LogInfo(
                     $"[Reticle] Created material (shader='{(alphaShader != null ? alphaShader.name : "null")}'" +
                     $" stencilSupport={_hasStencilSupport})");
 

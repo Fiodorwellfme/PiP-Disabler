@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// Visualizes the mesh cutting volume in two modes:
@@ -31,8 +31,8 @@ namespace ScopeHousingMeshSurgery
 
         public static void Show(Vector3 planePoint, Vector3 planeNormal)
         {
-            bool showPlane = ScopeHousingMeshSurgeryPlugin.GetShowCutPlane();
-            bool showVolume = ScopeHousingMeshSurgeryPlugin.GetShowCutVolume();
+            bool showPlane = PiPDisablerPlugin.GetShowCutPlane();
+            bool showVolume = PiPDisablerPlugin.GetShowCutVolume();
 
             if (!showPlane && !showVolume)
             {
@@ -40,9 +40,9 @@ namespace ScopeHousingMeshSurgery
                 return;
             }
 
-            bool isCylinder = ScopeHousingMeshSurgeryPlugin.GetCutMode() == "Cylinder";
-            float startOffset = ScopeHousingMeshSurgeryPlugin.GetCutStartOffset();
-            float cutLength = ScopeHousingMeshSurgeryPlugin.GetCutLength();
+            bool isCylinder = PiPDisablerPlugin.GetCutMode() == "Cylinder";
+            float startOffset = PiPDisablerPlugin.GetCutStartOffset();
+            float cutLength = PiPDisablerPlugin.GetCutLength();
 
             Vector3 nearPos = planePoint - planeNormal * startOffset;
             Vector3 farPos = nearPos + planeNormal * cutLength;
@@ -63,8 +63,8 @@ namespace ScopeHousingMeshSurgery
 
                 if (isCylinder)
                 {
-                    float p1R = ScopeHousingMeshSurgeryPlugin.GetCylinderRadius();
-                    float p4R = ScopeHousingMeshSurgeryPlugin.GetPlane4Radius();
+                    float p1R = PiPDisablerPlugin.GetCylinderRadius();
+                    float p4R = PiPDisablerPlugin.GetPlane4Radius();
 
                     _nearGO.transform.localScale = Vector3.one * p1R * 2f;
                     _farGO.transform.localScale = Vector3.one * p4R * 2f;
@@ -89,14 +89,14 @@ namespace ScopeHousingMeshSurgery
             // --- 3D tube volume (ShowCutVolume) ---
             if (showVolume && isCylinder)
             {
-                float p1R = ScopeHousingMeshSurgeryPlugin.GetCylinderRadius();
-                float p2R = ScopeHousingMeshSurgeryPlugin.GetPlane2Radius();
-                float p2Pos = ScopeHousingMeshSurgeryPlugin.GetPlane2PositionNormalized(cutLength);
-                float p3R = ScopeHousingMeshSurgeryPlugin.GetPlane3Radius();
-                float p3Pos = ScopeHousingMeshSurgeryPlugin.GetPlane3Position();
-                float p4R = ScopeHousingMeshSurgeryPlugin.GetPlane4Radius();
-                float p4Pos = ScopeHousingMeshSurgeryPlugin.GetPlane4Position();
-                float opacity = ScopeHousingMeshSurgeryPlugin.GetCutVolumeOpacity();
+                float p1R = PiPDisablerPlugin.GetCylinderRadius();
+                float p2R = PiPDisablerPlugin.GetPlane2Radius();
+                float p2Pos = PiPDisablerPlugin.GetPlane2PositionNormalized(cutLength);
+                float p3R = PiPDisablerPlugin.GetPlane3Radius();
+                float p3Pos = PiPDisablerPlugin.GetPlane3Position();
+                float p4R = PiPDisablerPlugin.GetPlane4Radius();
+                float p4Pos = PiPDisablerPlugin.GetPlane4Position();
+                float opacity = PiPDisablerPlugin.GetCutVolumeOpacity();
 
                 int hash = ComputeTubeHash(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, cutLength);
                 EnsureTubeCreated(p1R, p2R, p2Pos, p3R, p3Pos, p4R, p4Pos, cutLength, opacity, hash);
@@ -119,7 +119,7 @@ namespace ScopeHousingMeshSurgery
                 _tubeGO.transform.localScale = Vector3.one;
 
                 // Preserve zone ring — yellow circle at the depth where cutting actually begins
-                float preserve = ScopeHousingMeshSurgeryPlugin.GetNearPreserveDepth();
+                float preserve = PiPDisablerPlugin.GetNearPreserveDepth();
                 if (preserve > 0f)
                 {
                     EnsurePreserveRingCreated();
@@ -176,7 +176,7 @@ namespace ScopeHousingMeshSurgery
             _farMat = MakeMat(new Color(1, 0, 0, 0.35f));
             _nearGO = MakeGO("CutPlaneVis_Near", _nearMat);
             _farGO = MakeGO("CutPlaneVis_Far", _farMat);
-            ScopeHousingMeshSurgeryPlugin.LogInfo("[PlaneVis] Created near (green) + far (red)");
+            PiPDisablerPlugin.LogInfo("[PlaneVis] Created near (green) + far (red)");
         }
 
         private static void EnsurePreserveRingCreated()
@@ -184,7 +184,7 @@ namespace ScopeHousingMeshSurgery
             if (_preserveRingGO != null) return;
             _preserveRingMat = MakeMat(new Color(1, 1, 0, 0.5f)); // yellow
             _preserveRingGO = MakeGO("CutPlaneVis_Preserve", _preserveRingMat);
-            ScopeHousingMeshSurgeryPlugin.LogInfo("[PlaneVis] Created preserve zone ring (yellow)");
+            PiPDisablerPlugin.LogInfo("[PlaneVis] Created preserve zone ring (yellow)");
         }
 
         // ============================
@@ -221,7 +221,7 @@ namespace ScopeHousingMeshSurgery
             {
                 _tubeMat = MakeMat(new Color(0.2f, 0.6f, 1f, opacity));
                 _tubeGO = MakeGO("CutVolumeVis", _tubeMat);
-                ScopeHousingMeshSurgeryPlugin.LogInfo("[PlaneVis] Created 3D cut volume visualizer");
+                PiPDisablerPlugin.LogInfo("[PlaneVis] Created 3D cut volume visualizer");
             }
 
             _tubeGO.GetComponent<MeshFilter>().sharedMesh = _tubeMesh;
@@ -299,7 +299,7 @@ namespace ScopeHousingMeshSurgery
             mesh.SetTriangles(tris, 0);
             mesh.RecalculateBounds();
 
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 $"[PlaneVis] Generated tube: verts={verts.Count} tris={tris.Count / 3} " +
                 $"p1R={p1R:F4}@0.00 p2R={p2R:F4}@{p2Pos:F2} p3R={p3R:F4}@{p3Pos:F2} p4R={p4R:F4}@{p4Pos:F2} len={cutLen:F3}");
 

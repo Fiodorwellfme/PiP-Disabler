@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// Renders scope vignette and shadow effects via a CommandBuffer injected at
@@ -64,7 +64,7 @@ namespace ScopeHousingMeshSurgery
             _ = baseSize;
             _ = magnification;
 
-            if (ScopeHousingMeshSurgeryPlugin.VignetteEnabled.Value)
+            if (PiPDisablerPlugin.VignetteEnabled.Value)
             {
                 EnsureVignetteMeshAndMat();
                 RefreshVignetteTexture();
@@ -75,7 +75,7 @@ namespace ScopeHousingMeshSurgery
                 _vigActive = false;
             }
 
-            if (ScopeHousingMeshSurgeryPlugin.ScopeShadowEnabled.Value)
+            if (PiPDisablerPlugin.ScopeShadowEnabled.Value)
             {
                 EnsureShadowMeshAndMat();
                 RefreshShadowTexture();
@@ -90,7 +90,7 @@ namespace ScopeHousingMeshSurgery
 
             AttachToCamera();
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[ScopeEffects] Showing: vignette={_vigActive} shadow={_shadowActive} (CommandBuffer)");
         }
 
@@ -105,7 +105,7 @@ namespace ScopeHousingMeshSurgery
             if (_shadowActive) RefreshShadowTexture();
 
             // Re-attach if camera changed
-            var mainCam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            var mainCam = PiPDisablerPlugin.GetMainCamera();
             if (mainCam != null && mainCam != _attachedCamera)
                 AttachToCamera();
         }
@@ -133,7 +133,7 @@ namespace ScopeHousingMeshSurgery
 
         private static void AttachToCamera()
         {
-            var mainCam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            var mainCam = PiPDisablerPlugin.GetMainCamera();
             if (mainCam == null) return;
 
             if (_attachedCamera != null && _attachedCamera != mainCam)
@@ -153,7 +153,7 @@ namespace ScopeHousingMeshSurgery
                 _preCullRegistered = true;
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 $"[ScopeEffects] CommandBuffer attached to '{mainCam.name}' at AfterEverything");
         }
 
@@ -289,11 +289,11 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         private static void RefreshVignetteTexture()
         {
-            float soft = ScopeHousingMeshSurgeryPlugin.VignetteSoftness.Value;
-            float opac = ScopeHousingMeshSurgeryPlugin.VignetteOpacity.Value;
-            float mult = ScopeHousingMeshSurgeryPlugin.VignetteSizeMult.Value;
+            float soft = PiPDisablerPlugin.VignetteSoftness.Value;
+            float opac = PiPDisablerPlugin.VignetteOpacity.Value;
+            float mult = PiPDisablerPlugin.VignetteSizeMult.Value;
 
-            var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            var cam = PiPDisablerPlugin.GetMainCamera();
             float aspect = GetDisplayAspect(cam);
 
             if (Mathf.Abs(soft - _lastVigSoftness) < 0.001f &&
@@ -378,11 +378,11 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         private static void RefreshShadowTexture()
         {
-            float radius = ScopeHousingMeshSurgeryPlugin.ScopeShadowRadius.Value;
-            float soft   = ScopeHousingMeshSurgeryPlugin.ScopeShadowSoftness.Value;
-            float opac   = ScopeHousingMeshSurgeryPlugin.ScopeShadowOpacity.Value;
+            float radius = PiPDisablerPlugin.ScopeShadowRadius.Value;
+            float soft   = PiPDisablerPlugin.ScopeShadowSoftness.Value;
+            float opac   = PiPDisablerPlugin.ScopeShadowOpacity.Value;
 
-            var cam = ScopeHousingMeshSurgeryPlugin.GetMainCamera();
+            var cam = PiPDisablerPlugin.GetMainCamera();
             Rect viewport = GetDisplayViewport(cam);
             int texW = Mathf.Clamp(Mathf.RoundToInt(viewport.width), 64, 4096);
             int texH = Mathf.Clamp(Mathf.RoundToInt(viewport.height), 64, 4096);
@@ -429,7 +429,7 @@ namespace ScopeHousingMeshSurgery
             _shadowTex.Apply();
             if (_shadowMat != null) _shadowMat.mainTexture = _shadowTex;
 
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 $"[ScopeEffects] Shadow texture rebuilt: {texW}x{texH} aspect={aspect:F2} radius={radius} soft={soft}");
         }
 

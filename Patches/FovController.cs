@@ -5,7 +5,7 @@ using EFT.CameraControl;
 using HarmonyLib;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     /// <summary>
     /// Computes the zoomed FOV for the main camera from template zoom multipliers.
@@ -75,8 +75,8 @@ namespace ScopeHousingMeshSurgery
             _ = baseFov;
             _ = pwa;
 
-            if (!ScopeHousingMeshSurgeryPlugin.AutoFovFromScope.Value)
-                return ScopeHousingMeshSurgeryPlugin.ScopedFov.Value;
+            if (!PiPDisablerPlugin.AutoFovFromScope.Value)
+                return PiPDisablerPlugin.ScopedFov.Value;
 
             float magnification = GetEffectiveMagnification();
             if (magnification > 0.1f)
@@ -88,7 +88,7 @@ namespace ScopeHousingMeshSurgery
                 if (Mathf.Abs(magnification - _lastLoggedMag) > 0.01f)
                 {
                     _lastLoggedMag = magnification;
-                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    PiPDisablerPlugin.LogInfo(
                         $"[FovController] mag={magnification:F2}x → mainFov={resultFov:F1}° " +
                         $"(baseline={ZoomBaselineFov:F0}°) [{source}]");
                 }
@@ -96,7 +96,7 @@ namespace ScopeHousingMeshSurgery
                 return resultFov;
             }
 
-            return ScopeHousingMeshSurgeryPlugin.ScopedFov.Value;
+            return PiPDisablerPlugin.ScopedFov.Value;
         }
 
         /// <summary>
@@ -138,7 +138,7 @@ namespace ScopeHousingMeshSurgery
 
             // 3. Config default
             _lastLoggedSource = "DEFAULT";
-            return ScopeHousingMeshSurgeryPlugin.DefaultZoom.Value;
+            return PiPDisablerPlugin.DefaultZoom.Value;
         }
 
         /// <summary>
@@ -229,7 +229,7 @@ namespace ScopeHousingMeshSurgery
                     if (minZoom > 0.1f && maxZoom > 0.1f && maxZoom > minZoom)
                     {
                         float zoom = Mathf.Lerp(minZoom, maxZoom, zoomT);
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[FovController] Variable zoom: min={minZoom:F2}x max={maxZoom:F2}x " +
                             $"t={zoomT:F3} → {zoom:F2}x");
                         return zoom;
@@ -240,14 +240,14 @@ namespace ScopeHousingMeshSurgery
                 float currentZoom = (float)_getCurrentZoom.Invoke(sightComponent, null);
                 if (currentZoom > 0.1f)
                 {
-                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                    PiPDisablerPlugin.LogVerbose(
                         $"[FovController] Template zoom: {currentZoom:F2}x (stepped)");
                     return currentZoom;
                 }
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[FovController] GetTemplateZoom exception: {ex.Message}");
             }
 
@@ -466,7 +466,7 @@ namespace ScopeHousingMeshSurgery
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[FovController] FindSightComponent exception: {ex.Message}");
             }
 
@@ -500,7 +500,7 @@ namespace ScopeHousingMeshSurgery
                         {
                             _smvcType = t;
                             _sightModProp = prop;
-                            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            PiPDisablerPlugin.LogInfo(
                                 $"[FovController] Found SightModVisualControllers: {t.FullName}, " +
                                 $"SightMod={prop.Name} ({prop.PropertyType.Name})");
                             return;
@@ -512,7 +512,7 @@ namespace ScopeHousingMeshSurgery
 
             // Strategy 2: Scan assemblies for MonoBehaviour with a property whose
             // return type has GetCurrentOpticZoom method
-            ScopeHousingMeshSurgeryPlugin.LogVerbose(
+            PiPDisablerPlugin.LogVerbose(
                 "[FovController] SightModVisualControllers name lookup failed, scanning assemblies...");
 
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -528,7 +528,7 @@ namespace ScopeHousingMeshSurgery
                         {
                             _smvcType = type;
                             _sightModProp = prop;
-                            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            PiPDisablerPlugin.LogInfo(
                                 $"[FovController] Discovered SightModVisualControllers via scan: " +
                                 $"{type.FullName}, SightMod={prop.Name} ({prop.PropertyType.Name})");
                             return;
@@ -538,7 +538,7 @@ namespace ScopeHousingMeshSurgery
                 catch { }
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogWarn(
+            PiPDisablerPlugin.LogWarn(
                 "[FovController] SightModVisualControllers NOT found — template zoom unavailable");
         }
 
@@ -622,7 +622,7 @@ namespace ScopeHousingMeshSurgery
                                   ?? templateType.GetField("Name", anyFlags);
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 $"[FovController] SightComponent members: " +
                 $"GetCurrentOpticZoom={_getCurrentZoom != null}, " +
                 $"GetMinOpticZoom={_getMinZoom != null}, " +
@@ -725,7 +725,7 @@ namespace ScopeHousingMeshSurgery
                     float fov = (float)_scopeCamDataFovField.GetValue(scd);
                     if (fov > 0.1f)
                     {
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[FovController] ScopeCameraData fallback: FOV={fov:F2}");
                         return fov;
                     }
@@ -761,7 +761,7 @@ namespace ScopeHousingMeshSurgery
 
                     if (IsOnSameModeAs(mb.transform, os.transform))
                     {
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        PiPDisablerPlugin.LogVerbose(
                             $"[FovController] BruteForce fallback: {mb.gameObject.name} FOV={fov:F2}");
                         if (_scopeCamDataType == null)
                         {
@@ -774,7 +774,7 @@ namespace ScopeHousingMeshSurgery
             }
             catch (Exception ex)
             {
-                ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                PiPDisablerPlugin.LogVerbose(
                     $"[FovController] BruteForce error: {ex.Message}");
             }
             return 0f;
@@ -804,7 +804,7 @@ namespace ScopeHousingMeshSurgery
                         {
                             _scopeCamDataType = t;
                             _scopeCamDataFovField = f;
-                            ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            PiPDisablerPlugin.LogInfo(
                                 $"[FovController] Found ScopeCameraData: {t.FullName}");
                             return;
                         }
@@ -829,7 +829,7 @@ namespace ScopeHousingMeshSurgery
 
                         _scopeCamDataType = type;
                         _scopeCamDataFovField = fovF;
-                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        PiPDisablerPlugin.LogInfo(
                             $"[FovController] Discovered ScopeCameraData via scan: {type.FullName}");
                         return;
                     }
@@ -837,7 +837,7 @@ namespace ScopeHousingMeshSurgery
                 catch { }
             }
 
-            ScopeHousingMeshSurgeryPlugin.LogInfo(
+            PiPDisablerPlugin.LogInfo(
                 "[FovController] ScopeCameraData type NOT found — fallback unavailable");
         }
 
