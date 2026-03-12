@@ -754,6 +754,26 @@ namespace PiPDisabler
             return string.Join("/", parts.ToArray());
         }
 
+        private static bool IsLikelyLightEffectMesh(MeshFilter mf, Transform searchRoot)
+        {
+            if (mf == null || mf.transform == null) return false;
+
+            string goName = (mf.gameObject.name ?? string.Empty).ToLowerInvariant();
+            string meshName = (mf.sharedMesh != null ? mf.sharedMesh.name : string.Empty).ToLowerInvariant();
+
+            bool isSphereMesh = goName == "sphere" || meshName == "sphere";
+            if (!isSphereMesh) return false;
+
+            // Common EFT flashlight/laser visual emitters are nested under light_* nodes.
+            // These are glow helpers and should not be plane-cut, otherwise they can bloom
+            // into solid white blobs in the optic image.
+            string relPath = GetRelativePath(mf.transform, searchRoot).ToLowerInvariant();
+            bool underLightNode = relPath.Contains("/light_") || relPath.EndsWith("/light");
+            if (!underLightNode) return false;
+
+            return true;
+        }
+
         public static bool TryGetPlane(OpticSight os, Transform scopeRoot, Transform activeMode,
             out Vector3 planePoint, out Vector3 planeNormal, out Vector3 camPos)
         {
@@ -939,7 +959,7 @@ namespace PiPDisabler
             }
 
             var result = new List<MeshFilter>(64);
-            int skippedMode = 0, skippedOther = 0;
+            int skippedMode = 0, skippedOther = 0, skippedLightFx = 0;
             int inspected = 0;
 
             if (logCandidates)
@@ -965,6 +985,17 @@ namespace PiPDisabler
                     {
                         PiPDisablerPlugin.LogInfo(
                             $"[MeshSurgery][DebugCandidates] skip otherScope path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
+
+                if (IsLikelyLightEffectMesh(mf, searchRoot))
+                {
+                    skippedLightFx++;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip lightEffect path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
                     }
                     continue;
                 }
@@ -1001,12 +1032,12 @@ namespace PiPDisabler
 
             PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
-                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther}");
+                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther} lightFx={skippedLightFx}");
 
             if (logCandidates)
             {
                 PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedMode={skippedMode} skippedOtherScope={skippedOther}");
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedMode={skippedMode} skippedOtherScope={skippedOther} skippedLightFx={skippedLightFx}");
             }
 
             return result;
