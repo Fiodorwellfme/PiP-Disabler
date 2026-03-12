@@ -1,6 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using EFT;
+using EFT.Animations;
 using EFT.CameraControl;
+using Comfort.Common;
+using HarmonyLib;
 using UnityEngine;
 
 namespace ScopeHousingMeshSurgery
@@ -30,6 +35,10 @@ namespace ScopeHousingMeshSurgery
     /// </summary>
     internal static class LensTransparency
     {
+        private static PropertyInfo _handsContainerProp;
+        private static PropertyInfo _weaponProp;
+        private static bool _weaponReflectionReady;
+
         private struct HiddenEntry
         {
             public MeshFilter Filter;
@@ -658,6 +667,12 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         private static Transform FindWeaponRoot(Transform from)
         {
+            // Preferred source: PWA.HandsContainer.Weapon
+            var heldWeaponRoot = GetHeldWeaponRootFromPwa();
+            if (heldWeaponRoot != null)
+                return heldWeaponRoot;
+
+            // Fallback: hierarchy walk from optic transform.
             if (from == null) return null;
             for (Transform cur = from; cur != null; cur = cur.parent)
             {
@@ -669,6 +684,33 @@ namespace ScopeHousingMeshSurgery
                     break;
             }
             return null;
+        }
+
+        private static Transform GetHeldWeaponRootFromPwa()
+        {
+            try
+            {
+                if (!_weaponReflectionReady)
+                {
+                    _handsContainerProp = AccessTools.Property(typeof(ProceduralWeaponAnimation), "HandsContainer");
+                    var handsType = _handsContainerProp?.PropertyType;
+                    if (handsType != null)
+                        _weaponProp = AccessTools.Property(handsType, "Weapon");
+                    _weaponReflectionReady = true;
+                }
+
+                var gw = Singleton<GameWorld>.Instance;
+                var player = gw != null ? gw.MainPlayer : null;
+                var pwa = player?.ProceduralWeaponAnimation;
+                if (pwa == null) return null;
+
+                var hands = _handsContainerProp?.GetValue(pwa, null);
+                return _weaponProp?.GetValue(hands, null) as Transform;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>

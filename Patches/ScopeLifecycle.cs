@@ -32,6 +32,10 @@ namespace ScopeHousingMeshSurgery
         private static PropertyInfo _currentScopeProp;
         private static PropertyInfo _isOpticProp;
         private static bool _reflectionReady;
+        private static PropertyInfo _scopePrefabCacheProp;
+        private static PropertyInfo _currentModOpticSightProp;
+        private static PropertyInfo _opticCameraManagerProp;
+        private static PropertyInfo _currentOpticSightProp;
 
         // Fast delegates (avoid PropertyInfo.GetValue overhead per frame)
         private static Func<ProceduralWeaponAnimation, bool> _getIsAiming;
@@ -108,7 +112,21 @@ namespace ScopeHousingMeshSurgery
                 {
                     var scopeType = _currentScopeProp.PropertyType; // SightNBone
                     _isOpticProp = AccessTools.Property(scopeType, "IsOptic");
+
+                    // Primary active optic source:
+                    // PWA.CurrentScope.ScopePrefabCache.CurrentModOpticSight
+                    _scopePrefabCacheProp = AccessTools.Property(scopeType, "ScopePrefabCache");
+                    var cacheType = _scopePrefabCacheProp?.PropertyType;
+                    if (cacheType != null)
+                        _currentModOpticSightProp = AccessTools.Property(cacheType, "CurrentModOpticSight");
                 }
+
+                // Camera-side truth source fallback:
+                // CameraClass.Instance.OpticCameraManager.CurrentOpticSight
+                _opticCameraManagerProp = AccessTools.Property(typeof(CameraClass), "OpticCameraManager");
+                var opticMgrType = _opticCameraManagerProp?.PropertyType;
+                if (opticMgrType != null)
+                    _currentOpticSightProp = AccessTools.Property(opticMgrType, "CurrentOpticSight");
 
                 _reflectionReady = _isAimingProp != null
                                 && _currentScopeProp != null
@@ -1049,6 +1067,39 @@ namespace ScopeHousingMeshSurgery
         /// </summary>
         private static OpticSight FindEnabledOpticFromPWA()
         {
+            // 1) Preferred source: game's active aiming device cache
+            //    PWA.CurrentScope.ScopePrefabCache.CurrentModOpticSight
+            try
+            {
+                var player = GetLocalPlayer();
+                var pwa = player?.ProceduralWeaponAnimation;
+                var currentScope = pwa != null ? _getCurrentScope?.Invoke(pwa) : null;
+                var cache = currentScope != null ? _scopePrefabCacheProp?.GetValue(currentScope, null) : null;
+                var activeFromCache = cache != null
+                    ? _currentModOpticSightProp?.GetValue(cache, null) as OpticSight
+                    : null;
+                if (activeFromCache != null && activeFromCache.isActiveAndEnabled)
+                    return activeFromCache;
+            }
+            catch { }
+
+            // 2) Camera-side source: what optic camera system currently uses
+            try
+            {
+                if (CameraClass.Exist)
+                {
+                    var cc = CameraClass.Instance;
+                    var mgr = cc != null ? _opticCameraManagerProp?.GetValue(cc, null) : null;
+                    var activeFromCamera = mgr != null
+                        ? _currentOpticSightProp?.GetValue(mgr, null) as OpticSight
+                        : null;
+                    if (activeFromCamera != null && activeFromCamera.isActiveAndEnabled)
+                        return activeFromCamera;
+                }
+            }
+            catch { }
+
+            // 3) Local cached references from optic lifecycle patches
             if (_activeOptic != null && _activeOptic.isActiveAndEnabled)
                 return _activeOptic;
 
