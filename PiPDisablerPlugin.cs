@@ -5,6 +5,7 @@ using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
 using System.IO;
+using ScopeHousingMeshSurgery;
 using UnityEngine;
 
 namespace PiPDisabler
