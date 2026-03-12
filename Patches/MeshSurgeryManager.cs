@@ -327,22 +327,40 @@ namespace ScopeHousingMeshSurgery
 
             var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
             float cutRadius = ScopeHousingMeshSurgeryPlugin.GetCutRadius();
+            bool logCandidates = ScopeHousingMeshSurgeryPlugin.GetDebugLogCutCandidates();
+
+            if (logCandidates)
+            {
+                ScopeHousingMeshSurgeryPlugin.LogInfo(
+                    $"[MeshSurgery][DebugCandidates] scopeRoot='{scopeRoot.name}' activeMode='{activeMode.name}' totalTargets={targets.Count} cutRadius={cutRadius:F4}");
+            }
 
             foreach (var mf in targets)
             {
                 if (!mf || !mf.sharedMesh) continue;
 
-                // Radius filter: skip meshes too far from the cut center.
-                if (cutRadius > 0f)
+                var renderer = mf.GetComponent<Renderer>();
+                var boundsCenter = renderer != null ? renderer.bounds.center : mf.transform.position;
+                float distFromPlane = Vector3.Distance(boundsCenter, planePoint);
+
+                if (logCandidates)
                 {
-                    var boundsCenter = mf.GetComponent<Renderer>()?.bounds.center ?? mf.transform.position;
-                    float dist = Vector3.Distance(boundsCenter, planePoint);
-                    if (dist > cutRadius)
+                    string relPath = ScopeHierarchy.GetRelativePath(mf.transform, scopeRoot);
+                    ScopeHousingMeshSurgeryPlugin.LogInfo(
+                        $"[MeshSurgery][DebugCandidates] target path='{relPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy} dist={distFromPlane:F4}");
+                }
+
+                // Radius filter: skip meshes too far from the cut center.
+                if (cutRadius > 0f && distFromPlane > cutRadius)
+                {
+                    if (logCandidates)
                     {
-                        ScopeHousingMeshSurgeryPlugin.LogVerbose(
-                            $"[MeshSurgery] Skipping '{mf.sharedMesh.name}' — dist={dist:F4} > radius={cutRadius:F4}");
-                        continue;
+                        ScopeHousingMeshSurgeryPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip radius path='{ScopeHierarchy.GetRelativePath(mf.transform, scopeRoot)}' dist={distFromPlane:F4} > radius={cutRadius:F4}");
                     }
+                    ScopeHousingMeshSurgeryPlugin.LogVerbose(
+                        $"[MeshSurgery] Skipping '{mf.sharedMesh.name}' — dist={distFromPlane:F4} > radius={cutRadius:F4}");
+                    continue;
                 }
 
                 // Already applied? Skip.
@@ -686,6 +704,20 @@ namespace ScopeHousingMeshSurgery
                     stack.Push(t.GetChild(i));
             }
             return null;
+        }
+
+        public static string GetRelativePath(Transform t, Transform root)
+        {
+            if (t == null) return "null";
+
+            var parts = new List<string>();
+            for (var p = t; p != null; p = p.parent)
+            {
+                parts.Add(p.name ?? "unnamed");
+                if (p == root) break;
+            }
+            parts.Reverse();
+            return string.Join("/", parts.ToArray());
         }
 
         public static bool TryGetPlane(OpticSight os, Transform scopeRoot, Transform activeMode,
