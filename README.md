@@ -6,7 +6,7 @@ Runtime meshcutting combined with FOV zoom (incompatible with Fontaine's FOV fix
 
 When ADS, identify if scope is optic or not.  
 If Optic then check if thermal or NVG or variable scope or part of blacklisted scopes. If any of those is true then bypass mod.  
-Extract reticle, flip the texture horizontally and display it center screen in a command buffer.  
+Extract reticle, flip the texture horizontally and display it center screen in a command buffer at AfterForwardAlpha to allow compatibility with shaders such as in Borkel's NVG mod.  
   
 Set a 4 diameter cutting plane along the scope axis using the lens closest to the camera as the origin (this has to be configured manually for each scope).  
 The meshcutter cuts through all the meshes that are found between hands and the scope and the resulting meshes are then cached for reusal during the raid.  
@@ -49,7 +49,9 @@ Per scope reticle size.
 -~~Hide reticle when swaying across scope housing/weapon~~ Done  
 -~~Find way to make vignette stick to scope.~~ Kind of, all the guns scale approximately the same so one vignette/shadow size fits all  
 -~~Release 0.1~~  
+-Cleanup code from AI Jank, make sure that I know everything I'm doing, become god  
 -Try to make lens transparent + render reticle on it instead of the center of screen + camera alignment method  
+-When rendering reticle at AfterForwardAlpha it gets upscaled so blurry, add toggle for aftereverything ?  
 -Hide multiple options under advanced BepInEx settings  
 -Find best settings for different scopes. (Help welcome)  
 
