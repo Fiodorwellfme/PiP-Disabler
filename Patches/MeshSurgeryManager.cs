@@ -27,8 +27,16 @@ namespace PiPDisabler
             public bool Applied;
         }
 
+        private sealed class LightFxState
+        {
+            public bool WasActiveSelf;
+            public bool DisabledByUs;
+        }
+
         private static readonly Dictionary<MeshFilter, MeshState> _tracked =
             new Dictionary<MeshFilter, MeshState>(64);
+        private static readonly Dictionary<GameObject, LightFxState> _disabledLightFx =
+            new Dictionary<GameObject, LightFxState>(32);
         private static bool _loggedGpuCopy;
 
         public static void ClearPersistentCache()
@@ -335,6 +343,8 @@ namespace PiPDisabler
                     $"[MeshSurgery][DebugCandidates] scopeRoot='{scopeRoot.name}' activeMode='{activeMode.name}' totalTargets={targets.Count} cutRadius={cutRadius:F4}");
             }
 
+            DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
+
             foreach (var mf in targets)
             {
                 if (!mf || !mf.sharedMesh) continue;
@@ -476,6 +486,65 @@ namespace PiPDisabler
             }
         }
 
+        private static void DisableLightEffectMeshesForScope(Transform scopeRoot, bool logCandidates)
+        {
+            var lightFxTargets = ScopeHierarchy.FindLightEffectMeshFilters(scopeRoot);
+            if (lightFxTargets.Count == 0) return;
+
+            foreach (var mf in lightFxTargets)
+            {
+                if (mf == null || mf.gameObject == null) continue;
+
+                var go = mf.gameObject;
+                if (!_disabledLightFx.TryGetValue(go, out var st))
+                {
+                    st = new LightFxState { WasActiveSelf = go.activeSelf, DisabledByUs = false };
+                    _disabledLightFx[go] = st;
+                }
+
+                if (go.activeSelf)
+                {
+                    go.SetActive(false);
+                    st.DisabledByUs = true;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] disable lightEffect path='{ScopeHierarchy.GetRelativePath(go.transform, scopeRoot)}' go='{go.name}'");
+                    }
+                }
+            }
+        }
+
+        private static void RestoreLightEffectMeshesUnderRoot(Transform searchRoot)
+        {
+            if (searchRoot == null || _disabledLightFx.Count == 0) return;
+
+            var keys = _disabledLightFx.Keys.ToArray();
+            foreach (var go in keys)
+            {
+                if (go == null)
+                {
+                    _disabledLightFx.Remove(go);
+                    continue;
+                }
+
+                if (go.transform == null || !go.transform.IsChildOf(searchRoot))
+                    continue;
+
+                if (_disabledLightFx.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
+                {
+                    try
+                    {
+                        if (st.WasActiveSelf && !go.activeSelf)
+                            go.SetActive(true);
+                    }
+                    catch { }
+                }
+
+                _disabledLightFx.Remove(go);
+            }
+        }
+
         public static void RestoreForScope(Transform anyTransformUnderScope)
         {
             var scopeRoot = ScopeHierarchy.FindScopeRoot(anyTransformUnderScope);
@@ -513,25 +582,43 @@ namespace PiPDisabler
                 .Where(mf => mf && mf.transform && mf.transform.IsChildOf(searchRoot))
                 .ToArray();
 
-            if (toRestore.Length == 0) return;
+            int lightFxToRestore = _disabledLightFx.Keys.Count(go => go && go.transform && go.transform.IsChildOf(searchRoot));
+            if (toRestore.Length == 0 && lightFxToRestore == 0) return;
 
             PiPDisablerPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreForScope: {toRestore.Length} meshes to restore (searchRoot='{searchRoot.name}')");
+                $"[MeshSurgery] RestoreForScope: meshes={toRestore.Length} lightFx={lightFxToRestore} (searchRoot='{searchRoot.name}')");
 
             foreach (var mf in toRestore)
                 RestoreMeshFilter(mf);
+
+            RestoreLightEffectMeshesUnderRoot(searchRoot);
         }
 
         public static void RestoreAll()
         {
             var keys = _tracked.Keys.ToArray();
-            if (keys.Length == 0) return;
+            var lightKeys = _disabledLightFx.Keys.ToArray();
+            if (keys.Length == 0 && lightKeys.Length == 0) return;
 
             PiPDisablerPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreAll: {keys.Length} meshes to restore");
+                $"[MeshSurgery] RestoreAll: meshes={keys.Length} lightFx={lightKeys.Length}");
 
             foreach (var mf in keys)
                 RestoreMeshFilter(mf);
+
+            foreach (var go in lightKeys)
+            {
+                if (go != null && _disabledLightFx.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
+                {
+                    try
+                    {
+                        if (st.WasActiveSelf && !go.activeSelf)
+                            go.SetActive(true);
+                    }
+                    catch { }
+                }
+                _disabledLightFx.Remove(go);
+            }
         }
 
         private static void RestoreMeshFilter(MeshFilter mf)
@@ -647,6 +734,40 @@ namespace PiPDisabler
             return false;
         }
 
+        private static bool LooksLikeScopeRootByName(Transform t)
+        {
+            if (t == null || string.IsNullOrEmpty(t.name)) return false;
+
+            var lo = t.name.ToLowerInvariant();
+            return lo.Contains("scope")
+                || lo.Contains("optic")
+                || lo.Contains("sight")
+                || lo.Contains("collimator");
+        }
+
+        private static bool IsLikelyScopeRootForExclusion(Transform t)
+        {
+            // Many non-optic tactical devices (DBAL/flashlights/lasers) also expose
+            // mode_* children. For sibling-scope exclusion, require additional optic
+            // signals so those tactical attachments stay cuttable.
+            if (!HasModeChild(t)) return false;
+
+            if (LooksLikeScopeRootByName(t)) return true;
+
+            if (HasDirectChild(t, "backLens") || HasDirectChild(t, "backlens"))
+                return true;
+
+            if (FindDeepChild(t, "backLens") != null || FindDeepChild(t, "backlens") != null)
+                return true;
+
+            if (FindDeepChild(t, "optic_camera") != null)
+                return true;
+
+            // Parent container hint (e.g. mod_scope_XXX/<scopeRoot>)
+            var parentName = t.parent != null ? (t.parent.name ?? string.Empty).ToLowerInvariant() : string.Empty;
+            return parentName.Contains("scope") || parentName.Contains("optic");
+        }
+
         private static bool IsModeNode(string name)
         {
             if (name == null) return false;
@@ -718,6 +839,26 @@ namespace PiPDisabler
             }
             parts.Reverse();
             return string.Join("/", parts.ToArray());
+        }
+
+        private static bool IsLikelyLightEffectMesh(MeshFilter mf, Transform searchRoot)
+        {
+            if (mf == null || mf.transform == null) return false;
+
+            string goName = (mf.gameObject.name ?? string.Empty).ToLowerInvariant();
+            string meshName = (mf.sharedMesh != null ? mf.sharedMesh.name : string.Empty).ToLowerInvariant();
+
+            bool isSphereMesh = goName == "sphere" || meshName == "sphere";
+            if (!isSphereMesh) return false;
+
+            // Common EFT flashlight/laser visual emitters are nested under light_* nodes.
+            // These are glow helpers and should not be plane-cut, otherwise they can bloom
+            // into solid white blobs in the optic image.
+            string relPath = GetRelativePath(mf.transform, searchRoot).ToLowerInvariant();
+            bool underLightNode = relPath.Contains("/light_") || relPath.EndsWith("/light");
+            if (!underLightNode) return false;
+
+            return true;
         }
 
         public static bool TryGetPlane(OpticSight os, Transform scopeRoot, Transform activeMode,
@@ -818,9 +959,53 @@ namespace PiPDisabler
             }
         }
 
+        public static List<MeshFilter> FindLightEffectMeshFilters(Transform scopeRoot)
+        {
+            var result = new List<MeshFilter>(8);
+            if (scopeRoot == null) return result;
+
+            // Keep search-root expansion aligned with FindTargetMeshFilters.
+            Transform searchRoot = scopeRoot;
+            for (var p = scopeRoot.parent; p != null; p = p.parent)
+            {
+                var pName = p.name ?? "";
+                var plo = pName.ToLowerInvariant();
+                if (plo.Contains("weapon") || plo.Contains("anim"))
+                    break;
+                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount") || plo.Contains("receiver") || plo.Contains("reciever"))
+                {
+                    searchRoot = p;
+                    continue;
+                }
+                break;
+            }
+
+            if (PiPDisablerPlugin.GetExpandSearchToWeaponRoot())
+            {
+                for (var p = searchRoot.parent; p != null; p = p.parent)
+                {
+                    if ((p.name ?? "").StartsWith("Weapon_root", StringComparison.OrdinalIgnoreCase))
+                    {
+                        searchRoot = p;
+                        break;
+                    }
+                }
+            }
+
+            foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (!mf || !mf.sharedMesh) continue;
+                if (IsLikelyLightEffectMesh(mf, searchRoot))
+                    result.Add(mf);
+            }
+
+            return result;
+        }
+
         public static List<MeshFilter> FindTargetMeshFilters(Transform scopeRoot, Transform activeMode)
         {
             if (scopeRoot == null) return new List<MeshFilter>();
+            bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
             Transform GetModeAncestor(Transform t, Transform searchRoot)
             {
@@ -904,27 +1089,86 @@ namespace PiPDisabler
             }
 
             var result = new List<MeshFilter>(64);
-            int skippedMode = 0, skippedOther = 0;
+            int skippedMode = 0, skippedOther = 0, skippedLightFx = 0;
+            int inspected = 0;
+
+            if (logCandidates)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters searchRoot='{searchRoot.name}' scopeRoot='{scopeRoot.name}' activeMode='{(activeMode != null ? activeMode.name : "<null>")}'");
+            }
 
             foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
             {
                 if (!mf || !mf.sharedMesh) continue;
+                inspected++;
+
+                string relSearchPath = null;
+                if (logCandidates)
+                    relSearchPath = GetRelativePath(mf.transform, searchRoot);
 
                 // Skip meshes under other scope roots (sibling scopes, canted sights)
                 if (otherScopeRoots.Count > 0 && IsUnderOtherScope(mf.transform))
-                { skippedOther++; continue; }
+                {
+                    skippedOther++;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip otherScope path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
 
-                // Skip meshes belonging to a DIFFERENT mode (not the active one)
+                if (IsLikelyLightEffectMesh(mf, searchRoot))
+                {
+                    skippedLightFx++;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip lightEffect path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
+
+                // Skip meshes belonging to a DIFFERENT mode (not the active one),
+                // but only within the active scope subtree.
+                //
+                // Some tactical attachments (DBAL/flashlights/lasers) also use
+                // mode_* nodes for their own state variants. Those nodes are not
+                // optic magnification modes and should remain cuttable.
                 var modeAncestor = GetModeAncestor(mf.transform, searchRoot);
-                if (modeAncestor != null && activeMode != null && modeAncestor != activeMode)
-                { skippedMode++; continue; }
+                bool modeAncestorIsOnActiveScope =
+                    modeAncestor != null && scopeRoot != null && modeAncestor.IsChildOf(scopeRoot);
+
+                if (modeAncestorIsOnActiveScope && activeMode != null && modeAncestor != activeMode)
+                {
+                    skippedMode++;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip modeMismatch path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' mode='{modeAncestor.name}' activeMode='{activeMode.name}'");
+                    }
+                    continue;
+                }
 
                 result.Add(mf);
+
+                if (logCandidates)
+                {
+                    PiPDisablerPlugin.LogInfo(
+                        $"[MeshSurgery][DebugCandidates] cuttable path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy}");
+                }
             }
 
             PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
-                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther}");
+                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther} lightFx={skippedLightFx}");
+
+            if (logCandidates)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedMode={skippedMode} skippedOtherScope={skippedOther} skippedLightFx={skippedLightFx}");
+            }
 
             return result;
         }
@@ -943,8 +1187,9 @@ namespace PiPDisabler
                 var t = stack.Pop();
                 if (t == null) continue;
 
-                // If this is a scope root (has mode_* children) and it's not the active one, record it
-                if (t != activeScopeRoot && HasModeChild(t))
+                // If this is a likely scope root (not just any mode_* device) and it's not
+                // the active one, record it so we can skip sibling scope subtrees.
+                if (t != activeScopeRoot && IsLikelyScopeRootForExclusion(t))
                 {
                     results.Add(t);
                     continue; // don't recurse into other scopes
