@@ -558,6 +558,52 @@ namespace ScopeHousingMeshSurgery
                 }
             }
 
+            if (best == null) return null;
+
+            string preferred = ResolvePreferredScopeName(best);
+            if (!string.IsNullOrWhiteSpace(preferred))
+                return preferred;
+
+            return NormalizeScopeKey(best.name);
+        }
+
+        private static string ResolvePreferredScopeName(Transform root)
+        {
+            if (root == null) return null;
+
+            Transform best = null;
+            int bestScore = int.MinValue;
+
+            var stack = new Stack<Transform>();
+            stack.Push(root);
+            while (stack.Count > 0)
+            {
+                var t = stack.Pop();
+                if (t == null) continue;
+
+                if (IsUsableScopeNameNode(t.name))
+                {
+                    int score = 0;
+                    string n = t.name ?? string.Empty;
+                    if (t.gameObject.activeInHierarchy) score += 20;
+                    if (ContainsCI(n, "scope_")) score += 60;
+                    if (ContainsCI(n, "sight") || ContainsCI(n, "optic")) score += 25;
+                    if (ContainsCI(n, "eotech") || ContainsCI(n, "acog") || ContainsCI(n, "razor")
+                        || ContainsCI(n, "vudu") || ContainsCI(n, "tango") || ContainsCI(n, "g33")) score += 20;
+                    if (ContainsCI(n, "merge")) score -= 15;
+                    if (HasDirectModeChild(t)) score += 25;
+
+                    if (score > bestScore)
+                    {
+                        best = t;
+                        bestScore = score;
+                    }
+                }
+
+                for (int i = 0; i < t.childCount; i++)
+                    stack.Push(t.GetChild(i));
+            }
+
             return best != null ? NormalizeScopeKey(best.name) : null;
         }
 
@@ -621,8 +667,24 @@ namespace ScopeHousingMeshSurgery
         {
             if (string.IsNullOrWhiteSpace(raw)) return null;
             string key = raw.Trim();
-            if (key.EndsWith("(Clone)", StringComparison.OrdinalIgnoreCase))
-                key = key.Substring(0, key.Length - "(Clone)".Length).Trim();
+
+            bool changed;
+            do
+            {
+                changed = false;
+                if (key.EndsWith("(Clone)", StringComparison.OrdinalIgnoreCase))
+                {
+                    key = key.Substring(0, key.Length - "(Clone)".Length).Trim();
+                    changed = true;
+                }
+                if (key.EndsWith("(merge)", StringComparison.OrdinalIgnoreCase))
+                {
+                    key = key.Substring(0, key.Length - "(merge)".Length).Trim();
+                    changed = true;
+                }
+            }
+            while (changed && key.Length > 0);
+
             return string.IsNullOrWhiteSpace(key) ? null : key;
         }
 
