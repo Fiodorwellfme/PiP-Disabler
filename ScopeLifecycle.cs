@@ -1228,9 +1228,43 @@ namespace ScopeHousingMeshSurgery
             if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled)
                 return _lastEnabledOptic;
 
+            // Fallback: probe OpticComponentUpdater instances for a currently bound optic.
+            // Some runtime paths briefly miss OnEnable cache updates, but updater binding
+            // can still hold a valid OpticSight reference (seen in diagnostics as optic='mode_000').
+            var fromUpdaters = FindEnabledOpticFromUpdaters();
+            if (fromUpdaters != null)
+                return fromUpdaters;
+
             // During rapid transitions (mode switch), the incoming optic may not
-            // be marked enabled yet. Trust the cache rather than doing a scene scan.
-            // The OnEnable patch will fire imminently and update the cache.
+            // be marked enabled yet. Trust cache/updater binding rather than full scene scans.
+            return null;
+        }
+
+        private static OpticSight FindEnabledOpticFromUpdaters()
+        {
+            try
+            {
+                var field = PiPDisabler.GetOpticSightField();
+                if (field == null) return null;
+
+                var all = Resources.FindObjectsOfTypeAll<MonoBehaviour>();
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var mb = all[i];
+                    if (mb == null || mb.GetType().Name != "OpticComponentUpdater")
+                        continue;
+
+                    OpticSight os = null;
+                    try { os = field.GetValue(mb) as OpticSight; } catch { }
+                    if (os == null || !os.isActiveAndEnabled)
+                        continue;
+
+                    _lastEnabledOptic = os;
+                    return os;
+                }
+            }
+            catch { }
+
             return null;
         }
 
