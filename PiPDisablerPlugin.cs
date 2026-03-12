@@ -6,8 +6,11 @@ using EFT;
 using EFT.CameraControl;
 using System.IO;
 using UnityEngine;
+using ScopeHousingMeshSurgery;
+using ScopeHousingMeshSurgery.Patches;
 
-namespace ScopeHousingMeshSurgery
+
+namespace PiPDisabler
 {
     [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.1.0")]
     public sealed class ScopeHousingMeshSurgeryPlugin : BaseUnityPlugin
@@ -512,7 +515,7 @@ namespace ScopeHousingMeshSurgery
             VerboseLogging = Config.Bind("7. Debug", "VerboseLogging", false,
                 "Enable detailed logging. Turn on to diagnose lens/zoom issues.");
 
-            Patches.Patcher.Enable();
+            Patcher.Enable();
 
             // Initialize scope detection via PWA reflection
             ScopeLifecycle.Init();
@@ -592,7 +595,7 @@ namespace ScopeHousingMeshSurgery
             // Plugin unload or game exit — restore everything
             ScopeLifecycle.ForceExit();
             LensTransparency.FullRestoreAll();
-            PiPDisabler.RestoreAllCameras();
+            global::ScopeHousingMeshSurgery.PiPDisabler.RestoreAllCameras();
 
             ModEnabled.SettingChanged -= OnModEnabledChanged;
             EnableWeaponScaling.SettingChanged -= OnWeaponScalingToggled;
@@ -608,7 +611,7 @@ namespace ScopeHousingMeshSurgery
             {
                 ScopeLifecycle.ForceExit();
                 LensTransparency.FullRestoreAll(); // restore any lingering black lens materials
-                PiPDisabler.RestoreAllCameras();
+                global::ScopeHousingMeshSurgery.PiPDisabler.RestoreAllCameras();
             }
             else
             {
@@ -624,11 +627,11 @@ namespace ScopeHousingMeshSurgery
         {
             if (!EnableWeaponScaling.Value)
             {
-                Patches.WeaponScalingPatch.RestoreScale();
+                WeaponScalingPatch.RestoreScale();
             }
             else if (ScopeLifecycle.IsScoped)
             {
-                Patches.WeaponScalingPatch.CaptureBaseState();
+                WeaponScalingPatch.CaptureBaseState();
             }
         }
 
@@ -679,7 +682,7 @@ namespace ScopeHousingMeshSurgery
                 DisablePiP.Value = !DisablePiP.Value;
                 Logger.LogInfo($"Disable PiP toggled: {DisablePiP.Value}");
                 if (!DisablePiP.Value)
-                    PiPDisabler.RestoreAllCameras();
+                    global::ScopeHousingMeshSurgery.PiPDisabler.RestoreAllCameras();
             }
 
             if (ScopeWhitelistToggleEntryKey.Value != KeyCode.None && InputProxy.GetKeyDown(ScopeWhitelistToggleEntryKey.Value))
@@ -740,7 +743,7 @@ namespace ScopeHousingMeshSurgery
                 ScopeDiagnostics.Dump(ScopeLifecycle.ActiveOptic);
 
             // --- Per-frame logic ---
-            PiPDisabler.TickBaseOpticCamera();
+            global::ScopeHousingMeshSurgery.PiPDisabler.TickBaseOpticCamera();
 
             // Safety-net: re-check scope state every frame in case we missed an event.
             ScopeLifecycle.CheckAndUpdate("Update");
