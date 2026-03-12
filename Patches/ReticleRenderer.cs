@@ -387,7 +387,7 @@ namespace PiPDisabler
             ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
             Vector3 pos = new Vector3(0f, 0f, 0.5f);
-            float aspect = GetSceneAspect(cam);
+            float aspect = GetActiveAspect(cam);
             Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
             _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
         }
@@ -405,19 +405,28 @@ namespace PiPDisabler
         /// Falls back to the original single-draw path when stencil is unavailable or no
         /// housing renderers have been registered.
         ///
-        /// Note: SetRenderTarget is intentionally absent.  At AfterForwardAlpha the active
-        /// RT is already the scene colour buffer.  Explicitly binding CameraTarget resolves
-        /// to the wrong surface under DLSS/FSR and silently drops all draws.
+        /// Note: when attached at AfterForwardAlpha we do NOT rebind the render target,
+        /// because the active RT is already the scene colour buffer.  When attached at
+        /// AfterEverything (debug mode), we explicitly bind CameraTarget + display viewport
+        /// so clip-space quads map to the final upscaled frame.
         /// </summary>
         private static void RebuildCommandBuffer(Camera cam)
         {
             _cmdBuffer.Clear();
 
-            // SetViewport uses the camera's render-resolution pixel dimensions.
-            // Do NOT use Screen.width/height here — under DLSS/FSR the camera renders
-            // at a lower internal resolution and Screen reports the display resolution,
-            // which would pin the viewport offset and mis-center the reticle.
-            _cmdBuffer.SetViewport(GetSceneViewport(cam));
+            bool isAfterEverything = _attachedEvent == CameraEvent.AfterEverything;
+
+            if (isAfterEverything)
+            {
+                // Late-overlay path: draw in display space after upscaling/postfx.
+                _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+                _cmdBuffer.SetViewport(GetDisplayViewport(cam));
+            }
+            else
+            {
+                // Scene-overlay path: use render-resolution viewport for DLSS/FSR correctness.
+                _cmdBuffer.SetViewport(GetSceneViewport(cam));
+            }
 
             bool useStencil = _hasStencilSupport && _housingRenderers.Count > 0
                               && _stencilClearMat != null && _housingStencilMat != null;
@@ -496,11 +505,33 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Returns the aspect ratio of the scene render target.
-        /// Used to compensate the reticle quad's X scale so it stays square.
+        /// Returns the display viewport in pixels.
+        /// Used by the AfterEverything debug path where overlays are drawn to the
+        /// final display-sized camera target rather than the internal scene RT.
         /// </summary>
-        private static float GetSceneAspect(Camera cam)
+        private static Rect GetDisplayViewport(Camera cam)
         {
+            float w = Mathf.Max(1f, Screen.width);
+            float h = Mathf.Max(1f, Screen.height);
+            if (cam != null)
+            {
+                w = Mathf.Max(w, cam.pixelWidth);
+                h = Mathf.Max(h, cam.pixelHeight);
+            }
+            return new Rect(0f, 0f, w, h);
+        }
+
+        /// <summary>
+        /// Returns the aspect ratio for the currently attached command-buffer event.
+        /// </summary>
+        private static float GetActiveAspect(Camera cam)
+        {
+            if (_attachedEvent == CameraEvent.AfterEverything)
+            {
+                Rect r = GetDisplayViewport(cam);
+                return Mathf.Max(0.01f, r.width / Mathf.Max(1f, r.height));
+            }
+
             return Mathf.Max(0.01f, cam.pixelWidth / Mathf.Max(1f, cam.pixelHeight));
         }
 
