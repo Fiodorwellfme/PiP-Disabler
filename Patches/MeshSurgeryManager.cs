@@ -463,18 +463,23 @@ namespace ScopeHousingMeshSurgery
             var scopeRoot = ScopeHierarchy.FindScopeRoot(anyTransformUnderScope);
             if (!scopeRoot) return;
 
-            // Use the same expanded search root as FindTargetMeshFilters
-            // so we restore mount meshes that were found above scopeRoot.
-            Transform searchRoot = scopeRoot;
-            for (var p = scopeRoot.parent; p != null; p = p.parent)
+            // Prefer the nearest ancestor named exactly "weapon" so every attachment
+            // under that weapon node is included for restore.
+            // Fallback to scoped-container climb when the EFT hierarchy lacks a "weapon" node.
+            Transform searchRoot = ScopeHierarchy.FindWeaponNode(scopeRoot) ?? scopeRoot;
+            if (searchRoot == scopeRoot)
             {
-                var pName = p.name ?? "";
-                var plo = pName.ToLowerInvariant();
-                if (plo.Contains("weapon") || plo.Contains("receiver") || plo.Contains("anim"))
+                for (var p = scopeRoot.parent; p != null; p = p.parent)
+                {
+                    var pName = p.name ?? "";
+                    var plo = pName.ToLowerInvariant();
+
+                    if (plo.Contains("weapon") || plo.Contains("anim"))
+                        break;
+                    if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount") || plo.Contains("receiver"))
+                    { searchRoot = p; continue; }
                     break;
-                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount"))
-                { searchRoot = p; continue; }
-                break;
+                }
             }
 
             // Mirror the ExpandSearchToWeaponRoot expansion from FindTargetMeshFilters
@@ -688,6 +693,25 @@ namespace ScopeHousingMeshSurgery
             return null;
         }
 
+        /// <summary>
+        /// Finds the nearest ancestor named exactly "weapon".
+        /// This is the EFT node that parents all active weapon attachments.
+        /// </summary>
+        public static Transform FindWeaponNode(Transform any)
+        {
+            for (var t = any; t != null; t = t.parent)
+            {
+                if (string.Equals(t.name, "weapon", StringComparison.OrdinalIgnoreCase))
+                    return t;
+
+                // Don't climb out into player/camera hierarchy.
+                var n = (t.name ?? string.Empty).ToLowerInvariant();
+                if (n.Contains("player") || n.Contains("camera") || n.Contains("hands"))
+                    break;
+            }
+            return null;
+        }
+
         public static bool TryGetPlane(OpticSight os, Transform scopeRoot, Transform activeMode,
             out Vector3 planePoint, out Vector3 planeNormal, out Vector3 camPos)
         {
@@ -799,35 +823,29 @@ namespace ScopeHousingMeshSurgery
                 return null;
             }
 
-            // Determine search root: go up through intermediate containers to catch
-            // housing + mount meshes.  EFT hierarchy variants:
-            //
-            //   mount_xxx(Clone)/               ← mount LODs often HERE
-            //     mod_scope_000/                ← intermediate container
-            //       scope_xxx(Clone)/           ← scopeRoot (has mode_* children)
-            //         mode_000/ | mode/
-            //
-            //   mod_scope_xxx/                  ← housing meshes often HERE
-            //     scope_xxx(Clone)/             ← scopeRoot
-            //       mode_000/ | mode/
-            //
-            // We climb up through parents that look like scope/mod containers,
-            // stopping at the weapon root or a non-scope parent.
-            Transform searchRoot = scopeRoot;
-            for (var p = scopeRoot.parent; p != null; p = p.parent)
+            // Determine search root.
+            // Preferred behavior: cut all meshes under the nearest ancestor named exactly
+            // "weapon" above this scope (attachments, mounts, handguard parts, etc.).
+            // Fallback behavior: scoped-container climb for unusual hierarchies.
+            Transform searchRoot = FindWeaponNode(scopeRoot) ?? scopeRoot;
+            if (searchRoot == scopeRoot)
             {
-                var pName = p.name ?? "";
-                var plo = pName.ToLowerInvariant();
-                // Stop at weapon root, receiver, or anything that's clearly not scope-related
-                if (plo.Contains("weapon") || plo.Contains("receiver") || plo.Contains("anim"))
-                    break;
-                // Climb through scope/mod/optic/mount containers
-                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount"))
+                for (var p = scopeRoot.parent; p != null; p = p.parent)
                 {
-                    searchRoot = p;
-                    continue; // keep climbing
+                    var pName = p.name ?? "";
+                    var plo = pName.ToLowerInvariant();
+
+                    // Stop at weapon root/animation hierarchy or anything that's clearly not scope-related
+                    if (plo.Contains("weapon") || plo.Contains("anim"))
+                        break;
+                    // Climb through scope/mod/optic/mount/receiver containers
+                    if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount") || plo.Contains("receiver"))
+                    {
+                        searchRoot = p;
+                        continue; // keep climbing
+                    }
+                    break; // unknown parent — stop
                 }
-                break; // unknown parent — stop
             }
             if (searchRoot != scopeRoot)
                 ScopeHousingMeshSurgeryPlugin.LogVerbose(
