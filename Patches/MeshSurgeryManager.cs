@@ -818,11 +818,13 @@ namespace ScopeHousingMeshSurgery
             {
                 var pName = p.name ?? "";
                 var plo = pName.ToLowerInvariant();
-                // Stop at weapon root, receiver, or anything that's clearly not scope-related
-                if (plo.Contains("weapon") || plo.Contains("receiver") || plo.Contains("anim"))
+                // Stop at weapon root/anim nodes. We intentionally do NOT stop on
+                // receiver nodes because many attachments (e.g. handguards and tactical
+                // devices) live under the same receiver branch and should be cut too.
+                if (plo.Contains("weapon") || plo.Contains("anim"))
                     break;
-                // Climb through scope/mod/optic/mount containers
-                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount"))
+                // Climb through scope/mod/optic/mount containers and receiver branches.
+                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount") || plo.Contains("receiver") || plo.Contains("reciever"))
                 {
                     searchRoot = p;
                     continue; // keep climbing
