@@ -7,12 +7,12 @@ using EFT.CameraControl;
 using System.IO;
 using UnityEngine;
 
-namespace ScopeHousingMeshSurgery
+namespace PiPDisabler
 {
     [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.1.0")]
-    public sealed class ScopeHousingMeshSurgeryPlugin : BaseUnityPlugin
+    public sealed class PiPDisablerPlugin : BaseUnityPlugin
     {
-        internal static ScopeHousingMeshSurgeryPlugin Instance;
+        internal static PiPDisablerPlugin Instance;
 
         // --- Logging helpers ---
         internal static void LogInfo(string msg) { if (Instance != null) Instance.Logger.LogInfo(msg); }
