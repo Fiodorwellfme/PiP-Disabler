@@ -27,8 +27,16 @@ namespace PiPDisabler
             public bool Applied;
         }
 
+        private sealed class LightFxState
+        {
+            public bool WasActiveSelf;
+            public bool DisabledByUs;
+        }
+
         private static readonly Dictionary<MeshFilter, MeshState> _tracked =
             new Dictionary<MeshFilter, MeshState>(64);
+        private static readonly Dictionary<GameObject, LightFxState> _disabledLightFx =
+            new Dictionary<GameObject, LightFxState>(32);
         private static bool _loggedGpuCopy;
 
         public static void ClearPersistentCache()
@@ -335,6 +343,8 @@ namespace PiPDisabler
                     $"[MeshSurgery][DebugCandidates] scopeRoot='{scopeRoot.name}' activeMode='{activeMode.name}' totalTargets={targets.Count} cutRadius={cutRadius:F4}");
             }
 
+            DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
+
             foreach (var mf in targets)
             {
                 if (!mf || !mf.sharedMesh) continue;
@@ -476,6 +486,65 @@ namespace PiPDisabler
             }
         }
 
+        private static void DisableLightEffectMeshesForScope(Transform scopeRoot, bool logCandidates)
+        {
+            var lightFxTargets = ScopeHierarchy.FindLightEffectMeshFilters(scopeRoot);
+            if (lightFxTargets.Count == 0) return;
+
+            foreach (var mf in lightFxTargets)
+            {
+                if (mf == null || mf.gameObject == null) continue;
+
+                var go = mf.gameObject;
+                if (!_disabledLightFx.TryGetValue(go, out var st))
+                {
+                    st = new LightFxState { WasActiveSelf = go.activeSelf, DisabledByUs = false };
+                    _disabledLightFx[go] = st;
+                }
+
+                if (go.activeSelf)
+                {
+                    go.SetActive(false);
+                    st.DisabledByUs = true;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] disable lightEffect path='{ScopeHierarchy.GetRelativePath(go.transform, scopeRoot)}' go='{go.name}'");
+                    }
+                }
+            }
+        }
+
+        private static void RestoreLightEffectMeshesUnderRoot(Transform searchRoot)
+        {
+            if (searchRoot == null || _disabledLightFx.Count == 0) return;
+
+            var keys = _disabledLightFx.Keys.ToArray();
+            foreach (var go in keys)
+            {
+                if (go == null)
+                {
+                    _disabledLightFx.Remove(go);
+                    continue;
+                }
+
+                if (go.transform == null || !go.transform.IsChildOf(searchRoot))
+                    continue;
+
+                if (_disabledLightFx.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
+                {
+                    try
+                    {
+                        if (st.WasActiveSelf && !go.activeSelf)
+                            go.SetActive(true);
+                    }
+                    catch { }
+                }
+
+                _disabledLightFx.Remove(go);
+            }
+        }
+
         public static void RestoreForScope(Transform anyTransformUnderScope)
         {
             var scopeRoot = ScopeHierarchy.FindScopeRoot(anyTransformUnderScope);
@@ -513,25 +582,43 @@ namespace PiPDisabler
                 .Where(mf => mf && mf.transform && mf.transform.IsChildOf(searchRoot))
                 .ToArray();
 
-            if (toRestore.Length == 0) return;
+            int lightFxToRestore = _disabledLightFx.Keys.Count(go => go && go.transform && go.transform.IsChildOf(searchRoot));
+            if (toRestore.Length == 0 && lightFxToRestore == 0) return;
 
             PiPDisablerPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreForScope: {toRestore.Length} meshes to restore (searchRoot='{searchRoot.name}')");
+                $"[MeshSurgery] RestoreForScope: meshes={toRestore.Length} lightFx={lightFxToRestore} (searchRoot='{searchRoot.name}')");
 
             foreach (var mf in toRestore)
                 RestoreMeshFilter(mf);
+
+            RestoreLightEffectMeshesUnderRoot(searchRoot);
         }
 
         public static void RestoreAll()
         {
             var keys = _tracked.Keys.ToArray();
-            if (keys.Length == 0) return;
+            var lightKeys = _disabledLightFx.Keys.ToArray();
+            if (keys.Length == 0 && lightKeys.Length == 0) return;
 
             PiPDisablerPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreAll: {keys.Length} meshes to restore");
+                $"[MeshSurgery] RestoreAll: meshes={keys.Length} lightFx={lightKeys.Length}");
 
             foreach (var mf in keys)
                 RestoreMeshFilter(mf);
+
+            foreach (var go in lightKeys)
+            {
+                if (go != null && _disabledLightFx.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
+                {
+                    try
+                    {
+                        if (st.WasActiveSelf && !go.activeSelf)
+                            go.SetActive(true);
+                    }
+                    catch { }
+                }
+                _disabledLightFx.Remove(go);
+            }
         }
 
         private static void RestoreMeshFilter(MeshFilter mf)
@@ -870,6 +957,49 @@ namespace PiPDisabler
                 case "-Z": return -refTransform.forward;
                 default:   return  refTransform.forward; // "Auto"
             }
+        }
+
+        public static List<MeshFilter> FindLightEffectMeshFilters(Transform scopeRoot)
+        {
+            var result = new List<MeshFilter>(8);
+            if (scopeRoot == null) return result;
+
+            // Keep search-root expansion aligned with FindTargetMeshFilters.
+            Transform searchRoot = scopeRoot;
+            for (var p = scopeRoot.parent; p != null; p = p.parent)
+            {
+                var pName = p.name ?? "";
+                var plo = pName.ToLowerInvariant();
+                if (plo.Contains("weapon") || plo.Contains("anim"))
+                    break;
+                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount") || plo.Contains("receiver") || plo.Contains("reciever"))
+                {
+                    searchRoot = p;
+                    continue;
+                }
+                break;
+            }
+
+            if (PiPDisablerPlugin.GetExpandSearchToWeaponRoot())
+            {
+                for (var p = searchRoot.parent; p != null; p = p.parent)
+                {
+                    if ((p.name ?? "").StartsWith("Weapon_root", StringComparison.OrdinalIgnoreCase))
+                    {
+                        searchRoot = p;
+                        break;
+                    }
+                }
+            }
+
+            foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (!mf || !mf.sharedMesh) continue;
+                if (IsLikelyLightEffectMesh(mf, searchRoot))
+                    result.Add(mf);
+            }
+
+            return result;
         }
 
         public static List<MeshFilter> FindTargetMeshFilters(Transform scopeRoot, Transform activeMode)
