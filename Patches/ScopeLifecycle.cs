@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using System.Collections.Generic;
+using System.Collections;
 using EFT;
 using EFT.Animations;
 using EFT.CameraControl;
@@ -31,12 +32,14 @@ namespace ScopeHousingMeshSurgery
         private static PropertyInfo _isAimingProp;
         private static PropertyInfo _currentScopeProp;
         private static PropertyInfo _isOpticProp;
+        private static PropertyInfo _scopeAimTransformsProp;
         private static bool _reflectionReady;
 
         // Fast delegates (avoid PropertyInfo.GetValue overhead per frame)
         private static Func<ProceduralWeaponAnimation, bool> _getIsAiming;
         private static Func<ProceduralWeaponAnimation, object> _getCurrentScope;
         private static Func<object, bool> _getIsOptic;
+        private static Func<ProceduralWeaponAnimation, object> _getScopeAimTransforms;
 
         // State
         private static bool _isScoped;
@@ -103,6 +106,7 @@ namespace ScopeHousingMeshSurgery
                 var pwaType = typeof(ProceduralWeaponAnimation);
                 _isAimingProp = AccessTools.Property(pwaType, "IsAiming");
                 _currentScopeProp = AccessTools.Property(pwaType, "CurrentScope");
+                _scopeAimTransformsProp = AccessTools.Property(pwaType, "ScopeAimTransforms");
 
                 if (_currentScopeProp != null)
                 {
@@ -148,6 +152,19 @@ namespace ScopeHousingMeshSurgery
                     catch
                     {
                         _getIsOptic = scope => (bool)_isOpticProp.GetValue(scope);
+                    }
+
+                    if (_scopeAimTransformsProp != null)
+                    {
+                        try
+                        {
+                            var getter = _scopeAimTransformsProp.GetGetMethod(true);
+                            _getScopeAimTransforms = pwa => getter.Invoke(pwa, null);
+                        }
+                        catch
+                        {
+                            _getScopeAimTransforms = pwa => _scopeAimTransformsProp.GetValue(pwa);
+                        }
                     }
                 }
 
@@ -262,6 +279,19 @@ namespace ScopeHousingMeshSurgery
 
                 bool isAiming = _getIsAiming(pwa);
                 if (!isAiming) { reason = "not aiming"; goto evaluate; }
+
+                int scopeCount;
+                if (!TryGetScopeAimTransformCount(pwa, out scopeCount))
+                {
+                    reason = "ScopeAimTransforms unavailable";
+                    goto evaluate;
+                }
+
+                if (scopeCount < 1)
+                {
+                    reason = "ScopeAimTransforms empty";
+                    goto evaluate;
+                }
 
                 object currentScope = _getCurrentScope(pwa);
                 if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
@@ -1016,6 +1046,36 @@ namespace ScopeHousingMeshSurgery
                 return gw != null ? gw.MainPlayer : null;
             }
             catch { return null; }
+        }
+
+        private static bool TryGetScopeAimTransformCount(ProceduralWeaponAnimation pwa, out int count)
+        {
+            count = 0;
+            if (pwa == null) return false;
+            if (_getScopeAimTransforms == null) return false;
+
+            try
+            {
+                object scopeAimTransforms = _getScopeAimTransforms(pwa);
+                if (scopeAimTransforms == null) return false;
+
+                if (scopeAimTransforms is IList list)
+                {
+                    count = list.Count;
+                    return true;
+                }
+
+                var countProp = AccessTools.Property(scopeAimTransforms.GetType(), "Count");
+                if (countProp == null) return false;
+                object rawCount = countProp.GetValue(scopeAimTransforms);
+                if (!(rawCount is int value)) return false;
+                count = value;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
