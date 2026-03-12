@@ -821,6 +821,7 @@ namespace PiPDisabler
         public static List<MeshFilter> FindTargetMeshFilters(Transform scopeRoot, Transform activeMode)
         {
             if (scopeRoot == null) return new List<MeshFilter>();
+            bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
             Transform GetModeAncestor(Transform t, Transform searchRoot)
             {
@@ -905,26 +906,66 @@ namespace PiPDisabler
 
             var result = new List<MeshFilter>(64);
             int skippedMode = 0, skippedOther = 0;
+            int inspected = 0;
+
+            if (logCandidates)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters searchRoot='{searchRoot.name}' scopeRoot='{scopeRoot.name}' activeMode='{(activeMode != null ? activeMode.name : "<null>")}'");
+            }
 
             foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
             {
                 if (!mf || !mf.sharedMesh) continue;
+                inspected++;
+
+                string relSearchPath = null;
+                if (logCandidates)
+                    relSearchPath = GetRelativePath(mf.transform, searchRoot);
 
                 // Skip meshes under other scope roots (sibling scopes, canted sights)
                 if (otherScopeRoots.Count > 0 && IsUnderOtherScope(mf.transform))
-                { skippedOther++; continue; }
+                {
+                    skippedOther++;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip otherScope path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
 
                 // Skip meshes belonging to a DIFFERENT mode (not the active one)
                 var modeAncestor = GetModeAncestor(mf.transform, searchRoot);
                 if (modeAncestor != null && activeMode != null && modeAncestor != activeMode)
-                { skippedMode++; continue; }
+                {
+                    skippedMode++;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip modeMismatch path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' mode='{modeAncestor.name}' activeMode='{activeMode.name}'");
+                    }
+                    continue;
+                }
 
                 result.Add(mf);
+
+                if (logCandidates)
+                {
+                    PiPDisablerPlugin.LogInfo(
+                        $"[MeshSurgery][DebugCandidates] cuttable path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy}");
+                }
             }
 
             PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
                 $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther}");
+
+            if (logCandidates)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedMode={skippedMode} skippedOtherScope={skippedOther}");
+            }
 
             return result;
         }
