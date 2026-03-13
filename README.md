@@ -57,6 +57,9 @@ Per scope reticle size.
 -Hide multiple options under advanced BepInEx settings  
 -Find best settings for different scopes. (Help welcome)  
 
+# How to use:  
+Coming soon
+
 <h1>FPS Comparison:</h1>     
   
 ![alt text](https://github.com/Fiodorwellfme/PiP-Disabler/blob/main/images/Screenshot%202026-03-07%20173054.png "Picture in Picture Scope")  
