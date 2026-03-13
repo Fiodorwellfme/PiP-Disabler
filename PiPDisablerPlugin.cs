@@ -4,6 +4,7 @@ using BepInEx.Configuration;
 using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
+using System.Collections.Generic;
 using System.IO;
 using PiPDisabler;
 using UnityEngine;
@@ -175,6 +176,23 @@ namespace PiPDisabler
         internal static ConfigEntry<float> ManualLodBias;
         internal static ConfigEntry<int> ManualMaximumLodLevel;
         internal static ConfigEntry<float> ManualCullingMultiplier;
+        internal static readonly string[] SupportedLocationIds =
+        {
+            "Woods",
+            "factory4_day",
+            "factory4_night",
+            "bigmap",
+            "Shoreline",
+            "Interchange",
+            "RezervBase",
+            "laboratory",
+            "Lighthouse",
+            "TarkovStreets",
+            "Sandbox",
+            "Sandbox_high"
+        };
+        internal static Dictionary<string, ConfigEntry<float>> MapManualLodBias;
+        internal static Dictionary<string, ConfigEntry<float>> MapManualCullingMultiplier;
 
         // --- 4. Zeroing ---
         internal static ConfigEntry<bool> EnableZeroing;
@@ -289,6 +307,24 @@ namespace PiPDisabler
                     "0 = auto (use magnification).\n" +
                     ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
                     new AcceptableValueRange<float>(0f, 20f)));
+            MapManualLodBias = new Dictionary<string, ConfigEntry<float>>(StringComparer.OrdinalIgnoreCase);
+            MapManualCullingMultiplier = new Dictionary<string, ConfigEntry<float>>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < SupportedLocationIds.Length; i++)
+            {
+                string locationId = SupportedLocationIds[i];
+                MapManualLodBias[locationId] = Config.Bind("2. Zoom Per-Map", $"ManualLodBias_{locationId}", ManualLodBias.Value,
+                    new ConfigDescription(
+                        $"Manual LOD bias override while scoped on map '{locationId}'.\n" +
+                        "0 = auto (baseLodBias * magnification).\n" +
+                        ">0 = force this exact value (e.g. 4.0).",
+                        new AcceptableValueRange<float>(0f, 20f)));
+                MapManualCullingMultiplier[locationId] = Config.Bind("2. Zoom Per-Map", $"ManualCullingMultiplier_{locationId}", ManualCullingMultiplier.Value,
+                    new ConfigDescription(
+                        $"Manual culling multiplier override while scoped on map '{locationId}'.\n" +
+                        "0 = auto (use magnification).\n" +
+                        ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
+                        new AcceptableValueRange<float>(0f, 20f)));
+            }
             ZoomToggleKey = Config.Bind("2. Zoom", "ZoomToggleKey", KeyCode.None,
                 "Toggle key for zoom (None = always on when EnableZoom is true).");
 
@@ -759,6 +795,47 @@ namespace PiPDisabler
             {
                 return false;
             }
+        }
+
+        internal static string GetCurrentLocationId()
+        {
+            try
+            {
+                var gw = Singleton<GameWorld>.Instance;
+                return gw != null ? gw.LocationId : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        internal static float GetManualLodBiasForCurrentMap()
+        {
+            float fallback = ManualLodBias != null ? ManualLodBias.Value : 0f;
+            string locationId = GetCurrentLocationId();
+            if (string.IsNullOrEmpty(locationId) || MapManualLodBias == null)
+                return fallback;
+
+            ConfigEntry<float> entry;
+            if (MapManualLodBias.TryGetValue(locationId, out entry) && entry != null)
+                return entry.Value;
+
+            return fallback;
+        }
+
+        internal static float GetManualCullingMultiplierForCurrentMap()
+        {
+            float fallback = ManualCullingMultiplier != null ? ManualCullingMultiplier.Value : 0f;
+            string locationId = GetCurrentLocationId();
+            if (string.IsNullOrEmpty(locationId) || MapManualCullingMultiplier == null)
+                return fallback;
+
+            ConfigEntry<float> entry;
+            if (MapManualCullingMultiplier.TryGetValue(locationId, out entry) && entry != null)
+                return entry.Value;
+
+            return fallback;
         }
     }
 

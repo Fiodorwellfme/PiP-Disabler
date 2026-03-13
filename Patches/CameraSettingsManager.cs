@@ -88,9 +88,7 @@ namespace PiPDisabler
             // === Apply LOD bias ===
             // Increase LOD bias proportionally to magnification.
             // At 4x zoom, objects at distance appear 4x larger → use 4x finer LODs.
-            float manualLodBias = PiPDisablerPlugin.ManualLodBias != null
-                ? PiPDisablerPlugin.ManualLodBias.Value
-                : 0f;
+            float manualLodBias = PiPDisablerPlugin.GetManualLodBiasForCurrentMap();
             float newLodBias = manualLodBias > 0f
                 ? manualLodBias
                 : _savedLodBias * Mathf.Max(magnification, 1f);
@@ -111,9 +109,7 @@ namespace PiPDisabler
             // Increase cull distances proportionally so objects stay visible when zoomed
             if (_savedCullDistances != null)
             {
-                float manualCullMultiplier = PiPDisablerPlugin.ManualCullingMultiplier != null
-                    ? PiPDisablerPlugin.ManualCullingMultiplier.Value
-                    : 0f;
+                float manualCullMultiplier = PiPDisablerPlugin.GetManualCullingMultiplierForCurrentMap();
                 float cullingMultiplier = manualCullMultiplier > 0f
                     ? manualCullMultiplier
                     : Mathf.Max(magnification, 1f);
