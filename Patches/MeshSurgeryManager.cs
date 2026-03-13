@@ -1007,15 +1007,6 @@ namespace PiPDisabler
             if (scopeRoot == null) return new List<MeshFilter>();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
-            Transform GetModeAncestor(Transform t, Transform searchRoot)
-            {
-                for (var p = t; p != null && p != searchRoot; p = p.parent)
-                    if (p.name != null && (p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
-                        || p.name.Equals("mode", StringComparison.OrdinalIgnoreCase)))
-                        return p;
-                return null;
-            }
-
             // Determine search root: go up through intermediate containers to catch
             // housing + mount meshes.  EFT hierarchy variants:
             //
