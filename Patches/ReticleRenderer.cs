@@ -307,9 +307,17 @@ namespace PiPDisabler
 
         private static CameraEvent GetReticleCameraEvent()
         {
-            return PiPDisablerPlugin.GetDebugReticleAfterEverything()
-                ? CameraEvent.AfterEverything
-                : CameraEvent.AfterForwardAlpha;
+            if (PiPDisablerPlugin.GetDebugReticleAfterEverything())
+                return CameraEvent.AfterEverything;
+
+            if (!PiPDisablerPlugin.GetAutoSwitchReticleRenderForNvg())
+                return CameraEvent.AfterForwardAlpha;
+
+            // EFT's NightVision effect writes this global as 1 while NVG are active.
+            // NVG ON: draw at AfterForwardAlpha so post-fx includes the reticle.
+            // NVG OFF: draw at AfterEverything for crisp final-overlay output.
+            bool nvgOn = Shader.GetGlobalFloat("_NightVisionOn") > 0.5f;
+            return nvgOn ? CameraEvent.AfterForwardAlpha : CameraEvent.AfterEverything;
         }
 
         private static void EnsureCorrectCameraEvent()
