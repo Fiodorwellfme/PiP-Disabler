@@ -776,7 +776,10 @@ namespace PiPDisabler
             // 2. Extract reticle texture BEFORE destroying lens mesh
             ReticleRenderer.ExtractReticle(os);
 
-            // 3. Hide ALL lens surfaces in the scope hierarchy (once)
+            // 3. Use rear lens as aperture mask to hide weapon child meshes behind it
+            WeaponOcclusionMasker.Apply(os);
+
+            // 4. Hide ALL lens surfaces in the scope hierarchy (once)
             LensTransparency.HideAllLensSurfaces(os);
 
             // 2b. Collect housing + weapon renderers for reticle stencil mask (lens surfaces
@@ -856,7 +859,8 @@ namespace PiPDisabler
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
 
-            // 4. Restore lens
+            // 4. Restore lens and weapon occlusion state
+            WeaponOcclusionMasker.Restore();
             LensTransparency.RestoreAll();
 
             // 5. Restore camera LOD/culling settings
