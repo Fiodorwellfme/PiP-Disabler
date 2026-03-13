@@ -4,27 +4,31 @@ using System.Linq;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using EFT;
 using EFT.CameraControl;
+using EFT.InventoryLogic;
+using Comfort.Common;
 using UnityEngine;
 
 namespace PiPDisabler
 {
     public static class MeshSurgeryManager
     {
-        /// <summary>
-        /// Tracks one modified MeshFilter.
-        /// Lifecycle:
-        ///   1. Save OriginalAssetMesh (the non-readable asset mesh)
-        ///   2. Create CutMesh via GPU copy + plane cut
-        ///   3. Assign mf.sharedMesh = CutMesh
-        ///   4. On restore: mf.sharedMesh = OriginalAssetMesh, Destroy(CutMesh)
-        /// Only ONE Mesh allocation per target. No leaks.
-        /// </summary>
-        private sealed class MeshState
+        private sealed class CutMeshEntry
         {
-            public Mesh OriginalAssetMesh;   // The original (non-readable) asset mesh
-            public Mesh CutMesh;             // Our GPU-copied + cut mesh (to be Destroyed on restore)
+            public MeshFilter Filter;
+            public Mesh OriginalMesh;
+            public Mesh CutMesh;
             public bool Applied;
+        }
+
+        private sealed class WeaponCutCache
+        {
+            public Weapon WeaponItem;
+            public GameObject WeaponRoot;
+            public readonly List<CutMeshEntry> Entries = new List<CutMeshEntry>(64);
+            public bool Built;
+            public bool Dirty = true;
         }
 
         private sealed class LightFxState
@@ -39,13 +43,16 @@ namespace PiPDisabler
             public bool DisabledByUs;
         }
 
-        private static readonly Dictionary<MeshFilter, MeshState> _tracked =
-            new Dictionary<MeshFilter, MeshState>(64);
+        private static WeaponCutCache _currentWeaponCache;
         private static readonly Dictionary<GameObject, LightFxState> _disabledLightFx =
             new Dictionary<GameObject, LightFxState>(32);
         private static readonly Dictionary<GameObject, SphereState> _disabledWeaponSpheres =
             new Dictionary<GameObject, SphereState>(32);
         private static bool _loggedGpuCopy;
+        private static object _inventoryEventSource;
+        private static Delegate _addItemHandler;
+        private static Delegate _removeItemHandler;
+
 
         public static void ClearPersistentCache()
         {
@@ -307,6 +314,117 @@ namespace PiPDisabler
             var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
             if (!scopeRoot) return;
 
+            var cache = GetOrCreateCurrentWeaponCache(scopeRoot);
+            if (cache == null) return;
+
+            if (cache.Dirty || !cache.Built)
+                RebuildCutCacheForOptic(cache, os, scopeRoot);
+            else
+                ReapplyCachedCutMeshes(cache);
+        }
+
+        public static void RestoreForScope(Transform anyTransformUnderScope)
+        {
+            var scopeRoot = ScopeHierarchy.FindScopeRoot(anyTransformUnderScope);
+            if (!scopeRoot) return;
+
+            var cache = _currentWeaponCache;
+            if (cache == null || cache.WeaponRoot == null) return;
+
+            if (scopeRoot.gameObject != cache.WeaponRoot && !scopeRoot.IsChildOf(cache.WeaponRoot.transform))
+                return;
+
+            RestoreOriginalMeshes(cache);
+            RestoreLightEffectMeshesUnderRoot(cache.WeaponRoot.transform);
+            RestoreWeaponSphereObjectsUnderRoot(cache.WeaponRoot.transform);
+        }
+
+        public static void RestoreAll()
+        {
+            if (_currentWeaponCache != null)
+                RestoreOriginalMeshes(_currentWeaponCache);
+
+            var lightKeys = _disabledLightFx.Keys.ToArray();
+            var sphereKeys = _disabledWeaponSpheres.Keys.ToArray();
+            if (lightKeys.Length == 0 && sphereKeys.Length == 0) return;
+
+            foreach (var go in lightKeys)
+            {
+                if (go != null && _disabledLightFx.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
+                {
+                    try
+                    {
+                        if (st.WasActiveSelf && !go.activeSelf)
+                            go.SetActive(true);
+                    }
+                    catch { }
+                }
+                _disabledLightFx.Remove(go);
+            }
+
+            foreach (var go in sphereKeys)
+            {
+                if (go != null && _disabledWeaponSpheres.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
+                {
+                    try
+                    {
+                        if (st.WasActiveSelf && !go.activeSelf)
+                            go.SetActive(true);
+                    }
+                    catch { }
+                }
+                _disabledWeaponSpheres.Remove(go);
+            }
+        }
+
+        public static void CleanupForShutdown()
+        {
+            RestoreAll();
+            DestroyCurrentWeaponCache();
+            UnbindInventoryEvents();
+        }
+
+        private static WeaponCutCache GetOrCreateCurrentWeaponCache(Transform scopeRoot)
+        {
+            var player = Singleton<GameWorld>.Instance != null ? Singleton<GameWorld>.Instance.MainPlayer : null;
+            var fc = player != null ? player.HandsController as Player.FirearmController : null;
+            var weapon = fc != null ? fc.Item as Weapon : null;
+
+            var weaponRootTf = FindWeaponTransform(scopeRoot);
+            var weaponRoot = weaponRootTf != null ? weaponRootTf.gameObject : null;
+            if (weapon == null || weaponRoot == null) return null;
+
+            bool changed = _currentWeaponCache == null
+                || _currentWeaponCache.WeaponItem != weapon
+                || _currentWeaponCache.WeaponRoot != weaponRoot;
+
+            if (changed)
+            {
+                if (_currentWeaponCache != null)
+                {
+                    RestoreOriginalMeshes(_currentWeaponCache);
+                    DestroyCutMeshes(_currentWeaponCache);
+                }
+
+                _currentWeaponCache = new WeaponCutCache
+                {
+                    WeaponItem = weapon,
+                    WeaponRoot = weaponRoot,
+                    Built = false,
+                    Dirty = true
+                };
+
+                PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Weapon cache switched: '{weapon.TemplateId}'");
+            }
+
+            BindInventoryEvents(player);
+            return _currentWeaponCache;
+        }
+
+        private static void RebuildCutCacheForOptic(WeaponCutCache cache, OpticSight os, Transform scopeRoot)
+        {
+            if (cache == null || os == null || scopeRoot == null) return;
+
             Transform activeMode = null;
             if (os.transform.name != null &&
                 (os.transform.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
@@ -330,26 +448,19 @@ namespace PiPDisabler
                 : PiPDisablerPlugin.GetPlaneOffsetMeters();
             planePoint += planeNormal * plane1Offset;
 
-            bool keepPositive = DecideKeepPositive(planePoint, planeNormal, camPos);
-            var keepSide = keepPositive
+            var keepSide = DecideKeepPositive(planePoint, planeNormal, camPos)
                 ? MeshPlaneCutter.KeepSide.Positive
                 : MeshPlaneCutter.KeepSide.Negative;
 
-            PiPDisablerPlugin.LogVerbose(
-                $"[MeshSurgery] Plane: point={planePoint:F4} normal={planeNormal:F4} keepSide={keepSide}");
-
-            // Show visualizer (if enabled)
             PlaneVisualizer.Show(planePoint, planeNormal);
+
+            RestoreOriginalMeshes(cache);
+            DestroyCutMeshes(cache);
+            cache.Entries.Clear();
 
             var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
             float cutRadius = PiPDisablerPlugin.GetCutRadius();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
-
-            if (logCandidates)
-            {
-                PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] scopeRoot='{scopeRoot.name}' activeMode='{activeMode.name}' totalTargets={targets.Count} cutRadius={cutRadius:F4}");
-            }
 
             DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
             DisableWeaponSphereObjects(scopeRoot, logCandidates);
@@ -362,31 +473,9 @@ namespace PiPDisabler
                 var boundsCenter = renderer != null ? renderer.bounds.center : mf.transform.position;
                 float distFromPlane = Vector3.Distance(boundsCenter, planePoint);
 
-                if (logCandidates)
-                {
-                    string relPath = ScopeHierarchy.GetRelativePath(mf.transform, scopeRoot);
-                    PiPDisablerPlugin.LogInfo(
-                        $"[MeshSurgery][DebugCandidates] target path='{relPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy} dist={distFromPlane:F4}");
-                }
-
-                // Radius filter: skip meshes too far from the cut center.
                 if (cutRadius > 0f && distFromPlane > cutRadius)
-                {
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip radius path='{ScopeHierarchy.GetRelativePath(mf.transform, scopeRoot)}' dist={distFromPlane:F4} > radius={cutRadius:F4}");
-                    }
-                    PiPDisablerPlugin.LogVerbose(
-                        $"[MeshSurgery] Skipping '{mf.sharedMesh.name}' — dist={distFromPlane:F4} > radius={cutRadius:F4}");
-                    continue;
-                }
-
-                // Already applied? Skip.
-                if (_tracked.TryGetValue(mf, out var existing) && existing.Applied)
                     continue;
 
-                // First time: save original and create cut mesh.
                 Mesh originalAsset = mf.sharedMesh;
 
                 try
@@ -399,21 +488,12 @@ namespace PiPDisabler
                     {
                         readable = cachedMesh;
                         readable.name = originalAsset.name + "_CUT_CACHED";
-                        PiPDisablerPlugin.LogVerbose(
-                            $"[MeshSurgery] Loaded cached cut mesh for '{originalAsset.name}'.");
                     }
                     else
                     {
-                        // Step 1: GPU copy to create a readable mesh
                         readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
                         if (readable == null)
-                        {
-                            PiPDisablerPlugin.LogVerbose(
-                                $"[MeshSurgery] GPU copy returned null for '{originalAsset.name}' — skipping.");
                             continue;
-                        }
-
-                        readable.name = originalAsset.name + "_readable";
 
                         if (!_loggedGpuCopy)
                         {
@@ -423,10 +503,7 @@ namespace PiPDisabler
                         }
 
                         int vertsBefore = readable.vertexCount;
-
-                        // Step 2: Cut the readable mesh in-place
                         bool ok;
-
                         if (isCylinder)
                         {
                             float nearR = PiPDisablerPlugin.GetCylinderRadius();
@@ -445,11 +522,6 @@ namespace PiPDisabler
                                 keepInside: false, midRadius: r2, midPosition: p2,
                                 nearPreserveDepth: preserve,
                                 plane3Radius: r3, plane3Position: p3, plane4Position: p4);
-                            PiPDisablerPlugin.LogVerbose(
-                                $"[MeshSurgery] Frustum cut '{originalAsset.name}': p1R={nearR:F4}@0.00 " +
-                                $"p2R={r2:F4}@{p2:F2} p3R={r3:F4}@{p3:F2} p4R={r4:F4}@{p4:F2} " +
-                                $"start={startOff:F4} len={cutLen:F4} offset={plane1Offset:F4}" +
-                                (preserve > 0f ? $" preserve={preserve:F4}" : ""));
                         }
                         else
                         {
@@ -459,11 +531,8 @@ namespace PiPDisabler
 
                         if (!ok)
                         {
-                            // Cut removed everything — clear the mesh to make it empty
                             readable.Clear();
                             readable.name = originalAsset.name + "_CUT_EMPTY";
-                            PiPDisablerPlugin.LogVerbose(
-                                $"[MeshSurgery] Cut removed all geometry from '{originalAsset.name}' — applying empty mesh.");
                         }
                         else
                         {
@@ -476,16 +545,14 @@ namespace PiPDisabler
                         MeshCutCache.Save(cacheKey, readable);
                     }
 
-                    // Step 3: Swap onto the MeshFilter
                     mf.sharedMesh = readable;
-
-                    // Step 4: Track for restore
-                    _tracked[mf] = new MeshState
+                    cache.Entries.Add(new CutMeshEntry
                     {
-                        OriginalAssetMesh = originalAsset,
+                        Filter = mf,
+                        OriginalMesh = originalAsset,
                         CutMesh = readable,
                         Applied = true
-                    };
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -493,6 +560,164 @@ namespace PiPDisabler
                         $"[MeshSurgery] Failed on '{originalAsset.name}': {ex.Message}");
                 }
             }
+
+            cache.Built = true;
+            cache.Dirty = false;
+        }
+
+        private static void ReapplyCachedCutMeshes(WeaponCutCache cache)
+        {
+            foreach (var entry in cache.Entries)
+            {
+                if (entry == null || entry.Filter == null || entry.CutMesh == null)
+                    continue;
+
+                entry.Filter.sharedMesh = entry.CutMesh;
+                entry.Applied = true;
+            }
+        }
+
+        private static void RestoreOriginalMeshes(WeaponCutCache cache)
+        {
+            if (cache == null) return;
+
+            foreach (var entry in cache.Entries)
+            {
+                if (entry == null || entry.Filter == null)
+                    continue;
+
+                if (!entry.Applied)
+                    continue;
+
+                if (entry.OriginalMesh != null)
+                    entry.Filter.sharedMesh = entry.OriginalMesh;
+
+                entry.Applied = false;
+            }
+        }
+
+        private static void DestroyCutMeshes(WeaponCutCache cache)
+        {
+            if (cache == null) return;
+
+            foreach (var entry in cache.Entries)
+            {
+                if (entry?.CutMesh != null)
+                {
+                    try { UnityEngine.Object.Destroy(entry.CutMesh); }
+                    catch { }
+                }
+            }
+        }
+
+        private static void DestroyCurrentWeaponCache()
+        {
+            if (_currentWeaponCache == null) return;
+            RestoreOriginalMeshes(_currentWeaponCache);
+            DestroyCutMeshes(_currentWeaponCache);
+            _currentWeaponCache.Entries.Clear();
+            _currentWeaponCache = null;
+        }
+
+        private static void BindInventoryEvents(Player player)
+        {
+            var inventory = player != null ? player.InventoryController : null;
+            if (inventory == null || ReferenceEquals(_inventoryEventSource, inventory))
+                return;
+
+            UnbindInventoryEvents();
+
+            try
+            {
+                var type = inventory.GetType();
+                var addEvent = type.GetEvent("AddItemEvent");
+                var removeEvent = type.GetEvent("RemoveItemEvent");
+                if (addEvent == null || removeEvent == null)
+                    return;
+
+                _addItemHandler = Delegate.CreateDelegate(addEvent.EventHandlerType, null,
+                    typeof(MeshSurgeryManager).GetMethod(nameof(OnItemAdded), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static));
+                _removeItemHandler = Delegate.CreateDelegate(removeEvent.EventHandlerType, null,
+                    typeof(MeshSurgeryManager).GetMethod(nameof(OnItemRemoved), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static));
+
+                addEvent.AddEventHandler(inventory, _addItemHandler);
+                removeEvent.AddEventHandler(inventory, _removeItemHandler);
+                _inventoryEventSource = inventory;
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Failed to bind inventory events: {ex.Message}");
+            }
+        }
+
+        private static void UnbindInventoryEvents()
+        {
+            if (_inventoryEventSource == null)
+                return;
+
+            try
+            {
+                var type = _inventoryEventSource.GetType();
+                var addEvent = type.GetEvent("AddItemEvent");
+                var removeEvent = type.GetEvent("RemoveItemEvent");
+
+                if (addEvent != null && _addItemHandler != null)
+                    addEvent.RemoveEventHandler(_inventoryEventSource, _addItemHandler);
+                if (removeEvent != null && _removeItemHandler != null)
+                    removeEvent.RemoveEventHandler(_inventoryEventSource, _removeItemHandler);
+            }
+            catch { }
+
+            _addItemHandler = null;
+            _removeItemHandler = null;
+            _inventoryEventSource = null;
+        }
+
+        private static void OnItemAdded(GEventArgs2 args)
+        {
+            if (args == null || args.Status != CommandStatus.Succeed)
+                return;
+
+            MarkCacheDirtyIfMeaningful(args.Item, args.To);
+        }
+
+        private static void OnItemRemoved(GEventArgs3 args)
+        {
+            if (args == null || args.Status != CommandStatus.Succeed)
+                return;
+
+            MarkCacheDirtyIfMeaningful(args.Item, args.From);
+        }
+
+        private static void MarkCacheDirtyIfMeaningful(Item item, ItemAddress address)
+        {
+            var cache = _currentWeaponCache;
+            if (cache == null || cache.WeaponItem == null || address == null)
+                return;
+
+            bool underWeapon = address.GetAllParentItems(false).Any(p => p == cache.WeaponItem);
+            if (!underWeapon)
+                return;
+
+            if (IsIgnoredWeaponChange(item, address))
+                return;
+
+            cache.Dirty = true;
+        }
+
+        private static bool IsIgnoredWeaponChange(Item item, ItemAddress address)
+        {
+            if (address?.Container is Slot slot &&
+                slot.ID == EWeaponModType.mod_magazine.ToString())
+                return true;
+
+            if (item is MagazineItemClass)
+                return true;
+
+            if (item is AmmoItemClass)
+                return true;
+
+            return false;
         }
 
         private static Transform FindWeaponTransform(Transform scopeRoot)
@@ -622,132 +847,6 @@ namespace PiPDisabler
 
                 _disabledLightFx.Remove(go);
             }
-        }
-
-        public static void RestoreForScope(Transform anyTransformUnderScope)
-        {
-            var scopeRoot = ScopeHierarchy.FindScopeRoot(anyTransformUnderScope);
-            if (!scopeRoot) return;
-
-            // Use the same expanded search root as FindTargetMeshFilters
-            // so we restore mount meshes that were found above scopeRoot.
-            Transform searchRoot = scopeRoot;
-            for (var p = scopeRoot.parent; p != null; p = p.parent)
-            {
-                var pName = p.name ?? "";
-                var plo = pName.ToLowerInvariant();
-                if (plo.Contains("weapon") || plo.Contains("receiver") || plo.Contains("anim"))
-                    break;
-                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount"))
-                { searchRoot = p; continue; }
-                break;
-            }
-
-            // Mirror the ExpandSearchToWeaponRoot expansion from FindTargetMeshFilters
-            // so weapon-body meshes that were cut can also be restored.
-            if (PiPDisablerPlugin.GetExpandSearchToWeaponRoot())
-            {
-                for (var p = searchRoot.parent; p != null; p = p.parent)
-                {
-                    if ((p.name ?? "").StartsWith("Weapon_root", StringComparison.OrdinalIgnoreCase))
-                    {
-                        searchRoot = p;
-                        break;
-                    }
-                }
-            }
-
-            var toRestore = _tracked.Keys
-                .Where(mf => mf && mf.transform && mf.transform.IsChildOf(searchRoot))
-                .ToArray();
-
-            int lightFxToRestore = _disabledLightFx.Keys.Count(go => go && go.transform && go.transform.IsChildOf(searchRoot));
-            var weaponRoot = FindWeaponTransform(scopeRoot);
-            int sphereToRestore = weaponRoot != null
-                ? _disabledWeaponSpheres.Keys.Count(go => go && go.transform && go.transform.IsChildOf(weaponRoot))
-                : 0;
-            if (toRestore.Length == 0 && lightFxToRestore == 0 && sphereToRestore == 0) return;
-
-            PiPDisablerPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreForScope: meshes={toRestore.Length} lightFx={lightFxToRestore} spheres={sphereToRestore} (searchRoot='{searchRoot.name}')");
-
-            foreach (var mf in toRestore)
-                RestoreMeshFilter(mf);
-
-            RestoreLightEffectMeshesUnderRoot(searchRoot);
-            if (weaponRoot != null)
-                RestoreWeaponSphereObjectsUnderRoot(weaponRoot);
-        }
-
-        public static void RestoreAll()
-        {
-            var keys = _tracked.Keys.ToArray();
-            var lightKeys = _disabledLightFx.Keys.ToArray();
-            var sphereKeys = _disabledWeaponSpheres.Keys.ToArray();
-            if (keys.Length == 0 && lightKeys.Length == 0 && sphereKeys.Length == 0) return;
-
-            PiPDisablerPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreAll: meshes={keys.Length} lightFx={lightKeys.Length} spheres={sphereKeys.Length}");
-
-            foreach (var mf in keys)
-                RestoreMeshFilter(mf);
-
-            foreach (var go in lightKeys)
-            {
-                if (go != null && _disabledLightFx.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
-                {
-                    try
-                    {
-                        if (st.WasActiveSelf && !go.activeSelf)
-                            go.SetActive(true);
-                    }
-                    catch { }
-                }
-                _disabledLightFx.Remove(go);
-            }
-
-            foreach (var go in sphereKeys)
-            {
-                if (go != null && _disabledWeaponSpheres.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
-                {
-                    try
-                    {
-                        if (st.WasActiveSelf && !go.activeSelf)
-                            go.SetActive(true);
-                    }
-                    catch { }
-                }
-                _disabledWeaponSpheres.Remove(go);
-            }
-        }
-
-        private static void RestoreMeshFilter(MeshFilter mf)
-        {
-            if (!mf) { _tracked.Remove(mf); return; }
-            if (!_tracked.TryGetValue(mf, out var st) || st == null) return;
-
-            // Restore original asset mesh
-            try
-            {
-                mf.sharedMesh = st.OriginalAssetMesh;
-                PiPDisablerPlugin.LogVerbose(
-                    $"[MeshSurgery] Restored '{st.OriginalAssetMesh?.name}' on {mf.gameObject.name}");
-            }
-            catch (Exception ex)
-            {
-                PiPDisablerPlugin.LogError(
-                    $"[MeshSurgery] Restore failed: {ex.Message}");
-            }
-
-            // Destroy our created mesh to free GPU/CPU memory
-            try
-            {
-                if (st.CutMesh != null)
-                    UnityEngine.Object.Destroy(st.CutMesh);
-            }
-            catch { }
-
-            _tracked.Remove(mf);
         }
 
         private static bool DecideKeepPositive(Vector3 planePoint, Vector3 planeNormal, Vector3 camPos)
