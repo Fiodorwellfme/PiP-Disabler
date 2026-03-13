@@ -4,6 +4,7 @@ using BepInEx.Configuration;
 using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
+using System.Collections.Generic;
 using System.IO;
 using PiPDisabler;
 using UnityEngine;
@@ -175,6 +176,7 @@ namespace PiPDisabler
         internal static ConfigEntry<float> ManualLodBias;
         internal static ConfigEntry<int> ManualMaximumLodLevel;
         internal static ConfigEntry<float> ManualCullingMultiplier;
+        internal static Dictionary<string, ConfigEntry<float>> MapManualLodBias;
 
         // --- 4. Zeroing ---
         internal static ConfigEntry<bool> EnableZeroing;
@@ -289,6 +291,18 @@ namespace PiPDisabler
                     "0 = auto (use magnification).\n" +
                     ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
                     new AcceptableValueRange<float>(0f, 20f)));
+            MapManualLodBias = new Dictionary<string, ConfigEntry<float>>(StringComparer.OrdinalIgnoreCase);
+
+            BindPerMapLodBias("Woods", "Woods", "Woods");
+            BindPerMapLodBias("Factory", "Factory", "factory4_day", "factory4_night");
+            BindPerMapLodBias("Customs", "Customs", "bigmap");
+            BindPerMapLodBias("Shoreline", "Shoreline", "Shoreline");
+            BindPerMapLodBias("Interchange", "Interchange", "Interchange");
+            BindPerMapLodBias("Reserve", "Reserve", "RezervBase");
+            BindPerMapLodBias("TheLab", "The Lab", "laboratory");
+            BindPerMapLodBias("Lighthouse", "Lighthouse", "Lighthouse");
+            BindPerMapLodBias("StreetsOfTarkov", "Streets of Tarkov", "TarkovStreets");
+            BindPerMapLodBias("GroundZero", "Ground Zero", "Sandbox", "Sandbox_high");
             ZoomToggleKey = Config.Bind("2. Zoom", "ZoomToggleKey", KeyCode.None,
                 "Toggle key for zoom (None = always on when EnableZoom is true).");
 
@@ -758,6 +772,54 @@ namespace PiPDisabler
             catch
             {
                 return false;
+            }
+        }
+
+        internal static string GetCurrentLocationId()
+        {
+            try
+            {
+                var gw = Singleton<GameWorld>.Instance;
+                return gw != null ? gw.LocationId : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        internal static float GetManualLodBiasForCurrentMap()
+        {
+            float fallback = ManualLodBias != null ? ManualLodBias.Value : 0f;
+            string locationId = GetCurrentLocationId();
+            if (string.IsNullOrEmpty(locationId) || MapManualLodBias == null)
+                return fallback;
+
+            ConfigEntry<float> entry;
+            if (MapManualLodBias.TryGetValue(locationId, out entry) && entry != null)
+                return entry.Value;
+
+            return fallback;
+        }
+
+        private void BindPerMapLodBias(string configKeySuffix, string mapDisplayName, params string[] locationIds)
+        {
+            if (locationIds == null || locationIds.Length == 0 || string.IsNullOrWhiteSpace(configKeySuffix))
+                return;
+
+            var entry = Config.Bind("2. Zoom Per-Map", $"ManualLodBias_{configKeySuffix}", ManualLodBias.Value,
+                new ConfigDescription(
+                    $"Manual LOD bias override while scoped on map '{mapDisplayName}'.\n" +
+                    "0 = auto (baseLodBias * magnification).\n" +
+                    ">0 = force this exact value (e.g. 4.0).",
+                    new AcceptableValueRange<float>(0f, 20f)));
+
+            for (int i = 0; i < locationIds.Length; i++)
+            {
+                string locationId = locationIds[i];
+                if (string.IsNullOrWhiteSpace(locationId))
+                    continue;
+                MapManualLodBias[locationId] = entry;
             }
         }
     }
