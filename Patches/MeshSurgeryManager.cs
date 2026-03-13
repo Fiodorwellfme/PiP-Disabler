@@ -29,6 +29,7 @@ namespace PiPDisabler
             public readonly List<CutMeshEntry> Entries = new List<CutMeshEntry>(64);
             public bool Built;
             public bool Dirty = true;
+            public string SettingsSignature;
         }
 
         private sealed class LightFxState
@@ -317,10 +318,17 @@ namespace PiPDisabler
             var cache = GetOrCreateCurrentWeaponCache(scopeRoot);
             if (cache == null) return;
 
+            string currentSignature = BuildCutSettingsSignature();
+            if (cache.Built && !cache.Dirty && !string.Equals(cache.SettingsSignature, currentSignature, StringComparison.Ordinal))
+            {
+                cache.Dirty = true;
+                PiPDisablerPlugin.LogVerbose("[MeshSurgery] Cut settings changed; marking weapon cache dirty.");
+            }
+
             if (cache.Dirty || !cache.Built)
                 RebuildCutCacheForOptic(cache, os, scopeRoot);
             else
-                ReapplyCachedCutMeshes(cache);
+                ReapplyCachedCutMeshes(cache, scopeRoot);
         }
 
         public static void RestoreForScope(Transform anyTransformUnderScope)
@@ -563,10 +571,15 @@ namespace PiPDisabler
 
             cache.Built = true;
             cache.Dirty = false;
+            cache.SettingsSignature = BuildCutSettingsSignature();
         }
 
-        private static void ReapplyCachedCutMeshes(WeaponCutCache cache)
+        private static void ReapplyCachedCutMeshes(WeaponCutCache cache, Transform scopeRoot)
         {
+            bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
+            DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
+            DisableWeaponSphereObjects(scopeRoot, logCandidates);
+
             foreach (var entry in cache.Entries)
             {
                 if (entry == null || entry.Filter == null || entry.CutMesh == null)
@@ -718,6 +731,27 @@ namespace PiPDisabler
                 return true;
 
             return false;
+        }
+
+        private static string BuildCutSettingsSignature()
+        {
+            return string.Join("|", new[]
+            {
+                PiPDisablerPlugin.GetCutMode() ?? string.Empty,
+                PiPDisablerPlugin.GetPlaneOffsetMeters().ToString("F4"),
+                PiPDisablerPlugin.GetPlane1OffsetMeters().ToString("F4"),
+                PiPDisablerPlugin.GetCylinderRadius().ToString("F4"),
+                PiPDisablerPlugin.GetCutStartOffset().ToString("F4"),
+                PiPDisablerPlugin.GetCutLength().ToString("F4"),
+                PiPDisablerPlugin.GetNearPreserveDepth().ToString("F4"),
+                PiPDisablerPlugin.GetPlane2PositionNormalized(PiPDisablerPlugin.GetCutLength()).ToString("F4"),
+                PiPDisablerPlugin.GetPlane2Radius().ToString("F4"),
+                PiPDisablerPlugin.GetPlane3Position().ToString("F4"),
+                PiPDisablerPlugin.GetPlane3Radius().ToString("F4"),
+                PiPDisablerPlugin.GetPlane4Position().ToString("F4"),
+                PiPDisablerPlugin.GetPlane4Radius().ToString("F4"),
+                PiPDisablerPlugin.GetCutRadius().ToString("F4")
+            });
         }
 
         private static Transform FindWeaponTransform(Transform scopeRoot)
