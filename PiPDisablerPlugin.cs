@@ -200,7 +200,7 @@ namespace PiPDisabler
                 "cleaned up and the game behaves as if the mod is not installed.");
             ModToggleKey = Config.Bind("0. Global", "ModToggleKey", KeyCode.Backspace,
                 "Toggle key for master mod enable/disable.");
-            AutoSwitchReticleRenderForNvg = Config.Bind("0. Global", "AutoSwitchReticleRenderForNvg", false,
+            AutoSwitchReticleRenderForNvg = Config.Bind("0. Global", "AutoSwitchReticleRenderForNvg", true,
                 "Automatically switch reticle CommandBuffer event based on NVG state.\n" +
                 "ON: use AfterForwardAlpha while NVG are active and AfterEverything otherwise.\n" +
                 "OFF: keep the normal path (AfterForwardAlpha) unless debug override is enabled.");
