@@ -1071,23 +1071,6 @@ namespace PiPDisabler
                 }
             }
 
-            // Collect all OTHER scope roots under searchRoot so we can skip their subtrees
-            var otherScopeRoots = new List<Transform>(4);
-            if (searchRoot != scopeRoot)
-            {
-                CollectOtherScopeRoots(searchRoot, scopeRoot, otherScopeRoots);
-                if (otherScopeRoots.Count > 0)
-                    PiPDisablerPlugin.LogVerbose(
-                        $"[ScopeHierarchy] Found {otherScopeRoots.Count} sibling scope root(s) — will exclude their subtrees");
-            }
-
-            bool IsUnderOtherScope(Transform t)
-            {
-                for (int i = 0; i < otherScopeRoots.Count; i++)
-                    if (t.IsChildOf(otherScopeRoots[i])) return true;
-                return false;
-            }
-
             var result = new List<MeshFilter>(64);
             int skippedMode = 0, skippedOther = 0, skippedLightFx = 0;
             int inspected = 0;
@@ -1106,50 +1089,6 @@ namespace PiPDisabler
                 string relSearchPath = null;
                 if (logCandidates)
                     relSearchPath = GetRelativePath(mf.transform, searchRoot);
-
-                // Skip meshes under other scope roots (sibling scopes, canted sights)
-                if (otherScopeRoots.Count > 0 && IsUnderOtherScope(mf.transform))
-                {
-                    skippedOther++;
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip otherScope path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
-                    }
-                    continue;
-                }
-
-                if (IsLikelyLightEffectMesh(mf, searchRoot))
-                {
-                    skippedLightFx++;
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip lightEffect path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
-                    }
-                    continue;
-                }
-
-                // Skip meshes belonging to a DIFFERENT mode (not the active one),
-                // but only within the active scope subtree.
-                //
-                // Some tactical attachments (DBAL/flashlights/lasers) also use
-                // mode_* nodes for their own state variants. Those nodes are not
-                // optic magnification modes and should remain cuttable.
-                var modeAncestor = GetModeAncestor(mf.transform, searchRoot);
-                bool modeAncestorIsOnActiveScope =
-                    modeAncestor != null && scopeRoot != null && modeAncestor.IsChildOf(scopeRoot);
-
-                if (modeAncestorIsOnActiveScope && activeMode != null && modeAncestor != activeMode)
-                {
-                    skippedMode++;
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip modeMismatch path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' mode='{modeAncestor.name}' activeMode='{activeMode.name}'");
-                    }
-                    continue;
-                }
 
                 result.Add(mf);
 
