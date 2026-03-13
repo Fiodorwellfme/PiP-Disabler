@@ -43,6 +43,7 @@ namespace PiPDisabler
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
+        private static bool _scopeEnterFinalizePending;
 
         // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
         private static Type _scopeDataType;
@@ -320,6 +321,16 @@ namespace PiPDisabler
         {
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
+
+            MeshSurgeryManager.TickApplyWork();
+            if (_scopeEnterFinalizePending)
+            {
+                if (MeshSurgeryManager.IsApplyInProgress)
+                    return;
+
+                FinalizeScopeEnter();
+                _scopeEnterFinalizePending = false;
+            }
 
             // Ensure lens stays hidden + update variable zoom
             if (ZoomController.IsActive)
@@ -800,23 +811,31 @@ namespace PiPDisabler
             if (PiPDisablerPlugin.EnableMeshSurgery.Value)
                 MeshSurgeryManager.ApplyForOptic(os);
 
-            // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
+            // Defer the rest of scope-enter until mesh surgery work queue is done.
+            if (MeshSurgeryManager.IsApplyInProgress)
+            {
+                _scopeEnterFinalizePending = true;
+                return;
+            }
+
+            FinalizeScopeEnter();
+        }
+
+        private static void FinalizeScopeEnter()
+        {
+            var os = _activeOptic;
+            if (os == null) return;
+
+            // Show cut plane visualizer (even without mesh surgery, for debugging)
             if (PiPDisablerPlugin.GetShowCutPlane()
                 && !PiPDisablerPlugin.EnableMeshSurgery.Value)
             {
                 ShowPlaneOnly(os);
             }
 
-            // 7. Swap main camera LOD/culling settings with scope camera settings
             CameraSettingsManager.ApplyForOptic(os);
-
-            // 8. Capture weapon base scale/FOV BEFORE changing FOV (for weapon scaling compensation)
             Patches.WeaponScalingPatch.CaptureBaseState();
-
-            // 9. Apply animated FOV zoom (uses FovAnimationDuration)
             ApplyFov(true);
-
-            // 10. Read initial zeroing distance
             ZeroingController.ReadCurrentZeroing();
         }
 
@@ -831,6 +850,7 @@ namespace PiPDisabler
 
             _isScoped = false;
             _activeOptic = null;
+            _scopeEnterFinalizePending = false;
             PerScopeMeshSurgerySettings.ClearActiveScope();
 
             // If this scope was bypassed, skip mod cleanup paths.

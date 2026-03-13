@@ -91,6 +91,7 @@ namespace PiPDisabler
         internal static ConfigEntry<KeyCode> MeshSurgeryToggleKey;
         internal static ConfigEntry<bool> RestoreOnUnscope;
         internal static ConfigEntry<bool> ClearMeshCacheOnRaidEnd;
+        internal static ConfigEntry<float> MeshCutWorkBudgetMs;
         internal static ConfigEntry<float> PlaneOffsetMeters;
         internal static ConfigEntry<string> PlaneNormalAxis;
         internal static ConfigEntry<float> CutRadius;
@@ -324,6 +325,11 @@ namespace PiPDisabler
                 "Restore original meshes when leaving scope.");
             ClearMeshCacheOnRaidEnd = Config.Bind("3. Global Mesh Surgery settings", "ClearMeshCacheOnRaidEnd", true,
                 "Clear persisted mesh-cut cache files when transitioning from raid to out-of-raid.");
+            MeshCutWorkBudgetMs = Config.Bind("3. Global Mesh Surgery settings", "MeshCutWorkBudgetMs", 2.5f,
+                new ConfigDescription(
+                    "Per-frame mesh cutting budget in milliseconds.\n" +
+                    "Lower values reduce frame spikes but spread mesh surgery across more frames.",
+                    new AcceptableValueRange<float>(0.1f, 33f)));
             PlaneOffsetMeters = Config.Bind("3. Global Mesh Surgery settings", "PlaneOffsetMeters", 0.001f,
                 "Offset applied along plane normal (meters).");
             PlaneNormalAxis = Config.Bind("3. Global Mesh Surgery settings", "PlaneNormalAxis", "-Y",
@@ -566,6 +572,7 @@ namespace PiPDisabler
         internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : PlaneOffsetMeters.Value;
         internal static string GetPlaneNormalAxis() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneNormalAxis : PlaneNormalAxis.Value;
         internal static float GetCutRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.CutRadius : CutRadius.Value;
+        internal static float GetMeshCutWorkBudgetMs() => MeshCutWorkBudgetMs != null ? MeshCutWorkBudgetMs.Value : 2.5f;
         internal static bool GetShowCutPlane() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutPlane : ShowCutPlane.Value;
         internal static bool GetShowCutVolume() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutVolume : ShowCutVolume.Value;
         internal static float GetCutVolumeOpacity() => ActiveScopeOverride != null ? ActiveScopeOverride.CutVolumeOpacity : CutVolumeOpacity.Value;

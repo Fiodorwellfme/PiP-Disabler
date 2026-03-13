@@ -4,6 +4,7 @@ using System.Linq;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
 using EFT.CameraControl;
 using UnityEngine;
 
@@ -46,6 +47,24 @@ namespace PiPDisabler
         private static readonly Dictionary<GameObject, SphereState> _disabledWeaponSpheres =
             new Dictionary<GameObject, SphereState>(32);
         private static bool _loggedGpuCopy;
+        private sealed class ApplyContext
+        {
+            public Transform ScopeRoot;
+            public Transform ActiveMode;
+            public Vector3 PlanePoint;
+            public Vector3 PlaneNormal;
+            public MeshPlaneCutter.KeepSide KeepSide;
+            public bool IsCylinderMode;
+            public float Plane1Offset;
+            public float CutRadius;
+            public bool LogCandidates;
+            public List<MeshFilter> Targets;
+            public int NextTargetIndex;
+            public int TotalProcessed;
+        }
+
+        private static ApplyContext _pendingApply;
+        public static bool IsApplyInProgress => _pendingApply != null;
 
         public static void ClearPersistentCache()
         {
@@ -338,7 +357,6 @@ namespace PiPDisabler
             PiPDisablerPlugin.LogVerbose(
                 $"[MeshSurgery] Plane: point={planePoint:F4} normal={planeNormal:F4} keepSide={keepSide}");
 
-            // Show visualizer (if enabled)
             PlaneVisualizer.Show(planePoint, planeNormal);
 
             var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
@@ -354,45 +372,74 @@ namespace PiPDisabler
             DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
             DisableWeaponSphereObjects(scopeRoot, logCandidates);
 
-            foreach (var mf in targets)
+            _pendingApply = new ApplyContext
             {
+                ScopeRoot = scopeRoot,
+                ActiveMode = activeMode,
+                PlanePoint = planePoint,
+                PlaneNormal = planeNormal,
+                KeepSide = keepSide,
+                IsCylinderMode = isCylinderMode,
+                Plane1Offset = plane1Offset,
+                CutRadius = cutRadius,
+                LogCandidates = logCandidates,
+                Targets = targets,
+                NextTargetIndex = 0,
+                TotalProcessed = 0
+            };
+
+            TickApplyWork();
+        }
+
+        public static void TickApplyWork()
+        {
+            var ctx = _pendingApply;
+            if (ctx == null) return;
+
+            float budgetMs = PiPDisablerPlugin.GetMeshCutWorkBudgetMs();
+            if (budgetMs <= 0f) budgetMs = 0.1f;
+
+            var sw = Stopwatch.StartNew();
+
+            while (ctx.NextTargetIndex < ctx.Targets.Count)
+            {
+                var mf = ctx.Targets[ctx.NextTargetIndex++];
+                ctx.TotalProcessed++;
+
                 if (!mf || !mf.sharedMesh) continue;
 
                 var renderer = mf.GetComponent<Renderer>();
                 var boundsCenter = renderer != null ? renderer.bounds.center : mf.transform.position;
-                float distFromPlane = Vector3.Distance(boundsCenter, planePoint);
+                float distFromPlane = Vector3.Distance(boundsCenter, ctx.PlanePoint);
 
-                if (logCandidates)
+                if (ctx.LogCandidates)
                 {
-                    string relPath = ScopeHierarchy.GetRelativePath(mf.transform, scopeRoot);
+                    string relPath = ScopeHierarchy.GetRelativePath(mf.transform, ctx.ScopeRoot);
                     PiPDisablerPlugin.LogInfo(
                         $"[MeshSurgery][DebugCandidates] target path='{relPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy} dist={distFromPlane:F4}");
                 }
 
-                // Radius filter: skip meshes too far from the cut center.
-                if (cutRadius > 0f && distFromPlane > cutRadius)
+                if (ctx.CutRadius > 0f && distFromPlane > ctx.CutRadius)
                 {
-                    if (logCandidates)
+                    if (ctx.LogCandidates)
                     {
                         PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip radius path='{ScopeHierarchy.GetRelativePath(mf.transform, scopeRoot)}' dist={distFromPlane:F4} > radius={cutRadius:F4}");
+                            $"[MeshSurgery][DebugCandidates] skip radius path='{ScopeHierarchy.GetRelativePath(mf.transform, ctx.ScopeRoot)}' dist={distFromPlane:F4} > radius={ctx.CutRadius:F4}");
                     }
                     PiPDisablerPlugin.LogVerbose(
-                        $"[MeshSurgery] Skipping '{mf.sharedMesh.name}' — dist={distFromPlane:F4} > radius={cutRadius:F4}");
+                        $"[MeshSurgery] Skipping '{mf.sharedMesh.name}' — dist={distFromPlane:F4} > radius={ctx.CutRadius:F4}");
                     continue;
                 }
 
-                // Already applied? Skip.
                 if (_tracked.TryGetValue(mf, out var existing) && existing.Applied)
                     continue;
 
-                // First time: save original and create cut mesh.
                 Mesh originalAsset = mf.sharedMesh;
 
                 try
                 {
-                    bool isCylinder = PiPDisablerPlugin.GetCutMode() == "Cylinder";
-                    string cacheKey = MeshCutCache.BuildKey(scopeRoot, activeMode, mf, originalAsset, keepSide, isCylinder);
+                    bool isCylinder = ctx.IsCylinderMode;
+                    string cacheKey = MeshCutCache.BuildKey(ctx.ScopeRoot, ctx.ActiveMode, mf, originalAsset, ctx.KeepSide, isCylinder);
 
                     Mesh readable;
                     if (MeshCutCache.TryLoad(cacheKey, out var cachedMesh))
@@ -404,7 +451,6 @@ namespace PiPDisabler
                     }
                     else
                     {
-                        // Step 1: GPU copy to create a readable mesh
                         readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
                         if (readable == null)
                         {
@@ -423,8 +469,6 @@ namespace PiPDisabler
                         }
 
                         int vertsBefore = readable.vertexCount;
-
-                        // Step 2: Cut the readable mesh in-place
                         bool ok;
 
                         if (isCylinder)
@@ -441,25 +485,24 @@ namespace PiPDisabler
                             float r4 = PiPDisablerPlugin.GetPlane4Radius();
 
                             ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
-                                planePoint, planeNormal, nearR, r4, startOff, cutLen,
+                                ctx.PlanePoint, ctx.PlaneNormal, nearR, r4, startOff, cutLen,
                                 keepInside: false, midRadius: r2, midPosition: p2,
                                 nearPreserveDepth: preserve,
                                 plane3Radius: r3, plane3Position: p3, plane4Position: p4);
                             PiPDisablerPlugin.LogVerbose(
                                 $"[MeshSurgery] Frustum cut '{originalAsset.name}': p1R={nearR:F4}@0.00 " +
                                 $"p2R={r2:F4}@{p2:F2} p3R={r3:F4}@{p3:F2} p4R={r4:F4}@{p4:F2} " +
-                                $"start={startOff:F4} len={cutLen:F4} offset={plane1Offset:F4}" +
+                                $"start={startOff:F4} len={cutLen:F4} offset={ctx.Plane1Offset:F4}" +
                                 (preserve > 0f ? $" preserve={preserve:F4}" : ""));
                         }
                         else
                         {
                             ok = MeshPlaneCutter.CutMeshDirect(readable, mf.transform,
-                                planePoint, planeNormal, keepSide);
+                                ctx.PlanePoint, ctx.PlaneNormal, ctx.KeepSide);
                         }
 
                         if (!ok)
                         {
-                            // Cut removed everything — clear the mesh to make it empty
                             readable.Clear();
                             readable.name = originalAsset.name + "_CUT_EMPTY";
                             PiPDisablerPlugin.LogVerbose(
@@ -476,10 +519,8 @@ namespace PiPDisabler
                         MeshCutCache.Save(cacheKey, readable);
                     }
 
-                    // Step 3: Swap onto the MeshFilter
                     mf.sharedMesh = readable;
 
-                    // Step 4: Track for restore
                     _tracked[mf] = new MeshState
                     {
                         OriginalAssetMesh = originalAsset,
@@ -492,9 +533,18 @@ namespace PiPDisabler
                     PiPDisablerPlugin.LogError(
                         $"[MeshSurgery] Failed on '{originalAsset.name}': {ex.Message}");
                 }
+
+                if (sw.Elapsed.TotalMilliseconds >= budgetMs)
+                    break;
+            }
+
+            if (ctx.NextTargetIndex >= ctx.Targets.Count)
+            {
+                PiPDisablerPlugin.LogVerbose(
+                    $"[MeshSurgery] Apply complete: processed {ctx.TotalProcessed}/{ctx.Targets.Count} targets.");
+                _pendingApply = null;
             }
         }
-
         private static Transform FindWeaponTransform(Transform scopeRoot)
         {
             for (var p = scopeRoot; p != null; p = p.parent)
@@ -626,6 +676,7 @@ namespace PiPDisabler
 
         public static void RestoreForScope(Transform anyTransformUnderScope)
         {
+            _pendingApply = null;
             var scopeRoot = ScopeHierarchy.FindScopeRoot(anyTransformUnderScope);
             if (!scopeRoot) return;
 
@@ -681,6 +732,7 @@ namespace PiPDisabler
 
         public static void RestoreAll()
         {
+            _pendingApply = null;
             var keys = _tracked.Keys.ToArray();
             var lightKeys = _disabledLightFx.Keys.ToArray();
             var sphereKeys = _disabledWeaponSpheres.Keys.ToArray();
