@@ -44,6 +44,18 @@ namespace PiPDisabler
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
 
+        // ADS enter staging: spread expensive work across first few frames.
+        private enum DeferredEnterStage
+        {
+            None = 0,
+            Frame1LensAndStencil,
+            Frame2MeshSurgery
+        }
+
+        private static DeferredEnterStage _deferredEnterStage;
+        private static int _deferredEnterStartFrame = -1;
+        private static OpticSight _deferredEnterOptic;
+
         // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
         private static Type _scopeDataType;
         private static FieldInfo _scopeDataNightVisionField;
@@ -320,6 +332,8 @@ namespace PiPDisabler
         {
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
+
+            ProcessDeferredScopeEnter();
 
             // Ensure lens stays hidden + update variable zoom
             if (ZoomController.IsActive)
@@ -769,6 +783,7 @@ namespace PiPDisabler
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] ENTER: '{os.name}'[{FovController.GetOpticTemplateId(os)}] frame={Time.frameCount}");
 
+            // Frame 0 (must-have immediately): scope state + optic + FOV + minimal reticle.
             // 1. Restore any black lens materials so ExtractReticle can read OpticSight textures.
             //    (RestoreAll on previous scope-exit may have left sharedMaterials as Unlit/Color.)
             LensTransparency.RestoreBlackLensMaterials();
@@ -776,12 +791,8 @@ namespace PiPDisabler
             // 2. Extract reticle texture BEFORE destroying lens mesh
             ReticleRenderer.ExtractReticle(os);
 
-            // 3. Hide ALL lens surfaces in the scope hierarchy (once)
-            LensTransparency.HideAllLensSurfaces(os);
-
-            // 2b. Collect housing + weapon renderers for reticle stencil mask (lens surfaces
-            //     are already empty-meshed above, so they won't end up in the list).
-            ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
+            // Minimal frame-0 reticle path: no stencil/housing mask yet (placeholder mode).
+            ReticleRenderer.SetHousingRenderers(null);
 
             // 3. Get magnification for reticle scaling and zoom
             float mag = ZoomController.GetMagnification(os);
@@ -796,11 +807,7 @@ namespace PiPDisabler
             if (baseSize < 0.001f) baseSize = 0.030f;
             ScopeEffectsRenderer.Show(lensT, baseSize, mag);
 
-            // 5. Mesh surgery (once)
-            if (PiPDisablerPlugin.EnableMeshSurgery.Value)
-                MeshSurgeryManager.ApplyForOptic(os);
-
-            // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
+            // 5. Show cut plane visualizer (even without mesh surgery, for debugging)
             if (PiPDisablerPlugin.GetShowCutPlane()
                 && !PiPDisablerPlugin.EnableMeshSurgery.Value)
             {
@@ -816,8 +823,13 @@ namespace PiPDisabler
             // 9. Apply animated FOV zoom (uses FovAnimationDuration)
             ApplyFov(true);
 
-            // 10. Read initial zeroing distance
+            // 8. Read initial zeroing distance
             ZeroingController.ReadCurrentZeroing();
+
+            // Frames 1/2: defer expensive visual setup.
+            _deferredEnterOptic = os;
+            _deferredEnterStartFrame = Time.frameCount;
+            _deferredEnterStage = DeferredEnterStage.Frame1LensAndStencil;
         }
 
         private static void DoScopeExit()
@@ -832,6 +844,9 @@ namespace PiPDisabler
             _isScoped = false;
             _activeOptic = null;
             PerScopeMeshSurgerySettings.ClearActiveScope();
+            _deferredEnterStage = DeferredEnterStage.None;
+            _deferredEnterStartFrame = -1;
+            _deferredEnterOptic = null;
 
             // If this scope was bypassed, skip mod cleanup paths.
             if (_modBypassedForCurrentScope)
@@ -876,6 +891,47 @@ namespace PiPDisabler
 
             // 8. Reset zeroing state
             ZeroingController.Reset();
+        }
+
+        private static void ProcessDeferredScopeEnter()
+        {
+            if (_deferredEnterStage == DeferredEnterStage.None)
+                return;
+
+            var os = _deferredEnterOptic;
+            if (os == null || os != _activeOptic)
+            {
+                _deferredEnterStage = DeferredEnterStage.None;
+                _deferredEnterStartFrame = -1;
+                _deferredEnterOptic = null;
+                return;
+            }
+
+            int framesElapsed = Time.frameCount - _deferredEnterStartFrame;
+
+            if (_deferredEnterStage == DeferredEnterStage.Frame1LensAndStencil)
+            {
+                if (framesElapsed < 1)
+                    return;
+
+                LensTransparency.HideAllLensSurfaces(os);
+                ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
+                _deferredEnterStage = DeferredEnterStage.Frame2MeshSurgery;
+                return;
+            }
+
+            if (_deferredEnterStage == DeferredEnterStage.Frame2MeshSurgery)
+            {
+                if (framesElapsed < 2)
+                    return;
+
+                if (PiPDisablerPlugin.EnableMeshSurgery.Value)
+                    MeshSurgeryManager.ApplyForOptic(os);
+
+                _deferredEnterStage = DeferredEnterStage.None;
+                _deferredEnterStartFrame = -1;
+                _deferredEnterOptic = null;
+            }
         }
 
         // ===== FOV Helpers =====
