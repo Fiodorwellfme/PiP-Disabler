@@ -707,6 +707,7 @@ namespace PiPDisabler
 
         private static void ApplyBypassState(OpticSight os, float minFov, string reason)
         {
+            bool isScopeEnter = string.Equals(reason, "scope enter", StringComparison.OrdinalIgnoreCase);
             string opticName = os != null ? os.name : "null";
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] Bypassing mod for current scope ({reason}): " +
@@ -715,7 +716,11 @@ namespace PiPDisabler
 
             // Ensure this path behaves like a full unscope cleanup so non-whitelisted
             // optics are truly vanilla while still staying in ADS.
-            RestoreFov();
+            // On fresh scope-enter we should not force a restore-to-base FOV because it can
+            // suppress the game's own vanilla zoom-in for bypassed optics until another mode
+            // change kicks a new SetFov path.
+            if (!isScopeEnter)
+                RestoreFov();
             Patches.WeaponScalingPatch.RestoreScale();
             ZoomController.Restore();
             ZoomController.ResetScrollZoom();
