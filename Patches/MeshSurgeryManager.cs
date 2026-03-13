@@ -33,10 +33,18 @@ namespace PiPDisabler
             public bool DisabledByUs;
         }
 
+        private sealed class SphereState
+        {
+            public bool WasActiveSelf;
+            public bool DisabledByUs;
+        }
+
         private static readonly Dictionary<MeshFilter, MeshState> _tracked =
             new Dictionary<MeshFilter, MeshState>(64);
         private static readonly Dictionary<GameObject, LightFxState> _disabledLightFx =
             new Dictionary<GameObject, LightFxState>(32);
+        private static readonly Dictionary<GameObject, SphereState> _disabledWeaponSpheres =
+            new Dictionary<GameObject, SphereState>(32);
         private static bool _loggedGpuCopy;
 
         public static void ClearPersistentCache()
@@ -344,6 +352,7 @@ namespace PiPDisabler
             }
 
             DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
+            DisableWeaponSphereObjects(scopeRoot, logCandidates);
 
             foreach (var mf in targets)
             {
@@ -486,6 +495,76 @@ namespace PiPDisabler
             }
         }
 
+        private static Transform FindWeaponTransform(Transform scopeRoot)
+        {
+            for (var p = scopeRoot; p != null; p = p.parent)
+            {
+                if (p.name != null && p.name.Equals("weapon", StringComparison.OrdinalIgnoreCase))
+                    return p;
+            }
+            return null;
+        }
+
+        private static void DisableWeaponSphereObjects(Transform scopeRoot, bool logCandidates)
+        {
+            var weaponRoot = FindWeaponTransform(scopeRoot);
+            if (weaponRoot == null) return;
+
+            foreach (var t in weaponRoot.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == null || t.gameObject == null) continue;
+                if (!t.name.Equals("Sphere", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var go = t.gameObject;
+                if (!_disabledWeaponSpheres.TryGetValue(go, out var st))
+                {
+                    st = new SphereState { WasActiveSelf = go.activeSelf, DisabledByUs = false };
+                    _disabledWeaponSpheres[go] = st;
+                }
+
+                if (go.activeSelf)
+                {
+                    go.SetActive(false);
+                    st.DisabledByUs = true;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] disable sphere path='{ScopeHierarchy.GetRelativePath(go.transform, weaponRoot)}' go='{go.name}'");
+                    }
+                }
+            }
+        }
+
+        private static void RestoreWeaponSphereObjectsUnderRoot(Transform weaponRoot)
+        {
+            if (weaponRoot == null || _disabledWeaponSpheres.Count == 0) return;
+
+            var keys = _disabledWeaponSpheres.Keys.ToArray();
+            foreach (var go in keys)
+            {
+                if (go == null)
+                {
+                    _disabledWeaponSpheres.Remove(go);
+                    continue;
+                }
+
+                if (go.transform == null || !go.transform.IsChildOf(weaponRoot))
+                    continue;
+
+                if (_disabledWeaponSpheres.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
+                {
+                    try
+                    {
+                        if (st.WasActiveSelf && !go.activeSelf)
+                            go.SetActive(true);
+                    }
+                    catch { }
+                }
+
+                _disabledWeaponSpheres.Remove(go);
+            }
+        }
+
         private static void DisableLightEffectMeshesForScope(Transform scopeRoot, bool logCandidates)
         {
             var lightFxTargets = ScopeHierarchy.FindLightEffectMeshFilters(scopeRoot);
@@ -583,25 +662,32 @@ namespace PiPDisabler
                 .ToArray();
 
             int lightFxToRestore = _disabledLightFx.Keys.Count(go => go && go.transform && go.transform.IsChildOf(searchRoot));
-            if (toRestore.Length == 0 && lightFxToRestore == 0) return;
+            var weaponRoot = FindWeaponTransform(scopeRoot);
+            int sphereToRestore = weaponRoot != null
+                ? _disabledWeaponSpheres.Keys.Count(go => go && go.transform && go.transform.IsChildOf(weaponRoot))
+                : 0;
+            if (toRestore.Length == 0 && lightFxToRestore == 0 && sphereToRestore == 0) return;
 
             PiPDisablerPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreForScope: meshes={toRestore.Length} lightFx={lightFxToRestore} (searchRoot='{searchRoot.name}')");
+                $"[MeshSurgery] RestoreForScope: meshes={toRestore.Length} lightFx={lightFxToRestore} spheres={sphereToRestore} (searchRoot='{searchRoot.name}')");
 
             foreach (var mf in toRestore)
                 RestoreMeshFilter(mf);
 
             RestoreLightEffectMeshesUnderRoot(searchRoot);
+            if (weaponRoot != null)
+                RestoreWeaponSphereObjectsUnderRoot(weaponRoot);
         }
 
         public static void RestoreAll()
         {
             var keys = _tracked.Keys.ToArray();
             var lightKeys = _disabledLightFx.Keys.ToArray();
-            if (keys.Length == 0 && lightKeys.Length == 0) return;
+            var sphereKeys = _disabledWeaponSpheres.Keys.ToArray();
+            if (keys.Length == 0 && lightKeys.Length == 0 && sphereKeys.Length == 0) return;
 
             PiPDisablerPlugin.LogVerbose(
-                $"[MeshSurgery] RestoreAll: meshes={keys.Length} lightFx={lightKeys.Length}");
+                $"[MeshSurgery] RestoreAll: meshes={keys.Length} lightFx={lightKeys.Length} spheres={sphereKeys.Length}");
 
             foreach (var mf in keys)
                 RestoreMeshFilter(mf);
@@ -618,6 +704,20 @@ namespace PiPDisabler
                     catch { }
                 }
                 _disabledLightFx.Remove(go);
+            }
+
+            foreach (var go in sphereKeys)
+            {
+                if (go != null && _disabledWeaponSpheres.TryGetValue(go, out var st) && st != null && st.DisabledByUs)
+                {
+                    try
+                    {
+                        if (st.WasActiveSelf && !go.activeSelf)
+                            go.SetActive(true);
+                    }
+                    catch { }
+                }
+                _disabledWeaponSpheres.Remove(go);
             }
         }
 
