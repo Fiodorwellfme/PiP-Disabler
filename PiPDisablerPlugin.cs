@@ -72,6 +72,7 @@ namespace PiPDisabler
         // --- 0. Global ---
         internal static ConfigEntry<bool> ModEnabled;
         internal static ConfigEntry<KeyCode> ModToggleKey;
+        internal static ConfigEntry<bool> AutoSwitchReticleRenderForNvg;
 
         // --- General ---
         internal static ConfigEntry<bool> DisablePiP;
@@ -197,6 +198,10 @@ namespace PiPDisabler
                 "cleaned up and the game behaves as if the mod is not installed.");
             ModToggleKey = Config.Bind("0. Global", "ModToggleKey", KeyCode.Backspace,
                 "Toggle key for master mod enable/disable.");
+            AutoSwitchReticleRenderForNvg = Config.Bind("0. Global", "AutoSwitchReticleRenderForNvg", false,
+                "Automatically switch reticle CommandBuffer event based on NVG state.\n" +
+                "ON: use AfterForwardAlpha while NVG are active and AfterEverything otherwise.\n" +
+                "OFF: keep the normal path (AfterForwardAlpha) unless debug override is enabled.");
 
             // --- General ---
             DisablePiP = Config.Bind("1. General", "DisablePiP", true,
@@ -580,6 +585,7 @@ namespace PiPDisabler
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
         internal static bool GetDebugLogCutCandidates() => DebugLogCutCandidates?.Value ?? false;
         internal static bool GetDebugReticleAfterEverything() => DebugReticleAfterEverything?.Value ?? false;
+        internal static bool GetAutoSwitchReticleRenderForNvg() => AutoSwitchReticleRenderForNvg?.Value ?? false;
 
         private void OnDestroy()
         {
