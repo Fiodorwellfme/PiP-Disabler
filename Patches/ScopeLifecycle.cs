@@ -354,6 +354,9 @@ namespace PiPDisabler
 
             // PiP stays disabled via Harmony patches — no per-frame action needed.
 
+            // Continue mesh queue work while scoped to spread heavy cuts across frames.
+            MeshSurgeryManager.Tick();
+
             // Per-frame weapon scale compensation (tracks animated FOV transitions)
             Patches.WeaponScalingPatch.UpdateScale();
 

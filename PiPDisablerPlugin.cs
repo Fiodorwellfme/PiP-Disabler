@@ -91,6 +91,8 @@ namespace PiPDisabler
         internal static ConfigEntry<KeyCode> MeshSurgeryToggleKey;
         internal static ConfigEntry<bool> RestoreOnUnscope;
         internal static ConfigEntry<bool> ClearMeshCacheOnRaidEnd;
+        internal static ConfigEntry<int> MeshWorkMaxMeshesPerFrame;
+        internal static ConfigEntry<float> MeshWorkMaxMillisecondsPerFrame;
         internal static ConfigEntry<float> PlaneOffsetMeters;
         internal static ConfigEntry<string> PlaneNormalAxis;
         internal static ConfigEntry<float> CutRadius;
@@ -324,6 +326,14 @@ namespace PiPDisabler
                 "Restore original meshes when leaving scope.");
             ClearMeshCacheOnRaidEnd = Config.Bind("3. Global Mesh Surgery settings", "ClearMeshCacheOnRaidEnd", true,
                 "Clear persisted mesh-cut cache files when transitioning from raid to out-of-raid.");
+            MeshWorkMaxMeshesPerFrame = Config.Bind("3. Global Mesh Surgery settings", "MeshWorkMaxMeshesPerFrame", 2,
+                new ConfigDescription(
+                    "Maximum number of mesh surgery targets processed per frame while a cut queue is active.",
+                    new AcceptableValueRange<int>(1, 64)));
+            MeshWorkMaxMillisecondsPerFrame = Config.Bind("3. Global Mesh Surgery settings", "MeshWorkMaxMillisecondsPerFrame", 1.5f,
+                new ConfigDescription(
+                    "Maximum CPU time budget (milliseconds) spent processing queued mesh surgery per frame.",
+                    new AcceptableValueRange<float>(0.1f, 20f)));
             PlaneOffsetMeters = Config.Bind("3. Global Mesh Surgery settings", "PlaneOffsetMeters", 0.001f,
                 "Offset applied along plane normal (meters).");
             PlaneNormalAxis = Config.Bind("3. Global Mesh Surgery settings", "PlaneNormalAxis", "-Y",
@@ -596,6 +606,8 @@ namespace PiPDisabler
         internal static bool GetReticleOverlayCamera() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleOverlayCamera : ReticleOverlayCamera.Value;
         internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : RestoreOnUnscope.Value;
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
+        internal static int GetMeshWorkMaxMeshesPerFrame() => Mathf.Max(1, MeshWorkMaxMeshesPerFrame != null ? MeshWorkMaxMeshesPerFrame.Value : 2);
+        internal static float GetMeshWorkMaxMillisecondsPerFrame() => Mathf.Max(0.1f, MeshWorkMaxMillisecondsPerFrame != null ? MeshWorkMaxMillisecondsPerFrame.Value : 1.5f);
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
         internal static bool GetDebugLogCutCandidates() => DebugLogCutCandidates?.Value ?? false;
         internal static bool GetDebugReticleAfterEverything() => DebugReticleAfterEverything?.Value ?? false;
