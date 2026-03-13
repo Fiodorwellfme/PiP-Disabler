@@ -27,6 +27,13 @@ namespace PiPDisabler.Patches
 
             // Weapon scaling (freeze ribcage scale while scoped)
             SafeEnable<WeaponScalingPatch>();
+
+            // Upscaler quality fast-switch (avoid heavy same-family runtime reconfigure)
+            SafeEnable<GClass1074DlssModePatch>();
+            SafeEnable<GClass1074Fsr2AntiAliasingPatch>();
+            SafeEnable<GClass1074Fsr2SetPatch>();
+            SafeEnable<GClass1074Fsr3AntiAliasingPatch>();
+            SafeEnable<GClass1074Fsr3SetPatch>();
         }
 
         private static void SafeEnable<T>() where T : ModulePatch, new()
