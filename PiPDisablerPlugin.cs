@@ -606,6 +606,7 @@ namespace PiPDisabler
             // Plugin unload or game exit — restore everything
             ScopeLifecycle.ForceExit();
             LensTransparency.FullRestoreAll();
+            MeshSurgeryManager.CleanupForShutdown();
             PiPDisabler.RestoreAllCameras();
 
             ModEnabled.SettingChanged -= OnModEnabledChanged;
