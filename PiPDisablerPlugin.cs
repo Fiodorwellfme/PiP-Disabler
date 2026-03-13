@@ -17,9 +17,9 @@ namespace PiPDisabler
         internal static PiPDisablerPlugin Instance;
 
         // --- Logging helpers ---
-        internal static void LogInfo(string msg) { if (Instance != null) Instance.Logger.LogInfo(msg); }
-        internal static void LogWarn(string msg) { if (Instance != null) Instance.Logger.LogWarning(msg); }
-        internal static void LogError(string msg) { if (Instance != null) Instance.Logger.LogError(msg); }
+        internal static void LogInfo(string msg) { if (Instance != null && VerboseLogging != null && VerboseLogging.Value) Instance.Logger.LogInfo(msg); }
+        internal static void LogWarn(string msg) { if (Instance != null && VerboseLogging != null && VerboseLogging.Value) Instance.Logger.LogWarning(msg); }
+        internal static void LogError(string msg) { if (Instance != null && VerboseLogging != null && VerboseLogging.Value) Instance.Logger.LogError(msg); }
         internal static void LogVerbose(string msg)
         {
             if (Instance != null && VerboseLogging != null && VerboseLogging.Value)
@@ -553,12 +553,12 @@ namespace PiPDisabler
             EnableWeaponScaling.SettingChanged += OnWeaponScalingToggled;
             ScopeWhitelistNames.SettingChanged += OnWhitelistSettingsChanged;
 
-            Logger.LogInfo("PiPDisabler v4.7.0 loaded.");
-            Logger.LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
-            Logger.LogInfo($"  WhitelistNames='{ScopeWhitelistNames.Value}'");
-            Logger.LogInfo($"  EnableZoom={EnableZoom.Value}");
-            Logger.LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
-            Logger.LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}  ClearMeshCacheOnRaidEnd={ClearMeshCacheOnRaidEnd.Value}");
+            LogInfo("PiPDisabler v4.7.0 loaded.");
+            LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
+            LogInfo($"  WhitelistNames='{ScopeWhitelistNames.Value}'");
+            LogInfo($"  EnableZoom={EnableZoom.Value}");
+            LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
+            LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}  ClearMeshCacheOnRaidEnd={ClearMeshCacheOnRaidEnd.Value}");
         }
 
         private static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => PerScopeMeshSurgerySettings.GetActiveOverride();
@@ -673,7 +673,7 @@ namespace PiPDisabler
             if (ModToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(ModToggleKey.Value))
             {
                 ModEnabled.Value = !ModEnabled.Value;
-                Logger.LogInfo($"[Global] Mod {(ModEnabled.Value ? "ENABLED" : "DISABLED")}");
+                LogInfo($"[Global] Mod {(ModEnabled.Value ? "ENABLED" : "DISABLED")}");
                 // Cleanup/restore handled by OnModEnabledChanged via SettingChanged
             }
 
@@ -684,7 +684,7 @@ namespace PiPDisabler
             if (InputProxy.GetKeyDown(MeshSurgeryToggleKey.Value))
             {
                 EnableMeshSurgery.Value = !EnableMeshSurgery.Value;
-                Logger.LogInfo($"Mesh surgery toggled: {EnableMeshSurgery.Value}");
+                LogInfo($"Mesh surgery toggled: {EnableMeshSurgery.Value}");
                 if (!EnableMeshSurgery.Value)
                     MeshSurgeryManager.RestoreAll();
             }
@@ -692,7 +692,7 @@ namespace PiPDisabler
             if (InputProxy.GetKeyDown(DisablePiPToggleKey.Value))
             {
                 DisablePiP.Value = !DisablePiP.Value;
-                Logger.LogInfo($"Disable PiP toggled: {DisablePiP.Value}");
+                LogInfo($"Disable PiP toggled: {DisablePiP.Value}");
                 if (!DisablePiP.Value)
                     PiPDisabler.RestoreAllCameras();
             }
@@ -707,12 +707,12 @@ namespace PiPDisabler
                 string scopeKey = ScopeLifecycle.GetActiveScopeWhitelistKey();
                 if (string.IsNullOrWhiteSpace(scopeKey))
                 {
-                    Logger.LogWarning("[CustomMeshSettings] Save ignored: no active scope key");
+                    LogWarn("[CustomMeshSettings] Save ignored: no active scope key");
                 }
                 else
                 {
                     bool saved = PerScopeMeshSurgerySettings.SaveCustomSettingsForScope(scopeKey);
-                    Logger.LogInfo(saved
+                    LogInfo(saved
                         ? $"[CustomMeshSettings] Saved custom settings for scope key '{scopeKey}'"
                         : "[CustomMeshSettings] Save failed");
                 }
@@ -723,12 +723,12 @@ namespace PiPDisabler
                 string scopeKey = ScopeLifecycle.GetActiveScopeWhitelistKey();
                 if (string.IsNullOrWhiteSpace(scopeKey))
                 {
-                    Logger.LogWarning("[CustomMeshSettings] Delete ignored: no active scope key");
+                    LogWarn("[CustomMeshSettings] Delete ignored: no active scope key");
                 }
                 else
                 {
                     bool removed = PerScopeMeshSurgerySettings.DeleteCustomSettingsForScope(scopeKey);
-                    Logger.LogInfo(removed
+                    LogInfo(removed
                         ? $"[CustomMeshSettings] Deleted custom settings for scope key '{scopeKey}'"
                         : $"[CustomMeshSettings] No custom settings existed for scope key '{scopeKey}'");
                 }
@@ -737,7 +737,7 @@ namespace PiPDisabler
             if (InputProxy.GetKeyDown(LensesTransparentToggleKey.Value))
             {
                 MakeLensesTransparent.Value = !MakeLensesTransparent.Value;
-                Logger.LogInfo($"Lens transparency toggled: {MakeLensesTransparent.Value}");
+                LogInfo($"Lens transparency toggled: {MakeLensesTransparent.Value}");
                 if (!MakeLensesTransparent.Value)
                     LensTransparency.RestoreAll();
             }
@@ -745,7 +745,7 @@ namespace PiPDisabler
             if (ZoomToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(ZoomToggleKey.Value))
             {
                 EnableZoom.Value = !EnableZoom.Value;
-                Logger.LogInfo($"Zoom toggled: {EnableZoom.Value}");
+                LogInfo($"Zoom toggled: {EnableZoom.Value}");
                 if (!EnableZoom.Value)
                     ZoomController.Restore();
             }
