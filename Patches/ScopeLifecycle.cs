@@ -187,7 +187,7 @@ namespace PiPDisabler
                 if (bypassForMode)
                 {
                     _modBypassedForCurrentScope = true;
-                    ApplyBypassState(os, minFov, reason: "mode switch");
+                    ApplyBypassState(os, minFov, reason: "mode switch", restoreFov: true);
                     return;
                 }
 
@@ -705,7 +705,7 @@ namespace PiPDisabler
 
         // ===== State transitions =====
 
-        private static void ApplyBypassState(OpticSight os, float minFov, string reason)
+        private static void ApplyBypassState(OpticSight os, float minFov, string reason, bool restoreFov)
         {
             string opticName = os != null ? os.name : "null";
             PiPDisablerPlugin.LogInfo(
@@ -715,7 +715,11 @@ namespace PiPDisabler
 
             // Ensure this path behaves like a full unscope cleanup so non-whitelisted
             // optics are truly vanilla while still staying in ADS.
-            RestoreFov();
+            // On fresh scope enter, forcing RestoreFov() can stomp EFT's own optic zoom
+            // for bypassed scopes until the next zoom/mode event. Let vanilla drive FOV
+            // immediately on enter, but still restore when switching from a modded mode.
+            if (restoreFov)
+                RestoreFov();
             Patches.WeaponScalingPatch.RestoreScale();
             ZoomController.Restore();
             ZoomController.ResetScrollZoom();
@@ -758,7 +762,7 @@ namespace PiPDisabler
             _modBypassedForCurrentScope = ShouldBypassForCurrentOptic(os, minFov);
             if (_modBypassedForCurrentScope)
             {
-                ApplyBypassState(os, minFov, reason: "scope enter");
+                ApplyBypassState(os, minFov, reason: "scope enter", restoreFov: false);
                 return;
             }
 
