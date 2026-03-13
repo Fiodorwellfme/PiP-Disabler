@@ -109,7 +109,9 @@ namespace PiPDisabler
             // Increase cull distances proportionally so objects stay visible when zoomed
             if (_savedCullDistances != null)
             {
-                float manualCullMultiplier = PiPDisablerPlugin.GetManualCullingMultiplierForCurrentMap();
+                float manualCullMultiplier = PiPDisablerPlugin.ManualCullingMultiplier != null
+                    ? PiPDisablerPlugin.ManualCullingMultiplier.Value
+                    : 0f;
                 float cullingMultiplier = manualCullMultiplier > 0f
                     ? manualCullMultiplier
                     : Mathf.Max(magnification, 1f);

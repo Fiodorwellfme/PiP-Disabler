@@ -176,23 +176,7 @@ namespace PiPDisabler
         internal static ConfigEntry<float> ManualLodBias;
         internal static ConfigEntry<int> ManualMaximumLodLevel;
         internal static ConfigEntry<float> ManualCullingMultiplier;
-        internal static readonly string[] SupportedLocationIds =
-        {
-            "Woods",
-            "factory4_day",
-            "factory4_night",
-            "bigmap",
-            "Shoreline",
-            "Interchange",
-            "RezervBase",
-            "laboratory",
-            "Lighthouse",
-            "TarkovStreets",
-            "Sandbox",
-            "Sandbox_high"
-        };
         internal static Dictionary<string, ConfigEntry<float>> MapManualLodBias;
-        internal static Dictionary<string, ConfigEntry<float>> MapManualCullingMultiplier;
 
         // --- 4. Zeroing ---
         internal static ConfigEntry<bool> EnableZeroing;
@@ -308,23 +292,17 @@ namespace PiPDisabler
                     ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
                     new AcceptableValueRange<float>(0f, 20f)));
             MapManualLodBias = new Dictionary<string, ConfigEntry<float>>(StringComparer.OrdinalIgnoreCase);
-            MapManualCullingMultiplier = new Dictionary<string, ConfigEntry<float>>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < SupportedLocationIds.Length; i++)
-            {
-                string locationId = SupportedLocationIds[i];
-                MapManualLodBias[locationId] = Config.Bind("2. Zoom Per-Map", $"ManualLodBias_{locationId}", ManualLodBias.Value,
-                    new ConfigDescription(
-                        $"Manual LOD bias override while scoped on map '{locationId}'.\n" +
-                        "0 = auto (baseLodBias * magnification).\n" +
-                        ">0 = force this exact value (e.g. 4.0).",
-                        new AcceptableValueRange<float>(0f, 20f)));
-                MapManualCullingMultiplier[locationId] = Config.Bind("2. Zoom Per-Map", $"ManualCullingMultiplier_{locationId}", ManualCullingMultiplier.Value,
-                    new ConfigDescription(
-                        $"Manual culling multiplier override while scoped on map '{locationId}'.\n" +
-                        "0 = auto (use magnification).\n" +
-                        ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
-                        new AcceptableValueRange<float>(0f, 20f)));
-            }
+
+            BindPerMapLodBias("Woods", "Woods", "Woods");
+            BindPerMapLodBias("Factory", "Factory", "factory4_day", "factory4_night");
+            BindPerMapLodBias("Customs", "Customs", "bigmap");
+            BindPerMapLodBias("Shoreline", "Shoreline", "Shoreline");
+            BindPerMapLodBias("Interchange", "Interchange", "Interchange");
+            BindPerMapLodBias("Reserve", "Reserve", "RezervBase");
+            BindPerMapLodBias("TheLab", "The Lab", "laboratory");
+            BindPerMapLodBias("Lighthouse", "Lighthouse", "Lighthouse");
+            BindPerMapLodBias("StreetsOfTarkov", "Streets of Tarkov", "TarkovStreets");
+            BindPerMapLodBias("GroundZero", "Ground Zero", "Sandbox", "Sandbox_high");
             ZoomToggleKey = Config.Bind("2. Zoom", "ZoomToggleKey", KeyCode.None,
                 "Toggle key for zoom (None = always on when EnableZoom is true).");
 
@@ -824,18 +802,25 @@ namespace PiPDisabler
             return fallback;
         }
 
-        internal static float GetManualCullingMultiplierForCurrentMap()
+        private void BindPerMapLodBias(string configKeySuffix, string mapDisplayName, params string[] locationIds)
         {
-            float fallback = ManualCullingMultiplier != null ? ManualCullingMultiplier.Value : 0f;
-            string locationId = GetCurrentLocationId();
-            if (string.IsNullOrEmpty(locationId) || MapManualCullingMultiplier == null)
-                return fallback;
+            if (locationIds == null || locationIds.Length == 0 || string.IsNullOrWhiteSpace(configKeySuffix))
+                return;
 
-            ConfigEntry<float> entry;
-            if (MapManualCullingMultiplier.TryGetValue(locationId, out entry) && entry != null)
-                return entry.Value;
+            var entry = Config.Bind("2. Zoom Per-Map", $"ManualLodBias_{configKeySuffix}", ManualLodBias.Value,
+                new ConfigDescription(
+                    $"Manual LOD bias override while scoped on map '{mapDisplayName}'.\n" +
+                    "0 = auto (baseLodBias * magnification).\n" +
+                    ">0 = force this exact value (e.g. 4.0).",
+                    new AcceptableValueRange<float>(0f, 20f)));
 
-            return fallback;
+            for (int i = 0; i < locationIds.Length; i++)
+            {
+                string locationId = locationIds[i];
+                if (string.IsNullOrWhiteSpace(locationId))
+                    continue;
+                MapManualLodBias[locationId] = entry;
+            }
         }
     }
 
