@@ -212,10 +212,8 @@ namespace PiPDisabler
             AutoDisableForVariableScopes = Config.Bind("1. General", "AutoDisableForVariableScopes", true,
                 "Automatically disable all mod effects while scoped with variable magnification optics (IsAdjustableOptic=true).\n" +
                 "Also bypasses thermal/night-vision scopes detected via ScopeData.ThermalVisionData or NightVisionData.");
-            AutoBypassNameContains = Config.Bind("1. General", "AutoBypassNameContains", "npz",
-                "Comma-separated list of substrings. Any scope whose object name or scope key contains one of these " +
-                "(case-insensitive) is automatically bypassed, the same way variable/NV scopes are.\n" +
-                "Default 'npz' covers NPZ passive night-vision scopes (PAG-17, etc.) that lack a NightVisionData component.");
+            AutoBypassNameContains = Config.Bind("1. General", "AutoBypassNameContains", "npz, PU, vomz",
+                "Comma-separated list of substrings. Any scope whose object name or scope key contains one of these ");
             ScopeWhitelistNames = Config.Bind("1. General", "ScopeWhitelistNames", "",
                 "Comma/semicolon/newline separated list of allowed scope keys.\n" +
                 "Primary key is derived from the object under mod_scope that does not contain mount (case-insensitive).\n" +
