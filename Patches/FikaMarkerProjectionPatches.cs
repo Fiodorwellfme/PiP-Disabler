@@ -85,7 +85,7 @@ namespace PiPDisabler.Patches
 
     internal sealed class FikaCoopPingsMarkerProjectionPatch : FikaMarkerProjectionPatchBase
     {
-        internal FikaCoopPingsMarkerProjectionPatch()
+        public FikaCoopPingsMarkerProjectionPatch()
             : base(
                 new[]
                 {
@@ -106,7 +106,7 @@ namespace PiPDisabler.Patches
 
     internal sealed class FikaNamePlatesMarkerProjectionPatch : FikaMarkerProjectionPatchBase
     {
-        internal FikaNamePlatesMarkerProjectionPatch()
+        public FikaNamePlatesMarkerProjectionPatch()
             : base(
                 new[]
                 {
@@ -127,7 +127,7 @@ namespace PiPDisabler.Patches
 
     internal sealed class FikaHealthBarsMarkerProjectionPatch : FikaMarkerProjectionPatchBase
     {
-        internal FikaHealthBarsMarkerProjectionPatch()
+        public FikaHealthBarsMarkerProjectionPatch()
             : base(
                 new[]
                 {
