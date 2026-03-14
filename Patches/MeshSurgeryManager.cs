@@ -17,6 +17,7 @@ namespace PiPDisabler
         private sealed class CutMeshEntry
         {
             public MeshFilter Filter;
+            public SkinnedMeshRenderer SkinnedRenderer;
             public Mesh OriginalMesh;
             public Mesh CutMesh;
             public bool Applied;
@@ -218,13 +219,13 @@ namespace PiPDisabler
                 }
             }
 
-            public static string BuildKey(Transform scopeRoot, Transform activeMode, MeshFilter mf, Mesh originalAsset, MeshPlaneCutter.KeepSide keepSide, bool isCylinder)
+            public static string BuildKey(Transform scopeRoot, Transform activeMode, Transform targetTransform, Mesh originalAsset, MeshPlaneCutter.KeepSide keepSide, bool isCylinder)
             {
                 var sb = new StringBuilder(512);
                 sb.Append("v3|");
                 sb.Append(scopeRoot != null ? scopeRoot.name : "scope").Append('|');
                 sb.Append(activeMode != null ? activeMode.name : "mode").Append('|');
-                sb.Append(GetRelativePath(scopeRoot, mf != null ? mf.transform : null)).Append('|');
+                sb.Append(GetRelativePath(scopeRoot, targetTransform)).Append('|');
                 sb.Append(originalAsset != null ? originalAsset.name : "null").Append('|');
                 sb.Append(originalAsset != null ? originalAsset.vertexCount : 0).Append('|');
                 sb.Append(originalAsset != null ? originalAsset.subMeshCount : 0).Append('|');
@@ -467,29 +468,29 @@ namespace PiPDisabler
             cache.Entries.Clear();
 
             var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
+            var handSkinnedTargets = ScopeHierarchy.FindPlayerHandSkinnedMeshRenderers(scopeRoot);
             float cutRadius = PiPDisablerPlugin.GetCutRadius();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
             DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
             DisableWeaponSphereObjects(scopeRoot, logCandidates);
 
-            foreach (var mf in targets)
+            void ProcessTarget(Transform targetTransform, Renderer renderer, Mesh originalAsset,
+                Action<Mesh> assignMesh, MeshFilter mf = null, SkinnedMeshRenderer smr = null)
             {
-                if (!mf || !mf.sharedMesh) continue;
+                if (targetTransform == null || originalAsset == null || assignMesh == null)
+                    return;
 
-                var renderer = mf.GetComponent<Renderer>();
-                var boundsCenter = renderer != null ? renderer.bounds.center : mf.transform.position;
+                var boundsCenter = renderer != null ? renderer.bounds.center : targetTransform.position;
                 float distFromPlane = Vector3.Distance(boundsCenter, planePoint);
 
                 if (cutRadius > 0f && distFromPlane > cutRadius)
-                    continue;
-
-                Mesh originalAsset = mf.sharedMesh;
+                    return;
 
                 try
                 {
                     bool isCylinder = PiPDisablerPlugin.GetCutMode() == "Cylinder";
-                    string cacheKey = MeshCutCache.BuildKey(scopeRoot, activeMode, mf, originalAsset, keepSide, isCylinder);
+                    string cacheKey = MeshCutCache.BuildKey(scopeRoot, activeMode, targetTransform, originalAsset, keepSide, isCylinder);
 
                     Mesh readable;
                     if (MeshCutCache.TryLoad(cacheKey, out var cachedMesh))
@@ -501,7 +502,7 @@ namespace PiPDisabler
                     {
                         readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
                         if (readable == null)
-                            continue;
+                            return;
 
                         if (!_loggedGpuCopy)
                         {
@@ -525,7 +526,7 @@ namespace PiPDisabler
                             float p4 = PiPDisablerPlugin.GetPlane4Position();
                             float r4 = PiPDisablerPlugin.GetPlane4Radius();
 
-                            ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
+                            ok = MeshPlaneCutter.CutMeshFrustum(readable, targetTransform,
                                 planePoint, planeNormal, nearR, r4, startOff, cutLen,
                                 keepInside: false, midRadius: r2, midPosition: p2,
                                 nearPreserveDepth: preserve,
@@ -533,7 +534,7 @@ namespace PiPDisabler
                         }
                         else
                         {
-                            ok = MeshPlaneCutter.CutMeshDirect(readable, mf.transform,
+                            ok = MeshPlaneCutter.CutMeshDirect(readable, targetTransform,
                                 planePoint, planeNormal, keepSide);
                         }
 
@@ -553,10 +554,11 @@ namespace PiPDisabler
                         MeshCutCache.Save(cacheKey, readable);
                     }
 
-                    mf.sharedMesh = readable;
+                    assignMesh(readable);
                     cache.Entries.Add(new CutMeshEntry
                     {
                         Filter = mf,
+                        SkinnedRenderer = smr,
                         OriginalMesh = originalAsset,
                         CutMesh = readable,
                         Applied = true
@@ -567,6 +569,20 @@ namespace PiPDisabler
                     PiPDisablerPlugin.LogError(
                         $"[MeshSurgery] Failed on '{originalAsset.name}': {ex.Message}");
                 }
+            }
+
+            foreach (var mf in targets)
+            {
+                if (!mf || !mf.sharedMesh) continue;
+                ProcessTarget(mf.transform, mf.GetComponent<Renderer>(), mf.sharedMesh,
+                    mesh => mf.sharedMesh = mesh, mf: mf);
+            }
+
+            foreach (var smr in handSkinnedTargets)
+            {
+                if (!smr || !smr.sharedMesh) continue;
+                ProcessTarget(smr.transform, smr, smr.sharedMesh,
+                    mesh => smr.sharedMesh = mesh, smr: smr);
             }
 
             cache.Built = true;
@@ -582,10 +598,16 @@ namespace PiPDisabler
 
             foreach (var entry in cache.Entries)
             {
-                if (entry == null || entry.Filter == null || entry.CutMesh == null)
+                if (entry == null || entry.CutMesh == null)
                     continue;
 
-                entry.Filter.sharedMesh = entry.CutMesh;
+                if (entry.Filter != null)
+                    entry.Filter.sharedMesh = entry.CutMesh;
+                else if (entry.SkinnedRenderer != null)
+                    entry.SkinnedRenderer.sharedMesh = entry.CutMesh;
+                else
+                    continue;
+
                 entry.Applied = true;
             }
         }
@@ -596,14 +618,19 @@ namespace PiPDisabler
 
             foreach (var entry in cache.Entries)
             {
-                if (entry == null || entry.Filter == null)
+                if (entry == null)
                     continue;
 
                 if (!entry.Applied)
                     continue;
 
                 if (entry.OriginalMesh != null)
-                    entry.Filter.sharedMesh = entry.OriginalMesh;
+                {
+                    if (entry.Filter != null)
+                        entry.Filter.sharedMesh = entry.OriginalMesh;
+                    else if (entry.SkinnedRenderer != null)
+                        entry.SkinnedRenderer.sharedMesh = entry.OriginalMesh;
+                }
 
                 entry.Applied = false;
             }
@@ -1408,6 +1435,31 @@ namespace PiPDisabler
                 PiPDisablerPlugin.LogVerbose(
                     $"[ScopeHierarchy] Added {added} player hand mesh(es) from '{playerMeshRoot.name}' to mesh surgery targets.");
             }
+        }
+
+        public static List<SkinnedMeshRenderer> FindPlayerHandSkinnedMeshRenderers(Transform scopeRoot)
+        {
+            var result = new List<SkinnedMeshRenderer>(8);
+            if (scopeRoot == null)
+                return result;
+
+            Transform playerMeshRoot = FindChildByPath(scopeRoot.root, "Player/Mesh");
+            if (playerMeshRoot == null)
+                return result;
+
+            foreach (var smr in playerMeshRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (!smr || !smr.sharedMesh)
+                    continue;
+
+                string path = GetRelativePath(smr.transform, playerMeshRoot);
+                if (!ContainsHandKeyword(path) && !ContainsHandKeyword(smr.gameObject.name))
+                    continue;
+
+                result.Add(smr);
+            }
+
+            return result;
         }
 
         private static bool ContainsHandKeyword(string value)
