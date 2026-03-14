@@ -1060,6 +1060,36 @@ namespace PiPDisabler
             return null;
         }
 
+        public static Transform FindChildByPath(Transform root, string relativePath)
+        {
+            if (root == null || string.IsNullOrWhiteSpace(relativePath))
+                return null;
+
+            var parts = relativePath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            var current = root;
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string seg = parts[i];
+                Transform next = null;
+                for (int c = 0; c < current.childCount; c++)
+                {
+                    var child = current.GetChild(c);
+                    if (child != null && string.Equals(child.name, seg, StringComparison.OrdinalIgnoreCase))
+                    {
+                        next = child;
+                        break;
+                    }
+                }
+
+                if (next == null)
+                    return null;
+
+                current = next;
+            }
+
+            return current;
+        }
+
         public static string GetRelativePath(Transform t, Transform root)
         {
             if (t == null) return "null";
@@ -1295,7 +1325,8 @@ namespace PiPDisabler
                 }
             }
 
-            var result = new List<MeshFilter>(64);
+            var result = new List<MeshFilter>(96);
+            var seen = new HashSet<int>();
             int skippedMode = 0, skippedOther = 0, skippedLightFx = 0;
             int inspected = 0;
 
@@ -1314,7 +1345,8 @@ namespace PiPDisabler
                 if (logCandidates)
                     relSearchPath = GetRelativePath(mf.transform, searchRoot);
 
-                result.Add(mf);
+                if (seen.Add(mf.GetInstanceID()))
+                    result.Add(mf);
 
                 if (logCandidates)
                 {
@@ -1322,6 +1354,8 @@ namespace PiPDisabler
                         $"[MeshSurgery][DebugCandidates] cuttable path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy}");
                 }
             }
+
+            AddPlayerHandMeshes(scopeRoot, result, seen, logCandidates);
 
             PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
@@ -1334,6 +1368,55 @@ namespace PiPDisabler
             }
 
             return result;
+        }
+
+        private static void AddPlayerHandMeshes(Transform scopeRoot, List<MeshFilter> result,
+            HashSet<int> seen, bool logCandidates)
+        {
+            if (scopeRoot == null || result == null || seen == null)
+                return;
+
+            Transform playerMeshRoot = FindChildByPath(scopeRoot.root, "Player/Mesh");
+            if (playerMeshRoot == null)
+                return;
+
+            int added = 0;
+            foreach (var mf in playerMeshRoot.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (!mf || !mf.sharedMesh)
+                    continue;
+
+                string path = GetRelativePath(mf.transform, playerMeshRoot);
+                if (!ContainsHandKeyword(path) && !ContainsHandKeyword(mf.gameObject.name))
+                    continue;
+
+                if (!seen.Add(mf.GetInstanceID()))
+                    continue;
+
+                result.Add(mf);
+                added++;
+
+                if (logCandidates)
+                {
+                    PiPDisablerPlugin.LogInfo(
+                        $"[MeshSurgery][DebugCandidates] added-player-hand path='Player/Mesh/{path}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy}");
+                }
+            }
+
+            if (added > 0)
+            {
+                PiPDisablerPlugin.LogVerbose(
+                    $"[ScopeHierarchy] Added {added} player hand mesh(es) from '{playerMeshRoot.name}' to mesh surgery targets.");
+            }
+        }
+
+        private static bool ContainsHandKeyword(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return false;
+
+            string lower = value.ToLowerInvariant();
+            return lower.Contains("hand") || lower.Contains("hands");
         }
 
         /// <summary>
