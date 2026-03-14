@@ -61,6 +61,18 @@ namespace PiPDisabler
         public static OpticSight ActiveOptic => _activeOptic;
 
         /// <summary>
+        /// Compatibility accessor for systems that need the exact same bypass
+        /// decision used by PiP Disabler scope lifecycle.
+        /// </summary>
+        internal static bool IsCurrentScopeBypassedForCompat(Player player, ProceduralWeaponAnimation pwa, object currentScope)
+        {
+            if (player == null || pwa == null || currentScope == null)
+                return false;
+
+            return _modBypassedForCurrentScope;
+        }
+
+        /// <summary>
         /// Shared optic classification helper for other systems that must make
         /// early decisions before scope state is fully transitioned.
         /// </summary>
