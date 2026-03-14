@@ -8,140 +8,106 @@ using SPT.Reflection.Patching;
 
 namespace PiPDisabler.Patches
 {
-    internal abstract class FikaMarkerProjectionPatchBase : ModulePatch
+    internal abstract class FikaUseOpticZoomBoolPatchBase : ModulePatch
     {
-        private readonly string[] _candidateTypeNames;
-        private readonly string[] _candidateMethodNames;
+        private readonly string _typeName;
+        private readonly string _methodName;
 
-        protected FikaMarkerProjectionPatchBase(string[] candidateTypeNames, string[] candidateMethodNames)
+        protected FikaUseOpticZoomBoolPatchBase(string typeName, string methodName)
         {
-            _candidateTypeNames = candidateTypeNames;
-            _candidateMethodNames = candidateMethodNames;
+            _typeName = typeName;
+            _methodName = methodName;
         }
 
         protected override MethodBase GetTargetMethod()
         {
-            for (int t = 0; t < _candidateTypeNames.Length; t++)
-            {
-                var type = AccessTools.TypeByName(_candidateTypeNames[t]);
-                if (type == null) continue;
+            var type = AccessTools.TypeByName(_typeName);
+            if (type == null) return null;
 
-                for (int m = 0; m < _candidateMethodNames.Length; m++)
+            return AccessTools.Method(type, _methodName);
+        }
+
+        [PatchTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
+        {
+            var adjust = AccessTools.Method(typeof(FikaCompat), nameof(FikaCompat.AdjustUseOpticCamera));
+            var settingGetterName = GetSettingGetterName(__originalMethod);
+            bool shouldWrapNextConfigValue = false;
+
+            foreach (var code in instructions)
+            {
+                if (CallsSettingGetter(code, settingGetterName))
                 {
-                    var method = AccessTools.Method(type, _candidateMethodNames[m]);
-                    if (method != null && MethodCallsProjectToCanvas(method))
-                        return method;
+                    shouldWrapNextConfigValue = true;
+                    yield return code;
+                    continue;
                 }
 
-                var methods = AccessTools.GetDeclaredMethods(type);
-                for (int i = 0; i < methods.Count; i++)
+                yield return code;
+
+                if (shouldWrapNextConfigValue && IsBooleanConfigValueGetter(code))
                 {
-                    if (MethodCallsProjectToCanvas(methods[i]))
-                        return methods[i];
+                    yield return new CodeInstruction(OpCodes.Call, adjust);
+                    shouldWrapNextConfigValue = false;
                 }
             }
+        }
+
+        private static string GetSettingGetterName(MethodBase method)
+        {
+            if (method?.DeclaringType == null)
+                return null;
+
+            var methodId = method.DeclaringType.FullName + "." + method.Name;
+            if (string.Equals(methodId, "Fika.Core.Main.Factories.PingFactory+AbstractPing.Update", StringComparison.Ordinal))
+                return "get_PingUseOpticZoom";
+
+            if (string.Equals(methodId, "Fika.Core.Main.Components.FikaHealthBar.UpdateScreenSpacePosition", StringComparison.Ordinal))
+                return "get_NamePlateUseOpticZoom";
 
             return null;
         }
 
-        [PatchTranspiler]
-        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        private static bool CallsSettingGetter(CodeInstruction code, string getterName)
         {
-            var adjustMethod = AccessTools.Method(typeof(FikaCompat), nameof(FikaCompat.AdjustUseOpticCamera));
-            foreach (var code in instructions)
-            {
-                if (IsProjectToCanvasCall(code))
-                    yield return new CodeInstruction(OpCodes.Call, adjustMethod);
+            if (code == null || string.IsNullOrEmpty(getterName)) return false;
+            if (code.opcode != OpCodes.Call && code.opcode != OpCodes.Callvirt) return false;
 
-                yield return code;
-            }
-        }
-
-        private static bool MethodCallsProjectToCanvas(MethodBase method)
-        {
+            var method = code.operand as MethodInfo;
             if (method == null) return false;
 
-            var body = method.GetMethodBody();
-            return body != null;
+            return string.Equals(method.Name, getterName, StringComparison.Ordinal);
         }
 
-        private static bool IsProjectToCanvasCall(CodeInstruction instruction)
+        private static bool IsBooleanConfigValueGetter(CodeInstruction code)
         {
-            if (instruction == null) return false;
-            if (instruction.opcode != OpCodes.Call && instruction.opcode != OpCodes.Callvirt) return false;
+            if (code == null) return false;
+            if (code.opcode != OpCodes.Call && code.opcode != OpCodes.Callvirt) return false;
 
-            var method = instruction.operand as MethodInfo;
+            var method = code.operand as MethodInfo;
             if (method == null) return false;
-            if (!string.Equals(method.Name, "ProjectToCanvas", StringComparison.Ordinal)) return false;
-            if (method.DeclaringType == null) return false;
-            if (!method.DeclaringType.FullName.Contains("WorldToScreen")) return false;
+            if (!string.Equals(method.Name, "get_Value", StringComparison.Ordinal)) return false;
 
-            var parameters = method.GetParameters();
-            if (parameters.Length == 0) return false;
-
-            return parameters[parameters.Length - 1].ParameterType == typeof(bool);
+            return method.ReturnType == typeof(bool);
         }
     }
 
-    internal sealed class FikaCoopPingsMarkerProjectionPatch : FikaMarkerProjectionPatchBase
+    internal sealed class FikaAbstractPingUpdatePatch : FikaUseOpticZoomBoolPatchBase
     {
-        public FikaCoopPingsMarkerProjectionPatch()
+        public FikaAbstractPingUpdatePatch()
             : base(
-                new[]
-                {
-                    "Fika.Core.Coop.Pings.CoopPingManager",
-                    "Fika.Core.Coop.Pings.CoopPingsManager",
-                    "Fika.Core.Coop.Components.CoopPingComponent"
-                },
-                new[]
-                {
-                    "Update",
-                    "LateUpdate",
-                    "UpdateMarkers",
-                    "UpdatePingMarkers"
-                })
+                "Fika.Core.Main.Factories.PingFactory+AbstractPing",
+                "Update")
         {
         }
     }
 
-    internal sealed class FikaNamePlatesMarkerProjectionPatch : FikaMarkerProjectionPatchBase
+    internal sealed class FikaHealthBarUpdateScreenSpacePositionPatch : FikaUseOpticZoomBoolPatchBase
     {
-        public FikaNamePlatesMarkerProjectionPatch()
+        public FikaHealthBarUpdateScreenSpacePositionPatch()
             : base(
-                new[]
-                {
-                    "Fika.Core.Coop.Players.NamePlates.CoopNamePlatesManager",
-                    "Fika.Core.Coop.Players.NamePlates.NamePlateManager",
-                    "Fika.Core.Coop.Components.NamePlateComponent"
-                },
-                new[]
-                {
-                    "Update",
-                    "LateUpdate",
-                    "UpdateNamePlates",
-                    "UpdateMarker"
-                })
-        {
-        }
-    }
-
-    internal sealed class FikaHealthBarsMarkerProjectionPatch : FikaMarkerProjectionPatchBase
-    {
-        public FikaHealthBarsMarkerProjectionPatch()
-            : base(
-                new[]
-                {
-                    "Fika.Core.Coop.Players.HealthBars.CoopHealthBarManager",
-                    "Fika.Core.Coop.Players.HealthBars.HealthBarManager",
-                    "Fika.Core.Coop.Components.HealthBarComponent"
-                },
-                new[]
-                {
-                    "Update",
-                    "LateUpdate",
-                    "UpdateHealthBars",
-                    "UpdateMarker"
-                })
+                "Fika.Core.Main.Components.FikaHealthBar",
+                "UpdateScreenSpacePosition")
         {
         }
     }

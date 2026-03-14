@@ -29,9 +29,8 @@ namespace PiPDisabler.Patches
             SafeEnable<WeaponScalingPatch>();
 
             // Optional Fika marker projection compatibility (soft dependency).
-            SafeEnable<FikaCoopPingsMarkerProjectionPatch>();
-            SafeEnable<FikaNamePlatesMarkerProjectionPatch>();
-            SafeEnable<FikaHealthBarsMarkerProjectionPatch>();
+            SafeEnable<FikaAbstractPingUpdatePatch>();
+            SafeEnable<FikaHealthBarUpdateScreenSpacePositionPatch>();
         }
 
         private static void SafeEnable<T>() where T : ModulePatch, new()
