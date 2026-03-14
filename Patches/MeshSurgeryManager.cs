@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using EFT;
@@ -55,173 +54,53 @@ namespace PiPDisabler
         private static Delegate _removeItemHandler;
 
 
-        public static void ClearPersistentCache()
+        public static void ClearRuntimeCache()
         {
-            string cacheDir = PiPDisablerPlugin.GetMeshCutCacheDirectory();
-            if (!Directory.Exists(cacheDir)) return;
-
-            try
-            {
-                int removed = 0;
-                foreach (string cacheFile in Directory.GetFiles(cacheDir, "*.bin"))
-                {
-                    File.Delete(cacheFile);
-                    removed++;
-                }
-
-                PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery] Cleared persistent mesh cache: removed {removed} file(s).");
-            }
-            catch (Exception ex)
-            {
-                PiPDisablerPlugin.LogWarn(
-                    $"[MeshSurgery] Failed to clear persistent cache: {ex.Message}");
-            }
+            MeshCutCache.Clear();
         }
 
         private static class MeshCutCache
         {
-            private const int Version = 1;
+            private static readonly Dictionary<string, Mesh> _runtimeCache =
+                new Dictionary<string, Mesh>(256);
 
             public static bool TryLoad(string key, out Mesh mesh)
             {
                 mesh = null;
-                string path = GetPath(key);
-                if (!File.Exists(path)) return false;
-
-                try
-                {
-                    using (var fs = File.OpenRead(path))
-                    using (var br = new BinaryReader(fs))
-                    {
-                        if (br.ReadInt32() != Version) return false;
-
-                        int vertexCount = br.ReadInt32();
-                        if (vertexCount < 0) return false;
-
-                        var vertices = new Vector3[vertexCount];
-                        for (int i = 0; i < vertexCount; i++)
-                            vertices[i] = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
-
-                        var normals = new Vector3[vertexCount];
-                        for (int i = 0; i < vertexCount; i++)
-                            normals[i] = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
-
-                        var tangents = new Vector4[vertexCount];
-                        for (int i = 0; i < vertexCount; i++)
-                            tangents[i] = new Vector4(br.ReadSingle(), br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
-
-                        var uv = new Vector2[vertexCount];
-                        for (int i = 0; i < vertexCount; i++)
-                            uv[i] = new Vector2(br.ReadSingle(), br.ReadSingle());
-
-                        var indexFormat = (UnityEngine.Rendering.IndexFormat)br.ReadInt32();
-                        int subMeshCount = br.ReadInt32();
-                        if (subMeshCount <= 0) return false;
-
-                        var cachedMesh = new Mesh();
-                        cachedMesh.name = "mesh_cut_cached";
-                        cachedMesh.indexFormat = indexFormat;
-                        cachedMesh.vertices = vertices;
-                        cachedMesh.normals = normals;
-                        cachedMesh.tangents = tangents;
-                        cachedMesh.uv = uv;
-                        cachedMesh.subMeshCount = subMeshCount;
-
-                        for (int s = 0; s < subMeshCount; s++)
-                        {
-                            int triCount = br.ReadInt32();
-                            if (triCount < 0) return false;
-
-                            var tris = new int[triCount];
-                            for (int t = 0; t < triCount; t++)
-                                tris[t] = br.ReadInt32();
-                            cachedMesh.SetTriangles(tris, s, true);
-                        }
-
-                        cachedMesh.RecalculateBounds();
-                        mesh = cachedMesh;
-                        return true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Cache load failed '{path}': {ex.Message}");
+                if (!_runtimeCache.TryGetValue(key, out var cachedMesh) || cachedMesh == null)
                     return false;
-                }
+
+                mesh = UnityEngine.Object.Instantiate(cachedMesh);
+                mesh.name = "mesh_cut_cached";
+                return true;
             }
 
             public static void Save(string key, Mesh mesh)
             {
                 if (mesh == null) return;
 
-                string path = GetPath(key);
-                string tmpPath = path + ".tmp";
+                if (_runtimeCache.TryGetValue(key, out var existing) && existing != null)
+                    UnityEngine.Object.Destroy(existing);
 
-                try
+                var clone = UnityEngine.Object.Instantiate(mesh);
+                clone.name = "mesh_cut_runtime";
+                _runtimeCache[key] = clone;
+            }
+
+            public static void Clear()
+            {
+                foreach (var kvp in _runtimeCache)
                 {
-                    var vertices = mesh.vertices ?? Array.Empty<Vector3>();
-                    var normals = mesh.normals;
-                    var tangents = mesh.tangents;
-                    var uv = mesh.uv;
-
-                    if (normals == null || normals.Length != vertices.Length)
-                    {
-                        mesh.RecalculateNormals();
-                        normals = mesh.normals;
-                    }
-                    if (tangents == null || tangents.Length != vertices.Length)
-                        tangents = new Vector4[vertices.Length];
-                    if (uv == null || uv.Length != vertices.Length)
-                        uv = new Vector2[vertices.Length];
-
-                    using (var fs = File.Create(tmpPath))
-                    using (var bw = new BinaryWriter(fs))
-                    {
-                        bw.Write(Version);
-                        bw.Write(vertices.Length);
-
-                        for (int i = 0; i < vertices.Length; i++)
-                        {
-                            bw.Write(vertices[i].x); bw.Write(vertices[i].y); bw.Write(vertices[i].z);
-                        }
-                        for (int i = 0; i < normals.Length; i++)
-                        {
-                            bw.Write(normals[i].x); bw.Write(normals[i].y); bw.Write(normals[i].z);
-                        }
-                        for (int i = 0; i < tangents.Length; i++)
-                        {
-                            bw.Write(tangents[i].x); bw.Write(tangents[i].y); bw.Write(tangents[i].z); bw.Write(tangents[i].w);
-                        }
-                        for (int i = 0; i < uv.Length; i++)
-                        {
-                            bw.Write(uv[i].x); bw.Write(uv[i].y);
-                        }
-
-                        bw.Write((int)mesh.indexFormat);
-                        bw.Write(mesh.subMeshCount);
-                        for (int s = 0; s < mesh.subMeshCount; s++)
-                        {
-                            var tris = mesh.GetTriangles(s);
-                            bw.Write(tris.Length);
-                            for (int t = 0; t < tris.Length; t++) bw.Write(tris[t]);
-                        }
-                    }
-
-                    if (File.Exists(path)) File.Delete(path);
-                    File.Move(tmpPath, path);
+                    if (kvp.Value != null)
+                        UnityEngine.Object.Destroy(kvp.Value);
                 }
-                catch (Exception ex)
-                {
-                    PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Cache save failed '{path}': {ex.Message}");
-                    try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
-                }
+                _runtimeCache.Clear();
             }
 
             public static string BuildKey(Transform scopeRoot, Transform activeMode, MeshFilter mf, Mesh originalAsset, MeshPlaneCutter.KeepSide keepSide, bool isCylinder)
             {
                 var sb = new StringBuilder(512);
-                sb.Append("v3|");
+                sb.Append("v4|");
                 sb.Append(scopeRoot != null ? scopeRoot.name : "scope").Append('|');
                 sb.Append(activeMode != null ? activeMode.name : "mode").Append('|');
                 sb.Append(GetRelativePath(scopeRoot, mf != null ? mf.transform : null)).Append('|');
@@ -263,11 +142,6 @@ namespace PiPDisabler
                 }
             }
 
-            private static string GetPath(string key)
-            {
-                return Path.Combine(PiPDisablerPlugin.GetMeshCutCacheDirectory(), key + ".bin");
-            }
-
             private static string GetRelativePath(Transform root, Transform child)
             {
                 if (child == null) return "none";
@@ -286,7 +160,7 @@ namespace PiPDisabler
             private static string Sanitize(string value)
             {
                 if (string.IsNullOrEmpty(value)) return "unknown";
-                var invalid = Path.GetInvalidFileNameChars();
+                var invalid = System.IO.Path.GetInvalidFileNameChars();
                 var sb = new StringBuilder(value.Length);
                 for (int i = 0; i < value.Length; i++)
                 {
@@ -389,6 +263,7 @@ namespace PiPDisabler
         {
             RestoreAll();
             DestroyCurrentWeaponCache();
+            ClearRuntimeCache();
             UnbindInventoryEvents();
         }
 
