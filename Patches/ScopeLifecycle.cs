@@ -43,6 +43,9 @@ namespace PiPDisabler
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
+        private static int _lastFallbackAttemptFrame = -9999;
+        private static int _lastFallbackScopeId;
+        private static int _lastFallbackWeaponRootId;
 
         // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
         private static Type _scopeDataType;
@@ -270,15 +273,24 @@ namespace PiPDisabler
                 if (!isOptic) { reason = "not optic"; goto evaluate; }
 
                 var enabledOs = FindEnabledOpticFromPWA();
+                if (enabledOs != null)
+                {
+                    PiPDisablerPlugin.LogVerbose(
+                        $"[ScopeLifecycle] cache-hit optic='{enabledOs.name}' path='{GetTransformPath(enabledOs.transform)}'");
+                }
                 if (enabledOs == null)
                 {
-                    // Hybrid toggle case: CurrentScope may still report optic while the
-                    // enabled OpticSight switched off (e.g., now in collimator mode).
-                    // Force scope exit immediately so RestoreAll runs without waiting for
-                    // a full ADS exit.
-                    shouldBeScoped = false;
-                    reason = "optic flag true but no enabled OpticSight";
-                    goto evaluate;
+                    enabledOs = TryResolveOpticFromCurrentHierarchy(pwa, currentScope, caller);
+                    if (enabledOs == null)
+                    {
+                        // Hybrid toggle case: CurrentScope may still report optic while the
+                        // enabled OpticSight switched off (e.g., now in collimator mode).
+                        // Force scope exit immediately so RestoreAll runs without waiting for
+                        // a full ADS exit.
+                        shouldBeScoped = false;
+                        reason = "optic flag true but no enabled OpticSight (fallback failed)";
+                        goto evaluate;
+                    }
                 }
 
                 shouldBeScoped = true;
@@ -1023,23 +1035,17 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Fallback: find OpticSight if _lastEnabledOptic wasn't cached.
-        /// Uses FindObjectsOfType as last resort.
+        /// Fallback for scope enter when cache is empty.
+        /// Bounded to local player weapon hierarchy.
         /// </summary>
         private static OpticSight FindOpticFromPWA()
         {
             try
             {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
-                foreach (var os in all)
-                {
-                    if (os != null && os.isActiveAndEnabled)
-                        return os;
-                }
-                foreach (var os in all)
-                {
-                    if (os != null) return os;
-                }
+                var player = GetLocalPlayer();
+                var pwa = player != null ? player.ProceduralWeaponAnimation : null;
+                if (pwa == null) return null;
+                return TryResolveOpticFromCurrentHierarchy(pwa, currentScopeObj: null, caller: "FindOpticFromPWA", forceAttempt: true);
             }
             catch { }
 
@@ -1063,6 +1069,182 @@ namespace PiPDisabler
             // be marked enabled yet. Trust the cache rather than doing a scene scan.
             // The OnEnable patch will fire imminently and update the cache.
             return null;
+        }
+
+        private static OpticSight TryResolveOpticFromCurrentHierarchy(
+            ProceduralWeaponAnimation pwa,
+            object currentScopeObj,
+            string caller,
+            bool forceAttempt = false)
+        {
+            if (pwa == null) return null;
+
+            Transform weaponRoot = pwa.transform;
+            Transform currentScopeTransform = ResolveCurrentScopeTransform(currentScopeObj);
+            Transform currentScopeRoot = currentScopeTransform != null
+                ? ScopeHierarchy.FindScopeRoot(currentScopeTransform) ?? currentScopeTransform
+                : null;
+
+            int scopeId = currentScopeTransform != null ? currentScopeTransform.GetInstanceID() : 0;
+            int weaponRootId = weaponRoot != null ? weaponRoot.GetInstanceID() : 0;
+            if (!forceAttempt
+                && scopeId == _lastFallbackScopeId
+                && weaponRootId == _lastFallbackWeaponRootId
+                && Time.frameCount - _lastFallbackAttemptFrame < 15)
+            {
+                return null;
+            }
+
+            _lastFallbackAttemptFrame = Time.frameCount;
+            _lastFallbackScopeId = scopeId;
+            _lastFallbackWeaponRootId = weaponRootId;
+
+            PiPDisablerPlugin.LogInfo(
+                $"[ScopeLifecycle] fallback-start caller={caller} frame={Time.frameCount} weapon='{weaponRoot?.name ?? "null"}' weaponPath='{GetTransformPath(weaponRoot)}' scope='{currentScopeTransform?.name ?? "null"}' scopePath='{GetTransformPath(currentScopeTransform)}' isOptic={(currentScopeObj != null ? _getIsOptic(currentScopeObj) : false)}");
+
+            var candidates = new List<OpticSight>(8);
+            var seen = new HashSet<int>();
+
+            if (currentScopeRoot != null)
+                CollectCandidates(currentScopeRoot, candidates, seen);
+            if (weaponRoot != null)
+                CollectCandidates(weaponRoot, candidates, seen);
+
+            OpticSight best = null;
+            int bestScore = int.MinValue;
+            int bestDepth = int.MaxValue;
+
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                var candidate = candidates[i];
+                if (candidate == null)
+                {
+                    PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] fallback-reject reason=null-candidate");
+                    continue;
+                }
+
+                if (!candidate.enabled || !candidate.gameObject.activeInHierarchy)
+                {
+                    PiPDisablerPlugin.LogVerbose(
+                        $"[ScopeLifecycle] fallback-reject optic='{candidate.name}' reason=inactive-or-disabled enabled={candidate.enabled} activeInHierarchy={candidate.gameObject.activeInHierarchy}");
+                    continue;
+                }
+
+                if (weaponRoot != null && !IsDescendantOrSelf(candidate.transform, weaponRoot))
+                {
+                    PiPDisablerPlugin.LogVerbose(
+                        $"[ScopeLifecycle] fallback-reject optic='{candidate.name}' reason=not-under-current-weapon path='{GetTransformPath(candidate.transform)}'");
+                    continue;
+                }
+
+                int score = 1000;
+                if (currentScopeRoot != null && IsDescendantOrSelf(candidate.transform, currentScopeRoot))
+                    score += 400;
+                if (currentScopeTransform != null
+                    && (IsDescendantOrSelf(candidate.transform, currentScopeTransform)
+                        || IsDescendantOrSelf(currentScopeTransform, candidate.transform)))
+                    score += 200;
+
+                int depthToScope = currentScopeRoot != null
+                    ? DistanceToAncestor(candidate.transform, currentScopeRoot)
+                    : int.MaxValue;
+
+                int candidateId = candidate.GetInstanceID();
+                int bestId = best != null ? best.GetInstanceID() : int.MaxValue;
+                if (score > bestScore
+                    || (score == bestScore && depthToScope < bestDepth)
+                    || (score == bestScore && depthToScope == bestDepth && candidateId < bestId))
+                {
+                    best = candidate;
+                    bestScore = score;
+                    bestDepth = depthToScope;
+                }
+            }
+
+            if (best == null)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[ScopeLifecycle] fallback-fail caller={caller} candidates={candidates.Count} scopePath='{GetTransformPath(currentScopeTransform)}'");
+                return null;
+            }
+
+            _lastEnabledOptic = best;
+            _activeOptic = best;
+
+            PiPDisablerPlugin.LogInfo(
+                $"[ScopeLifecycle] fallback-success optic='{best.name}' score={bestScore} depth={bestDepth} path='{GetTransformPath(best.transform)}' caller={caller}");
+            return best;
+        }
+
+        private static void CollectCandidates(Transform root, List<OpticSight> output, HashSet<int> seen)
+        {
+            if (root == null) return;
+            var comps = root.GetComponentsInChildren<OpticSight>(true);
+            for (int i = 0; i < comps.Length; i++)
+            {
+                var comp = comps[i];
+                if (comp == null) continue;
+                int id = comp.GetInstanceID();
+                if (seen.Add(id))
+                    output.Add(comp);
+            }
+        }
+
+        private static Transform ResolveCurrentScopeTransform(object currentScopeObj)
+        {
+            if (currentScopeObj == null) return null;
+            try
+            {
+                var scopeType = currentScopeObj.GetType();
+                var tProp = AccessTools.Property(scopeType, "Transform") ?? AccessTools.Property(scopeType, "transform");
+                if (tProp != null)
+                    return tProp.GetValue(currentScopeObj) as Transform;
+
+                var tField = AccessTools.Field(scopeType, "Transform") ?? AccessTools.Field(scopeType, "transform");
+                if (tField != null)
+                    return tField.GetValue(currentScopeObj) as Transform;
+            }
+            catch { }
+
+            return null;
+        }
+
+        private static bool IsDescendantOrSelf(Transform candidate, Transform ancestor)
+        {
+            if (candidate == null || ancestor == null) return false;
+            for (var t = candidate; t != null; t = t.parent)
+            {
+                if (t == ancestor) return true;
+            }
+            return false;
+        }
+
+        private static int DistanceToAncestor(Transform from, Transform ancestor)
+        {
+            if (from == null || ancestor == null) return int.MaxValue;
+            int distance = 0;
+            for (var t = from; t != null; t = t.parent)
+            {
+                if (t == ancestor) return distance;
+                distance++;
+            }
+            return int.MaxValue;
+        }
+
+        private static string GetTransformPath(Transform t)
+        {
+            if (t == null) return "null";
+            try
+            {
+                var stack = new Stack<string>();
+                for (var cur = t; cur != null; cur = cur.parent)
+                    stack.Push(cur.name);
+                return string.Join("/", stack.ToArray());
+            }
+            catch
+            {
+                return t.name ?? "<unnamed>";
+            }
         }
 
     }
