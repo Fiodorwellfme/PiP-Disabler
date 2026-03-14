@@ -16,6 +16,7 @@ namespace PiPDisabler
     /// Entry points (event-driven, fire ONCE per transition):
     ///   OnOpticEnabled(os)  — from OpticSight.OnEnable patch
     ///   OnOpticDisabled(os) — from OpticSight.OnDisable patch
+    ///   OnCollimatorEnabled(cs) / OnCollimatorDisabled(cs)
     ///   CheckAndUpdate()    — from ChangeAimingMode patch + Update safety net
     ///
     /// Per-frame (zero-alloc maintenance):
@@ -41,7 +42,9 @@ namespace PiPDisabler
         // State
         private static bool _isScoped;
         private static OpticSight _activeOptic;
+        private static CollimatorSight _activeCollimator;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
+        private static CollimatorSight _lastEnabledCollimator;
         private static bool _modBypassedForCurrentScope;
 
         // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
@@ -59,6 +62,7 @@ namespace PiPDisabler
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
         public static OpticSight ActiveOptic => _activeOptic;
+        public static CollimatorSight ActiveCollimator => _activeCollimator;
 
         /// <summary>
         /// Shared optic classification helper for other systems that must make
@@ -240,6 +244,50 @@ namespace PiPDisabler
             CheckAndUpdate("OnOpticDisabled");
         }
 
+        public static void OnCollimatorEnabled(CollimatorSight cs)
+        {
+            if (cs != null)
+                _lastEnabledCollimator = cs;
+
+            if (_isScoped && cs != null && cs != _activeCollimator)
+            {
+                var prevOptic = _activeOptic;
+                _activeCollimator = cs;
+                _activeOptic = null;
+
+                if (prevOptic != null)
+                {
+                    // Magnified-only features must be fully removed when hybrid switches into collimator mode.
+                    RestoreFov();
+                    Patches.WeaponScalingPatch.RestoreScale();
+                    ZoomController.Restore();
+                    ZoomController.ResetScrollZoom();
+                    ReticleRenderer.Cleanup();
+                    ScopeEffectsRenderer.Cleanup();
+                    LensTransparency.RestoreAll();
+                    CameraSettingsManager.Restore();
+                    if (PiPDisablerPlugin.GetRestoreOnUnscope())
+                        MeshSurgeryManager.RestoreForScope(prevOptic.transform);
+                    PlaneVisualizer.Hide();
+                    ZeroingController.Reset();
+                    PerScopeMeshSurgerySettings.ClearActiveScope();
+                }
+
+                PiPDisablerPlugin.LogInfo(
+                    $"[ScopeLifecycle] Active sight switched: CollimatorSight '{cs.name}' frame={Time.frameCount}");
+            }
+
+            CheckAndUpdate("OnCollimatorEnabled");
+        }
+
+        public static void OnCollimatorDisabled(CollimatorSight cs)
+        {
+            if (cs != null && cs == _activeCollimator)
+                _activeCollimator = null;
+
+            CheckAndUpdate("OnCollimatorDisabled");
+        }
+
         /// <summary>
         /// Core state check. Reads PWA state via reflection.
         /// Called from ChangeAimingMode patch and Update safety net.
@@ -267,24 +315,37 @@ namespace PiPDisabler
                 if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
 
                 bool isOptic = _getIsOptic(currentScope);
-                if (!isOptic) { reason = "not optic"; goto evaluate; }
 
                 var enabledOs = FindEnabledOpticFromPWA();
-                if (enabledOs == null)
-                {
-                    // Hybrid toggle case: CurrentScope may still report optic while the
-                    // enabled OpticSight switched off (e.g., now in collimator mode).
-                    // Force scope exit immediately so RestoreAll runs without waiting for
-                    // a full ADS exit.
-                    shouldBeScoped = false;
-                    reason = "optic flag true but no enabled OpticSight";
-                    goto evaluate;
-                }
+                var enabledCs = FindEnabledCollimatorFromPWA();
 
-                shouldBeScoped = true;
-                _activeOptic = enabledOs;
-                _lastEnabledOptic = enabledOs;
-                reason = "aiming+optic+enabled OpticSight";
+                if (enabledOs != null)
+                {
+                    shouldBeScoped = true;
+                    _activeOptic = enabledOs;
+                    _lastEnabledOptic = enabledOs;
+                    _activeCollimator = null;
+                    reason = "aiming+activeSight=OpticSight";
+                }
+                else if (enabledCs != null)
+                {
+                    shouldBeScoped = true;
+                    _activeOptic = null;
+                    _activeCollimator = enabledCs;
+                    _lastEnabledCollimator = enabledCs;
+                    reason = isOptic
+                        ? "aiming+CurrentScope.IsOptic with activeSight=CollimatorSight"
+                        : "aiming+activeSight=CollimatorSight";
+                }
+                else
+                {
+                    shouldBeScoped = false;
+                    _activeOptic = null;
+                    _activeCollimator = null;
+                    reason = isOptic
+                        ? "CurrentScope.IsOptic but activeSight=none"
+                        : "no active sight";
+                }
             }
             catch (Exception ex) { reason = $"exception: {ex.Message}"; }
 
@@ -296,6 +357,7 @@ namespace PiPDisabler
                 PiPDisablerPlugin.LogInfo(
                     $"[ScopeLifecycle] State change: {(_isScoped ? "SCOPED" : "NOT_SCOPED")} → " +
                     $"{(shouldBeScoped ? "SCOPED" : "NOT_SCOPED")} reason='{reason}' " +
+                    $"activeSight={GetActiveSightDebugLabel(_activeOptic, _activeCollimator)} " +
                     $"caller={_lastCaller} frame={Time.frameCount}");
             }
 
@@ -320,18 +382,16 @@ namespace PiPDisabler
         {
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
+            if (_activeOptic == null) return; // active sight is CollimatorSight or none
 
-            // Ensure lens stays hidden + update variable zoom
+            // Ensure lens stays hidden + update variable zoom (OpticSight only)
             if (ZoomController.IsActive)
             {
-                if (_activeOptic != null)
-                {
-                    float mag = ZoomController.GetMagnification(_activeOptic);
-                    ZoomController.SetZoom(mag);
-                    // Update reticle + effects position (smoothed), rotation, and scale each frame
-                    ReticleRenderer.UpdateTransform(mag);
-                    ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
-                }
+                float mag = ZoomController.GetMagnification(_activeOptic);
+                ZoomController.SetZoom(mag);
+                // Update reticle + effects position (smoothed), rotation, and scale each frame
+                ReticleRenderer.UpdateTransform(mag);
+                ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
                 ZoomController.EnsureLensVisible();
 
                 // Always re-kill other lens surfaces.
@@ -370,9 +430,10 @@ namespace PiPDisabler
             if (_isScoped)
                 DoScopeExit();
             _modBypassedForCurrentScope = false;
-            // Always clear the last-enabled cache so a stale OpticSight reference
-            // from before the disable doesn't get used on the next scope enter.
+            // Always clear last-enabled caches so stale references cannot leak across sessions.
             _lastEnabledOptic = null;
+            _lastEnabledCollimator = null;
+            _activeCollimator = null;
         }
 
         /// <summary>
@@ -743,19 +804,39 @@ namespace PiPDisabler
 
         private static void DoScopeEnter()
         {
-            // Get the OpticSight — cached from OnEnable, or find from pwa
-            var os = _lastEnabledOptic;
+            // Resolve active sight from caches (hybrid-ready): optic or collimator.
+            var os = _activeOptic ?? _lastEnabledOptic;
             if (os == null)
                 os = FindOpticFromPWA();
-            if (os == null)
+
+            var cs = _activeCollimator ?? _lastEnabledCollimator;
+            if (cs == null)
+                cs = FindCollimatorFromPWA();
+
+            if (os == null && cs == null)
             {
                 PiPDisablerPlugin.LogVerbose(
-                    "[ScopeLifecycle] ENTER aborted — no OpticSight found");
+                    "[ScopeLifecycle] ENTER aborted — active sight=none");
                 return;
             }
 
             _isScoped = true;
+
+            if (os == null && cs != null)
+            {
+                _activeOptic = null;
+                _activeCollimator = cs;
+                _lastEnabledCollimator = cs;
+                _modBypassedForCurrentScope = false;
+                PerScopeMeshSurgerySettings.ClearActiveScope();
+
+                PiPDisablerPlugin.LogInfo(
+                    $"[ScopeLifecycle] ENTER: active sight=CollimatorSight '{cs.name}' frame={Time.frameCount}");
+                return;
+            }
+
             _activeOptic = os;
+            _activeCollimator = null;
             PerScopeMeshSurgerySettings.SetActiveScope(ResolveWhitelistScopeKey(os));
 
             float minFov = ZoomController.GetMinFov(os);
@@ -767,7 +848,7 @@ namespace PiPDisabler
             }
 
             PiPDisablerPlugin.LogInfo(
-                $"[ScopeLifecycle] ENTER: '{os.name}'[{FovController.GetOpticTemplateId(os)}] frame={Time.frameCount}");
+                $"[ScopeLifecycle] ENTER: active sight=OpticSight '{os.name}'[{FovController.GetOpticTemplateId(os)}] frame={Time.frameCount}");
 
             // 1. Restore any black lens materials so ExtractReticle can read OpticSight textures.
             //    (RestoreAll on previous scope-exit may have left sharedMaterials as Unlit/Color.)
@@ -825,12 +906,13 @@ namespace PiPDisabler
             if (!_isScoped) return;
 
             var prevOptic = _activeOptic;
+            var prevCollimator = _activeCollimator;
             PiPDisablerPlugin.LogInfo(
-                $"[ScopeLifecycle] EXIT: '{(prevOptic != null ? prevOptic.name : "null")}'" +
-                $"[{FovController.GetOpticTemplateId(prevOptic)}] frame={Time.frameCount}");
+                $"[ScopeLifecycle] EXIT: active sight was {GetActiveSightDebugLabel(prevOptic, prevCollimator)} frame={Time.frameCount}");
 
             _isScoped = false;
             _activeOptic = null;
+            _activeCollimator = null;
             PerScopeMeshSurgerySettings.ClearActiveScope();
 
             // If this scope was bypassed, skip mod cleanup paths.
@@ -890,6 +972,7 @@ namespace PiPDisabler
         {
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
+            if (_activeOptic == null) return;
             ApplyFov(false); // false = short duration for scroll feel
         }
 
@@ -1063,6 +1146,46 @@ namespace PiPDisabler
             // be marked enabled yet. Trust the cache rather than doing a scene scan.
             // The OnEnable patch will fire imminently and update the cache.
             return null;
+        }
+
+        private static CollimatorSight FindEnabledCollimatorFromPWA()
+        {
+            if (_activeCollimator != null && _activeCollimator.isActiveAndEnabled)
+                return _activeCollimator;
+
+            if (_lastEnabledCollimator != null && _lastEnabledCollimator.isActiveAndEnabled)
+                return _lastEnabledCollimator;
+
+            return null;
+        }
+
+        private static CollimatorSight FindCollimatorFromPWA()
+        {
+            try
+            {
+                var all = UnityEngine.Object.FindObjectsOfType<CollimatorSight>();
+                foreach (var cs in all)
+                {
+                    if (cs != null && cs.isActiveAndEnabled)
+                        return cs;
+                }
+                foreach (var cs in all)
+                {
+                    if (cs != null) return cs;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private static string GetActiveSightDebugLabel(OpticSight os, CollimatorSight cs)
+        {
+            if (os != null)
+                return $"OpticSight:'{os.name}'[{FovController.GetOpticTemplateId(os)}]";
+            if (cs != null)
+                return $"CollimatorSight:'{cs.name}'";
+            return "none";
         }
 
     }

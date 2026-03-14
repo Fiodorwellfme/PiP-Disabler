@@ -59,6 +59,7 @@ namespace PiPDisabler.Patches
                 PiPDisablerPlugin.ModEnabled.Value &&
                 PiPDisablerPlugin.EnableZoom.Value &&
                 ScopeLifecycle.IsScoped &&
+                ScopeLifecycle.ActiveOptic != null &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
                 pwa.IsAiming &&
                 !pwa.Sprint)

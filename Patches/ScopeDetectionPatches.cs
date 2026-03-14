@@ -57,4 +57,38 @@ namespace PiPDisabler.Patches
             ScopeLifecycle.CheckAndUpdate("ChangeAimingMode");
         }
     }
+
+    internal sealed class CollimatorSightOnEnablePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(CollimatorSight), "OnEnable");
+
+        [PatchPostfix]
+        private static void Postfix(CollimatorSight __instance)
+        {
+            PiPDisablerPlugin.LogInfo(
+                $"[Patch] Collimator OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
+                $"enabled={__instance?.enabled} frame={Time.frameCount}");
+
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            ScopeLifecycle.OnCollimatorEnabled(__instance);
+        }
+    }
+
+    internal sealed class CollimatorSightOnDisablePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(CollimatorSight), "OnDisable");
+
+        [PatchPostfix]
+        private static void Postfix(CollimatorSight __instance)
+        {
+            PiPDisablerPlugin.LogInfo(
+                $"[Patch] Collimator OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
+                $"frame={Time.frameCount}");
+
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            ScopeLifecycle.OnCollimatorDisabled(__instance);
+        }
+    }
 }
