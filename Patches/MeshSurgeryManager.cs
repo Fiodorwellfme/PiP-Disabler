@@ -1403,37 +1403,38 @@ namespace PiPDisabler
             if (scopeRoot == null || result == null || seen == null)
                 return;
 
-            Transform playerMeshRoot = FindChildByPath(scopeRoot.root, "Player/Mesh");
-            if (playerMeshRoot == null)
-                return;
-
+            var playerMeshRoots = FindPlayerMeshRoots(scopeRoot, logCandidates);
             int added = 0;
-            foreach (var mf in playerMeshRoot.GetComponentsInChildren<MeshFilter>(true))
+
+            foreach (var playerMeshRoot in playerMeshRoots)
             {
-                if (!mf || !mf.sharedMesh)
-                    continue;
-
-                string path = GetRelativePath(mf.transform, playerMeshRoot);
-                if (!ContainsHandKeyword(path) && !ContainsHandKeyword(mf.gameObject.name))
-                    continue;
-
-                if (!seen.Add(mf.GetInstanceID()))
-                    continue;
-
-                result.Add(mf);
-                added++;
-
-                if (logCandidates)
+                foreach (var mf in playerMeshRoot.GetComponentsInChildren<MeshFilter>(true))
                 {
-                    PiPDisablerPlugin.LogInfo(
-                        $"[MeshSurgery][DebugCandidates] added-player-hand path='Player/Mesh/{path}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy}");
+                    if (!mf || !mf.sharedMesh)
+                        continue;
+
+                    string path = GetRelativePath(mf.transform, playerMeshRoot);
+                    if (!ContainsHandKeyword(path) && !ContainsHandKeyword(mf.gameObject.name))
+                        continue;
+
+                    if (!seen.Add(mf.GetInstanceID()))
+                        continue;
+
+                    result.Add(mf);
+                    added++;
+
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] added-player-hand path='{GetRelativePath(mf.transform, scopeRoot.root)}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy}");
+                    }
                 }
             }
 
             if (added > 0)
             {
                 PiPDisablerPlugin.LogVerbose(
-                    $"[ScopeHierarchy] Added {added} player hand mesh(es) from '{playerMeshRoot.name}' to mesh surgery targets.");
+                    $"[ScopeHierarchy] Added {added} player hand mesh(es) to mesh surgery targets.");
             }
         }
 
@@ -1443,23 +1444,83 @@ namespace PiPDisabler
             if (scopeRoot == null)
                 return result;
 
-            Transform playerMeshRoot = FindChildByPath(scopeRoot.root, "Player/Mesh");
-            if (playerMeshRoot == null)
-                return result;
-
-            foreach (var smr in playerMeshRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            var seen = new HashSet<int>();
+            var playerMeshRoots = FindPlayerMeshRoots(scopeRoot, logCandidates: false);
+            foreach (var playerMeshRoot in playerMeshRoots)
             {
-                if (!smr || !smr.sharedMesh)
-                    continue;
+                foreach (var smr in playerMeshRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    if (!smr || !smr.sharedMesh)
+                        continue;
 
-                string path = GetRelativePath(smr.transform, playerMeshRoot);
-                if (!ContainsHandKeyword(path) && !ContainsHandKeyword(smr.gameObject.name))
-                    continue;
+                    string path = GetRelativePath(smr.transform, playerMeshRoot);
+                    if (!ContainsHandKeyword(path) && !ContainsHandKeyword(smr.gameObject.name))
+                        continue;
 
-                result.Add(smr);
+                    if (seen.Add(smr.GetInstanceID()))
+                        result.Add(smr);
+                }
             }
 
             return result;
+        }
+
+        private static List<Transform> FindPlayerMeshRoots(Transform scopeRoot, bool logCandidates)
+        {
+            var results = new List<Transform>(4);
+            var seen = new HashSet<int>();
+
+            void AddRoot(Transform candidate)
+            {
+                if (candidate == null)
+                    return;
+                if (seen.Add(candidate.GetInstanceID()))
+                    results.Add(candidate);
+            }
+
+            AddRoot(FindChildByPath(scopeRoot != null ? scopeRoot.root : null, "Player/Mesh"));
+
+            try
+            {
+                foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
+                {
+                    if (!t) continue;
+
+                    var parent = t.parent;
+                    var grandParent = parent != null ? parent.parent : null;
+                    if (parent == null || grandParent == null)
+                        continue;
+
+                    if (!string.Equals(t.name, "Mesh", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (!string.Equals(parent.name, "Player", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string gp = grandParent.name ?? string.Empty;
+                    if (gp.IndexOf("PlayerSuperior", StringComparison.OrdinalIgnoreCase) >= 0)
+                        AddRoot(t);
+                }
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.LogVerbose($"[ScopeHierarchy] Failed scanning player mesh roots: {ex.Message}");
+            }
+
+            if (scopeRoot != null)
+            {
+                Vector3 pivot = scopeRoot.position;
+                results.Sort((a, b) =>
+                {
+                    float da = (a.position - pivot).sqrMagnitude;
+                    float db = (b.position - pivot).sqrMagnitude;
+                    return da.CompareTo(db);
+                });
+            }
+
+            if (logCandidates)
+                PiPDisablerPlugin.LogInfo($"[MeshSurgery][DebugCandidates] player mesh roots found={results.Count}");
+
+            return results;
         }
 
         private static bool ContainsHandKeyword(string value)
