@@ -20,16 +20,24 @@ namespace PiPDisabler
             public Mesh OriginalMesh;
             public Mesh CutMesh;
             public bool Applied;
+            public string FilterPath;
         }
 
-        private sealed class WeaponCutCache
+        private sealed class CutProfileCache
         {
-            public Weapon WeaponItem;
             public GameObject WeaponRoot;
             public readonly List<CutMeshEntry> Entries = new List<CutMeshEntry>(64);
             public bool Built;
             public bool Dirty = true;
             public string SettingsSignature;
+            public string ProfileKey;
+        }
+
+        private sealed class RaidWeaponCache
+        {
+            public string WeaponId;
+            public Weapon WeaponItem;
+            public readonly Dictionary<string, CutProfileCache> Profiles = new Dictionary<string, CutProfileCache>(4);
         }
 
         private sealed class LightFxState
@@ -44,7 +52,9 @@ namespace PiPDisabler
             public bool DisabledByUs;
         }
 
-        private static WeaponCutCache _currentWeaponCache;
+        private static readonly Dictionary<string, RaidWeaponCache> _raidCaches = new Dictionary<string, RaidWeaponCache>(16);
+        private static CutProfileCache _currentWeaponCache;
+        private static string _currentWeaponId;
         private static readonly Dictionary<GameObject, LightFxState> _disabledLightFx =
             new Dictionary<GameObject, LightFxState>(32);
         private static readonly Dictionary<GameObject, SphereState> _disabledWeaponSpheres =
@@ -315,7 +325,8 @@ namespace PiPDisabler
             var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
             if (!scopeRoot) return;
 
-            var cache = GetOrCreateCurrentWeaponCache(scopeRoot);
+            var activeMode = ResolveActiveMode(os, scopeRoot);
+            var cache = GetOrCreateCurrentWeaponCache(scopeRoot, activeMode);
             if (cache == null) return;
 
             string currentSignature = BuildCutSettingsSignature();
@@ -326,7 +337,7 @@ namespace PiPDisabler
             }
 
             if (cache.Dirty || !cache.Built)
-                RebuildCutCacheForOptic(cache, os, scopeRoot);
+                RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode);
             else
                 ReapplyCachedCutMeshes(cache, scopeRoot);
         }
@@ -349,8 +360,12 @@ namespace PiPDisabler
 
         public static void RestoreAll()
         {
-            if (_currentWeaponCache != null)
-                RestoreOriginalMeshes(_currentWeaponCache);
+            foreach (var weaponCache in _raidCaches.Values)
+            {
+                if (weaponCache == null) continue;
+                foreach (var profile in weaponCache.Profiles.Values)
+                    RestoreOriginalMeshes(profile);
+            }
 
             var lightKeys = _disabledLightFx.Keys.ToArray();
             var sphereKeys = _disabledWeaponSpheres.Keys.ToArray();
@@ -392,7 +407,7 @@ namespace PiPDisabler
             UnbindInventoryEvents();
         }
 
-        private static WeaponCutCache GetOrCreateCurrentWeaponCache(Transform scopeRoot)
+        private static CutProfileCache GetOrCreateCurrentWeaponCache(Transform scopeRoot, Transform activeMode)
         {
             var player = Singleton<GameWorld>.Instance != null ? Singleton<GameWorld>.Instance.MainPlayer : null;
             var fc = player != null ? player.HandsController as Player.FirearmController : null;
@@ -402,46 +417,54 @@ namespace PiPDisabler
             var weaponRoot = weaponRootTf != null ? weaponRootTf.gameObject : null;
             if (weapon == null || weaponRoot == null) return null;
 
-            bool changed = _currentWeaponCache == null
-                || _currentWeaponCache.WeaponItem != weapon
-                || _currentWeaponCache.WeaponRoot != weaponRoot;
-
-            if (changed)
+            string weaponId = !string.IsNullOrEmpty(weapon.Id) ? weapon.Id : weapon.TemplateId;
+            if (!_raidCaches.TryGetValue(weaponId, out var weaponCache) || weaponCache == null)
             {
-                if (_currentWeaponCache != null)
-                {
-                    RestoreOriginalMeshes(_currentWeaponCache);
-                    DestroyCutMeshes(_currentWeaponCache);
-                }
+                weaponCache = new RaidWeaponCache { WeaponId = weaponId };
+                _raidCaches[weaponId] = weaponCache;
+            }
 
-                _currentWeaponCache = new WeaponCutCache
+            weaponCache.WeaponItem = weapon;
+
+            string profileKey = BuildProfileKey(weaponRootTf, scopeRoot, activeMode, BuildCutSettingsSignature());
+            if (!weaponCache.Profiles.TryGetValue(profileKey, out var profileCache) || profileCache == null)
+            {
+                profileCache = new CutProfileCache
                 {
-                    WeaponItem = weapon,
                     WeaponRoot = weaponRoot,
+                    ProfileKey = profileKey,
                     Built = false,
                     Dirty = true
                 };
-
-                PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Weapon cache switched: '{weapon.TemplateId}'");
+                weaponCache.Profiles[profileKey] = profileCache;
+            }
+            else
+            {
+                profileCache.WeaponRoot = weaponRoot;
             }
 
+            if (!ReferenceEquals(_currentWeaponCache, profileCache) && _currentWeaponCache != null)
+                RestoreOriginalMeshes(_currentWeaponCache);
+
+            if (!string.Equals(_currentWeaponId, weaponId, StringComparison.Ordinal))
+            {
+                PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Weapon cache switched: '{weapon.TemplateId}' ({weaponId})");
+            }
+
+            _currentWeaponId = weaponId;
+            _currentWeaponCache = profileCache;
+
             BindInventoryEvents(player);
-            return _currentWeaponCache;
+            return profileCache;
         }
 
-        private static void RebuildCutCacheForOptic(WeaponCutCache cache, OpticSight os, Transform scopeRoot)
+        private static void RebuildCutCacheForOptic(CutProfileCache cache, OpticSight os, Transform scopeRoot, Transform activeMode)
         {
             if (cache == null || os == null || scopeRoot == null) return;
-
-            Transform activeMode = null;
-            if (os.transform.name != null &&
-                (os.transform.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
-                 || os.transform.name.Equals("mode", StringComparison.OrdinalIgnoreCase)))
-                activeMode = os.transform;
-            else
-                activeMode = ScopeHierarchy.FindBestMode(scopeRoot);
-
             if (!activeMode) activeMode = os.transform;
+            var weaponRootTf = FindWeaponTransform(scopeRoot);
+            if (weaponRootTf == null) return;
+            cache.WeaponRoot = weaponRootTf.gameObject;
 
             if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
                 out var planePoint, out var planeNormal, out var camPos))
@@ -559,7 +582,8 @@ namespace PiPDisabler
                         Filter = mf,
                         OriginalMesh = originalAsset,
                         CutMesh = readable,
-                        Applied = true
+                        Applied = true,
+                        FilterPath = GetRelativePath(weaponRootTf, mf.transform)
                     });
                 }
                 catch (Exception ex)
@@ -574,8 +598,22 @@ namespace PiPDisabler
             cache.SettingsSignature = BuildCutSettingsSignature();
         }
 
-        private static void ReapplyCachedCutMeshes(WeaponCutCache cache, Transform scopeRoot)
+        private static void ReapplyCachedCutMeshes(CutProfileCache cache, Transform scopeRoot)
         {
+            var weaponRootTf = FindWeaponTransform(scopeRoot);
+            if (weaponRootTf == null)
+            {
+                cache.Dirty = true;
+                return;
+            }
+
+            cache.WeaponRoot = weaponRootTf.gameObject;
+            if (!TryRebindEntries(cache, weaponRootTf))
+            {
+                cache.Dirty = true;
+                return;
+            }
+
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
             DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
             DisableWeaponSphereObjects(scopeRoot, logCandidates);
@@ -590,7 +628,7 @@ namespace PiPDisabler
             }
         }
 
-        private static void RestoreOriginalMeshes(WeaponCutCache cache)
+        private static void RestoreOriginalMeshes(CutProfileCache cache)
         {
             if (cache == null) return;
 
@@ -609,7 +647,7 @@ namespace PiPDisabler
             }
         }
 
-        private static void DestroyCutMeshes(WeaponCutCache cache)
+        private static void DestroyCutMeshes(CutProfileCache cache)
         {
             if (cache == null) return;
 
@@ -625,11 +663,20 @@ namespace PiPDisabler
 
         private static void DestroyCurrentWeaponCache()
         {
-            if (_currentWeaponCache == null) return;
-            RestoreOriginalMeshes(_currentWeaponCache);
-            DestroyCutMeshes(_currentWeaponCache);
-            _currentWeaponCache.Entries.Clear();
+            foreach (var weaponCache in _raidCaches.Values)
+            {
+                if (weaponCache == null) continue;
+                foreach (var profile in weaponCache.Profiles.Values)
+                {
+                    RestoreOriginalMeshes(profile);
+                    DestroyCutMeshes(profile);
+                    profile.Entries.Clear();
+                }
+                weaponCache.Profiles.Clear();
+            }
+            _raidCaches.Clear();
             _currentWeaponCache = null;
+            _currentWeaponId = null;
         }
 
         private static void BindInventoryEvents(Player player)
@@ -704,18 +751,125 @@ namespace PiPDisabler
 
         private static void MarkCacheDirtyIfMeaningful(Item item, ItemAddress address)
         {
-            var cache = _currentWeaponCache;
-            if (cache == null || cache.WeaponItem == null || address == null)
-                return;
-
-            bool underWeapon = address.GetAllParentItems(false).Any(p => p == cache.WeaponItem);
-            if (!underWeapon)
+            if (address == null)
                 return;
 
             if (IsIgnoredWeaponChange(item, address))
                 return;
 
-            cache.Dirty = true;
+            var owner = FindOwningWeapon(address, item);
+            if (owner == null)
+                return;
+
+            string ownerId = !string.IsNullOrEmpty(owner.Id) ? owner.Id : owner.TemplateId;
+            if (!_raidCaches.TryGetValue(ownerId, out var weaponCache) || weaponCache == null)
+                return;
+
+            foreach (var profile in weaponCache.Profiles.Values)
+            {
+                if (profile != null)
+                    profile.Dirty = true;
+            }
+        }
+
+        private static Weapon FindOwningWeapon(ItemAddress address, Item changedItem)
+        {
+            if (changedItem is Weapon changedWeapon)
+                return changedWeapon;
+
+            var parents = address.GetAllParentItems(false);
+            if (parents == null)
+                return null;
+
+            foreach (var parent in parents)
+            {
+                if (parent is Weapon weapon)
+                    return weapon;
+            }
+
+            return null;
+        }
+
+        private static Transform ResolveActiveMode(OpticSight os, Transform scopeRoot)
+        {
+            Transform activeMode;
+            if (os.transform.name != null &&
+                (os.transform.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
+                 || os.transform.name.Equals("mode", StringComparison.OrdinalIgnoreCase)))
+                activeMode = os.transform;
+            else
+                activeMode = ScopeHierarchy.FindBestMode(scopeRoot);
+
+            if (!activeMode) activeMode = os.transform;
+            return activeMode;
+        }
+
+        private static bool TryRebindEntries(CutProfileCache cache, Transform weaponRoot)
+        {
+            foreach (var entry in cache.Entries)
+            {
+                if (entry == null || entry.CutMesh == null || string.IsNullOrEmpty(entry.FilterPath))
+                    return false;
+
+                var tf = FindRelativeTransform(weaponRoot, entry.FilterPath);
+                if (tf == null)
+                    return false;
+
+                var mf = tf.GetComponent<MeshFilter>();
+                if (mf == null)
+                    return false;
+
+                entry.Filter = mf;
+                if (entry.OriginalMesh == null)
+                    entry.OriginalMesh = mf.sharedMesh;
+            }
+
+            return true;
+        }
+
+        private static string BuildProfileKey(Transform weaponRoot, Transform scopeRoot, Transform activeMode, string settingsSignature)
+        {
+            return string.Join("|", new[]
+            {
+                GetRelativePath(weaponRoot, scopeRoot),
+                GetRelativePath(weaponRoot, activeMode),
+                settingsSignature ?? string.Empty
+            });
+        }
+
+        private static string GetRelativePath(Transform root, Transform child)
+        {
+            if (child == null) return string.Empty;
+            if (root == null) return child.name ?? "unnamed";
+
+            var nodes = new List<string>();
+            for (var t = child; t != null; t = t.parent)
+            {
+                nodes.Add(t.name ?? "unnamed");
+                if (t == root)
+                    break;
+            }
+
+            nodes.Reverse();
+            return string.Join("/", nodes.ToArray());
+        }
+
+        private static Transform FindRelativeTransform(Transform root, string relativePath)
+        {
+            if (root == null || string.IsNullOrEmpty(relativePath)) return null;
+            if (relativePath == root.name) return root;
+
+            var segments = relativePath.Split('/');
+            int start = segments.Length > 0 && string.Equals(segments[0], root.name, StringComparison.Ordinal) ? 1 : 0;
+            Transform current = root;
+            for (int i = start; i < segments.Length; i++)
+            {
+                if (string.IsNullOrEmpty(segments[i])) continue;
+                current = current.Find(segments[i]);
+                if (current == null) return null;
+            }
+
+            return current;
         }
 
         private static bool IsIgnoredWeaponChange(Item item, ItemAddress address)
