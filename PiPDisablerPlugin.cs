@@ -11,6 +11,7 @@ using UnityEngine;
 namespace PiPDisabler
 {
     [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.1.0")]
+    [BepInDependency("com.fika.core", BepInDependency.DependencyFlags.SoftDependency)]
     public sealed class PiPDisablerPlugin : BaseUnityPlugin
     {
         internal static PiPDisablerPlugin Instance;

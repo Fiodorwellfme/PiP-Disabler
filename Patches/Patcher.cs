@@ -27,6 +27,10 @@ namespace PiPDisabler.Patches
 
             // Weapon scaling (freeze ribcage scale while scoped)
             SafeEnable<WeaponScalingPatch>();
+
+            // Fika optional compatibility (force marker projection to main camera)
+            SafeEnable<FikaPingMainCameraCompatPatch>();
+            SafeEnable<FikaHealthBarMainCameraCompatPatch>();
         }
 
         private static void SafeEnable<T>() where T : ModulePatch, new()
