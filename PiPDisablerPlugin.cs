@@ -5,6 +5,7 @@ using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
 using System.Collections.Generic;
+using System.IO;
 using PiPDisabler;
 using UnityEngine;
 
@@ -33,6 +34,31 @@ namespace PiPDisabler
         /// correct main FPS camera.  Falls back to Camera.main if
         /// CameraClass isn't initialized yet (menus, loading).
         /// </summary>
+        internal static string GetPluginDataDirectory()
+        {
+            string pluginDir;
+            try
+            {
+                pluginDir = Path.GetDirectoryName(Instance != null ? Instance.Info.Location : null);
+            }
+            catch
+            {
+                pluginDir = null;
+            }
+
+            if (string.IsNullOrEmpty(pluginDir))
+                pluginDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "plugins");
+
+            string dataDir = Path.Combine(pluginDir, "pip_disabler_data");
+            if (!Directory.Exists(dataDir))
+                Directory.CreateDirectory(dataDir);
+
+            return dataDir;
+        }
+
+        // Legacy alias kept for compatibility with settings storage callers.
+        internal static string GetMeshCutCacheDirectory() => GetPluginDataDirectory();
+
         internal static Camera GetMainCamera()
         {
             try

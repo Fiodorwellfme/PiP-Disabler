@@ -49,7 +49,7 @@ namespace PiPDisabler
         private static bool _loaded;
         private static string _activeScopeKey;
 
-        private static string FilePath => Path.Combine(PiPDisablerPlugin.GetMeshCutCacheDirectory(), "custom_mesh_surgery_settings.json");
+        private static string FilePath => Path.Combine(PiPDisablerPlugin.GetPluginDataDirectory(), "custom_mesh_surgery_settings.json");
 
         internal static void SetActiveScope(string scopeKey)
         {
