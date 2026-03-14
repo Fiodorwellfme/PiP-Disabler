@@ -5,7 +5,6 @@ using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
 using System.Collections.Generic;
-using System.IO;
 using PiPDisabler;
 using UnityEngine;
 
@@ -26,12 +25,12 @@ namespace PiPDisabler
                 Instance.Logger.LogInfo("[V] " + msg);
         }
 
-        internal static string GetMeshCutCacheDirectory()
+        internal static string GetPluginRootDirectory()
         {
             string pluginDir;
             try
             {
-                pluginDir = Path.GetDirectoryName(Instance != null ? Instance.Info.Location : null);
+                pluginDir = System.IO.Path.GetDirectoryName(Instance != null ? Instance.Info.Location : null);
             }
             catch
             {
@@ -39,13 +38,9 @@ namespace PiPDisabler
             }
 
             if (string.IsNullOrEmpty(pluginDir))
-                pluginDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "plugins");
+                pluginDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "plugins");
 
-            string cacheDir = Path.Combine(pluginDir, "mesh_cut_cache");
-            if (!Directory.Exists(cacheDir))
-                Directory.CreateDirectory(cacheDir);
-
-            return cacheDir;
+            return pluginDir;
         }
 
         /// <summary>
@@ -90,7 +85,6 @@ namespace PiPDisabler
         internal static ConfigEntry<bool> EnableMeshSurgery;
         internal static ConfigEntry<KeyCode> MeshSurgeryToggleKey;
         internal static ConfigEntry<bool> RestoreOnUnscope;
-        internal static ConfigEntry<bool> ClearMeshCacheOnRaidEnd;
         internal static ConfigEntry<float> PlaneOffsetMeters;
         internal static ConfigEntry<string> PlaneNormalAxis;
         internal static ConfigEntry<float> CutRadius;
@@ -188,7 +182,6 @@ namespace PiPDisabler
         internal static ConfigEntry<bool> DebugLogCutCandidates;
         internal static ConfigEntry<bool> DebugReticleAfterEverything;
 
-        private bool _wasInRaid;
 
         private void Awake()
         {
@@ -320,8 +313,6 @@ namespace PiPDisabler
                 "Toggle key for mesh surgery.");
             RestoreOnUnscope = Config.Bind("3. Global Mesh Surgery settings", "RestoreOnUnscope", true,
                 "Restore original meshes when leaving scope.");
-            ClearMeshCacheOnRaidEnd = Config.Bind("3. Global Mesh Surgery settings", "ClearMeshCacheOnRaidEnd", true,
-                "Clear persisted mesh-cut cache files when transitioning from raid to out-of-raid.");
             PlaneOffsetMeters = Config.Bind("3. Global Mesh Surgery settings", "PlaneOffsetMeters", 0.001f,
                 "Offset applied along plane normal (meters).");
             PlaneNormalAxis = Config.Bind("3. Global Mesh Surgery settings", "PlaneNormalAxis", "-Y",
@@ -556,7 +547,7 @@ namespace PiPDisabler
             LogInfo($"  WhitelistNames='{ScopeWhitelistNames.Value}'");
             LogInfo($"  EnableZoom={EnableZoom.Value}");
             LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
-            LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}  ClearMeshCacheOnRaidEnd={ClearMeshCacheOnRaidEnd.Value}");
+            LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
         }
 
         private static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => PerScopeMeshSurgerySettings.GetActiveOverride();
@@ -660,13 +651,6 @@ namespace PiPDisabler
 
         private void Update()
         {
-            bool inRaid = IsInRaid();
-            if (ClearMeshCacheOnRaidEnd.Value && _wasInRaid && !inRaid)
-            {
-                MeshSurgeryManager.ClearPersistentCache();
-            }
-            _wasInRaid = inRaid;
-
             // --- Global mod toggle (always active, even when mod is OFF) ---
             if (ModToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(ModToggleKey.Value))
             {
