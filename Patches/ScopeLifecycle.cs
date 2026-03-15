@@ -43,6 +43,11 @@ namespace PiPDisabler
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
+        private static int _pendingAcquireUntilFrame = -1;
+        private static int _lastGoodOpticFrame = -1;
+        private static bool _acquireFailureLogged;
+        private const int AcquireGraceFrames = 4;
+        private const int ScopedResolverToleranceFrames = 2;
 
         // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
         private static Type _scopeDataType;
@@ -255,36 +260,70 @@ namespace PiPDisabler
             try
             {
                 var player = GetLocalPlayer();
-                if (player == null) { reason = "no player"; goto evaluate; }
+                if (player == null) { reason = "no player"; ResetAcquireState(); goto evaluate; }
 
                 var pwa = player.ProceduralWeaponAnimation;
-                if (pwa == null) { reason = "no PWA"; goto evaluate; }
+                if (pwa == null) { reason = "no PWA"; ResetAcquireState(); goto evaluate; }
 
                 bool isAiming = _getIsAiming(pwa);
-                if (!isAiming) { reason = "not aiming"; goto evaluate; }
+                if (!isAiming) { reason = "not aiming"; ResetAcquireState(); goto evaluate; }
 
                 object currentScope = _getCurrentScope(pwa);
-                if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
+                if (currentScope == null) { reason = "no CurrentScope"; ResetAcquireState(); goto evaluate; }
 
                 bool isOptic = _getIsOptic(currentScope);
-                if (!isOptic) { reason = "not optic"; goto evaluate; }
+                if (!isOptic) { reason = "not optic"; ResetAcquireState(); goto evaluate; }
 
-                var enabledOs = FindEnabledOpticFromPWA();
-                if (enabledOs == null)
+                var resolvedOs = ResolveCurrentOpticForHeldWeapon(relaxed: false);
+                if (resolvedOs != null)
                 {
-                    // Hybrid toggle case: CurrentScope may still report optic while the
-                    // enabled OpticSight switched off (e.g., now in collimator mode).
-                    // Force scope exit immediately so RestoreAll runs without waiting for
-                    // a full ADS exit.
-                    shouldBeScoped = false;
-                    reason = "optic flag true but no enabled OpticSight";
+                    shouldBeScoped = true;
+                    _activeOptic = resolvedOs;
+                    _lastEnabledOptic = resolvedOs;
+                    _lastGoodOpticFrame = Time.frameCount;
+                    _pendingAcquireUntilFrame = -1;
+                    _acquireFailureLogged = false;
+                    reason = "aiming+optic+held-weapon optic resolved";
                     goto evaluate;
                 }
 
-                shouldBeScoped = true;
-                _activeOptic = enabledOs;
-                _lastEnabledOptic = enabledOs;
-                reason = "aiming+optic+enabled OpticSight";
+                if (_pendingAcquireUntilFrame < Time.frameCount)
+                    _pendingAcquireUntilFrame = Time.frameCount + AcquireGraceFrames;
+
+                var relaxedOs = ResolveCurrentOpticForHeldWeapon(relaxed: true);
+                if (relaxedOs != null)
+                {
+                    _activeOptic = relaxedOs;
+                    _lastEnabledOptic = relaxedOs;
+                    shouldBeScoped = _isScoped;
+                    reason = "pending acquisition (relaxed candidate held)";
+                    goto evaluate;
+                }
+
+                bool inAcquireWindow = Time.frameCount <= _pendingAcquireUntilFrame;
+                bool recentGood = _lastGoodOpticFrame >= 0
+                    && (Time.frameCount - _lastGoodOpticFrame) <= ScopedResolverToleranceFrames;
+
+                if (inAcquireWindow)
+                {
+                    // During first ADS acquisition we avoid forcing a premature failure.
+                    shouldBeScoped = _isScoped;
+                    reason = $"pending acquisition until frame {_pendingAcquireUntilFrame}";
+                    LogAcquireFailureEpisode(inAcquireWindow, recentGood);
+                    goto evaluate;
+                }
+
+                if (_isScoped && recentGood)
+                {
+                    shouldBeScoped = true;
+                    reason = $"resolver tolerance ({Time.frameCount - _lastGoodOpticFrame}/{ScopedResolverToleranceFrames} frames)";
+                    LogAcquireFailureEpisode(inAcquireWindow, recentGood);
+                    goto evaluate;
+                }
+
+                shouldBeScoped = false;
+                reason = $"optic acquisition grace expired at frame {_pendingAcquireUntilFrame}";
+                LogAcquireFailureEpisode(inAcquireWindow, recentGood);
             }
             catch (Exception ex) { reason = $"exception: {ex.Message}"; }
 
@@ -370,6 +409,7 @@ namespace PiPDisabler
             if (_isScoped)
                 DoScopeExit();
             _modBypassedForCurrentScope = false;
+            ResetAcquireState();
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
             _lastEnabledOptic = null;
@@ -831,6 +871,7 @@ namespace PiPDisabler
 
             _isScoped = false;
             _activeOptic = null;
+            ResetAcquireState();
             PerScopeMeshSurgerySettings.ClearActiveScope();
 
             // If this scope was bypassed, skip mod cleanup paths.
@@ -1022,47 +1063,241 @@ namespace PiPDisabler
             catch { return null; }
         }
 
-        /// <summary>
-        /// Fallback: find OpticSight if _lastEnabledOptic wasn't cached.
-        /// Uses FindObjectsOfType as last resort.
-        /// </summary>
+        private static void ResetAcquireState()
+        {
+            _pendingAcquireUntilFrame = -1;
+            _acquireFailureLogged = false;
+        }
+
         private static OpticSight FindOpticFromPWA()
         {
+            return ResolveCurrentOpticForHeldWeapon(relaxed: false)
+                ?? ResolveCurrentOpticForHeldWeapon(relaxed: true)
+                ?? ResolveCurrentOpticGlobalFallback(relaxed: true);
+        }
+
+        private static OpticSight ResolveCurrentOpticForHeldWeapon(bool relaxed)
+        {
+            Transform root = GetHeldWeaponSearchRoot();
+            if (root == null)
+                return null;
+
+            Transform preferredScopeRoot = null;
+            if (_activeOptic != null)
+                preferredScopeRoot = ScopeHierarchy.FindScopeRoot(_activeOptic.transform);
+            if (preferredScopeRoot == null && _lastEnabledOptic != null)
+                preferredScopeRoot = ScopeHierarchy.FindScopeRoot(_lastEnabledOptic.transform);
+
+            OpticSight[] candidates;
+            try { candidates = root.GetComponentsInChildren<OpticSight>(true); }
+            catch { return null; }
+
+            OpticSight best = null;
+            int bestScore = int.MinValue;
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                var os = candidates[i];
+                int score = ScoreHeldWeaponOpticCandidate(os, root, preferredScopeRoot, relaxed);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = os;
+                }
+            }
+
+            if (best != null && bestScore > int.MinValue / 2)
+                return best;
+
+            return null;
+        }
+
+        private static Transform GetHeldWeaponSearchRoot()
+        {
+            if (_activeOptic != null)
+            {
+                var sr = ScopeHierarchy.FindScopeRoot(_activeOptic.transform);
+                if (sr != null) return sr;
+            }
+
+            if (_lastEnabledOptic != null)
+            {
+                var sr = ScopeHierarchy.FindScopeRoot(_lastEnabledOptic.transform);
+                if (sr != null) return sr;
+            }
+
+            var player = GetLocalPlayer();
+            if (player == null) return null;
+            var pwa = player.ProceduralWeaponAnimation;
+            if (pwa == null) return null;
+
             try
             {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
-                foreach (var os in all)
-                {
-                    if (os != null && os.isActiveAndEnabled)
-                        return os;
-                }
-                foreach (var os in all)
-                {
-                    if (os != null) return os;
-                }
+                if (pwa.transform != null)
+                    return pwa.transform;
             }
             catch { }
 
             return null;
         }
 
-        /// <summary>
-        /// Finds an enabled OpticSight from cached references only.
-        /// No scene-wide FindObjectsOfType — those cause multi-ms hitches.
-        /// The OnEnable/OnDisable patches keep _lastEnabledOptic warm.
-        /// </summary>
-        private static OpticSight FindEnabledOpticFromPWA()
+        private static bool IsCandidateUnderRoot(OpticSight os, Transform root)
         {
-            if (_activeOptic != null && _activeOptic.isActiveAndEnabled)
-                return _activeOptic;
+            if (os == null || root == null) return false;
+            Transform t = os.transform;
+            while (t != null)
+            {
+                if (t == root) return true;
+                t = t.parent;
+            }
+            return false;
+        }
 
-            if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled)
-                return _lastEnabledOptic;
+        private static int ScoreHeldWeaponOpticCandidate(OpticSight os, Transform searchRoot, Transform preferredScopeRoot, bool relaxed)
+        {
+            if (os == null || searchRoot == null)
+                return int.MinValue;
 
-            // During rapid transitions (mode switch), the incoming optic may not
-            // be marked enabled yet. Trust the cache rather than doing a scene scan.
-            // The OnEnable patch will fire imminently and update the cache.
-            return null;
+            if (!IsCandidateUnderRoot(os, searchRoot))
+                return int.MinValue;
+
+            bool isActive = false;
+            bool isEnabled = false;
+            try { isActive = os.gameObject.activeInHierarchy; } catch { }
+            try { isEnabled = os.enabled; } catch { }
+
+            if (!relaxed && (!isActive || !isEnabled))
+                return int.MinValue;
+
+            int score = 0;
+
+            var candidateScopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
+            if (candidateScopeRoot != null)
+                score += 200;
+
+            if (preferredScopeRoot != null && candidateScopeRoot == preferredScopeRoot)
+                score += 500;
+
+            if (os == _activeOptic)
+                score += 300;
+            if (os == _lastEnabledOptic)
+                score += 240;
+
+            if (isEnabled)
+                score += 100;
+            if (isActive)
+                score += 80;
+
+            if (os.LensRenderer != null)
+                score += 60;
+
+            string templateId = FovController.GetOpticTemplateId(os);
+            if (!string.IsNullOrEmpty(templateId) && !string.Equals(templateId, "unknown", StringComparison.OrdinalIgnoreCase))
+                score += 30;
+
+            return score;
+        }
+
+        private static OpticSight ResolveCurrentOpticGlobalFallback(bool relaxed)
+        {
+            OpticSight[] all;
+            try { all = UnityEngine.Object.FindObjectsOfType<OpticSight>(); }
+            catch { return null; }
+
+            Transform root = GetHeldWeaponSearchRoot();
+            OpticSight best = null;
+            int bestScore = int.MinValue;
+            for (int i = 0; i < all.Length; i++)
+            {
+                var os = all[i];
+                if (root != null && !IsCandidateUnderRoot(os, root))
+                    continue;
+
+                int score = ScoreHeldWeaponOpticCandidate(os, root, null, relaxed);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = os;
+                }
+            }
+
+            return bestScore > int.MinValue / 2 ? best : null;
+        }
+
+        private static string GetHierarchyPath(Transform t)
+        {
+            if (t == null) return "<null>";
+
+            string path = t.name;
+            Transform p = t.parent;
+            while (p != null)
+            {
+                path = p.name + "/" + path;
+                p = p.parent;
+            }
+            return path;
+        }
+
+        private static void LogAcquireFailureEpisode(bool inAcquireWindow, bool recentGood)
+        {
+            if (_acquireFailureLogged)
+                return;
+
+            _acquireFailureLogged = true;
+
+            Transform root = GetHeldWeaponSearchRoot();
+            string rootPath = GetHierarchyPath(root);
+
+            PiPDisablerPlugin.LogInfo(
+                $"[ScopeLifecycle] Optic acquisition unresolved: frame={Time.frameCount} scoped={_isScoped} " +
+                $"pendingUntil={_pendingAcquireUntilFrame} lastGood={_lastGoodOpticFrame} " +
+                $"inAcquireWindow={inAcquireWindow} recentGood={recentGood} root='{rootPath}'");
+
+            if (root == null)
+            {
+                PiPDisablerPlugin.LogInfo("[ScopeLifecycle] Acquire candidate dump skipped: no held-weapon root");
+                return;
+            }
+
+            OpticSight[] candidates;
+            try { candidates = root.GetComponentsInChildren<OpticSight>(true); }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.LogInfo($"[ScopeLifecycle] Acquire candidate dump failed: {ex.Message}");
+                return;
+            }
+
+            if (candidates == null || candidates.Length == 0)
+            {
+                PiPDisablerPlugin.LogInfo("[ScopeLifecycle] Acquire candidate dump: no OpticSight under held-weapon root");
+                return;
+            }
+
+            Transform preferredScopeRoot = null;
+            if (_activeOptic != null)
+                preferredScopeRoot = ScopeHierarchy.FindScopeRoot(_activeOptic.transform);
+            if (preferredScopeRoot == null && _lastEnabledOptic != null)
+                preferredScopeRoot = ScopeHierarchy.FindScopeRoot(_lastEnabledOptic.transform);
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                var os = candidates[i];
+                bool enabled = false;
+                bool active = false;
+                try { enabled = os != null && os.enabled; } catch { }
+                try { active = os != null && os.gameObject.activeInHierarchy; } catch { }
+
+                int strictScore = ScoreHeldWeaponOpticCandidate(os, root, preferredScopeRoot, relaxed: false);
+                int relaxedScore = ScoreHeldWeaponOpticCandidate(os, root, preferredScopeRoot, relaxed: true);
+
+                string name = os != null ? os.name : "<null>";
+                string templateId = os != null ? FovController.GetOpticTemplateId(os) : "unknown";
+                string path = os != null ? GetHierarchyPath(os.transform) : "<null>";
+
+                PiPDisablerPlugin.LogInfo(
+                    $"[ScopeLifecycle] Acquire candidate[{i}]: name='{name}' template='{templateId}' enabled={enabled} activeInHierarchy={active} " +
+                    $"strictScore={strictScore} relaxedScore={relaxedScore} path='{path}'");
+            }
         }
 
     }
