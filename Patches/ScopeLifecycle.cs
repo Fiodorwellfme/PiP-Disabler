@@ -44,6 +44,12 @@ namespace PiPDisabler
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
 
+        // Robust optic resolver frame cache (avoid duplicate scans in same frame)
+        private static int _lastResolveFrame = -1;
+        private static OpticSight _resolvedThisFrame;
+        private static int _lastResolverFailureFrame = -1;
+        private static string _lastResolverSuccessSource;
+
         // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
         private static Type _scopeDataType;
         private static FieldInfo _scopeDataNightVisionField;
@@ -269,7 +275,7 @@ namespace PiPDisabler
                 bool isOptic = _getIsOptic(currentScope);
                 if (!isOptic) { reason = "not optic"; goto evaluate; }
 
-                var enabledOs = FindEnabledOpticFromPWA();
+                var enabledOs = ResolveCurrentOpticRobust();
                 if (enabledOs == null)
                 {
                     // Hybrid toggle case: CurrentScope may still report optic while the
@@ -278,6 +284,7 @@ namespace PiPDisabler
                     // a full ADS exit.
                     shouldBeScoped = false;
                     reason = "optic flag true but no enabled OpticSight";
+                    PiPDisablerPlugin.LogVerbose($"[ScopeLifecycle] Resolver returned null while CurrentScope.IsOptic=true caller={caller}");
                     goto evaluate;
                 }
 
@@ -383,8 +390,8 @@ namespace PiPDisabler
         /// </summary>
         public static void SyncState()
         {
-            // _lastEnabledOptic was cleared by ForceExit; if we're already scoped
-            // FindOpticFromPWA() will locate the active one when DoScopeEnter fires.
+            // _lastEnabledOptic was cleared by ForceExit; robust resolver will locate
+            // the active optic when DoScopeEnter fires.
             CheckAndUpdate("SyncState");
         }
 
@@ -447,26 +454,30 @@ namespace PiPDisabler
         {
             if (os == null) return null;
 
-            // Primary: derive from the object under mod_scope that is not a mount.
-            string modScopeName = ResolveNameUnderModScope(os.transform);
-            if (!string.IsNullOrWhiteSpace(modScopeName))
-                return modScopeName;
+            string key = null;
 
-            // Fallback for runtimes where hierarchy naming is atypical.
+            // Prefer stable template identity first.
             string templateName = FovController.GetOpticTemplateName(os);
             if (!string.IsNullOrWhiteSpace(templateName)
                 && !string.Equals(templateName, "unknown", StringComparison.OrdinalIgnoreCase))
-                return templateName;
+                key = templateName;
 
-            string templateId = FovController.GetOpticTemplateId(os);
-            if (!string.IsNullOrWhiteSpace(templateId)
-                && !string.Equals(templateId, "unknown", StringComparison.OrdinalIgnoreCase))
-                return templateId;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                string templateId = FovController.GetOpticTemplateId(os);
+                if (!string.IsNullOrWhiteSpace(templateId)
+                    && !string.Equals(templateId, "unknown", StringComparison.OrdinalIgnoreCase))
+                    key = templateId;
+            }
 
-            if (!string.IsNullOrWhiteSpace(os.name))
-                return NormalizeScopeKey(os.name);
+            if (string.IsNullOrWhiteSpace(key))
+                key = ResolveNameUnderModScope(os.transform);
 
-            return null;
+            if (string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(os.name))
+                key = NormalizeScopeKey(os.name);
+
+            key = NormalizeScopeAlias(os, NormalizeScopeKey(key));
+            return string.IsNullOrWhiteSpace(key) ? null : key;
         }
 
         private static string ResolveNameUnderModScope(Transform opticTransform)
@@ -513,6 +524,34 @@ namespace PiPDisabler
             if (key.EndsWith("(Clone)", StringComparison.OrdinalIgnoreCase))
                 key = key.Substring(0, key.Length - "(Clone)".Length).Trim();
             return string.IsNullOrWhiteSpace(key) ? null : key;
+        }
+
+        private static string NormalizeScopeAlias(OpticSight os, string key)
+        {
+            string normalizedKey = NormalizeScopeKey(key);
+            string haystack = ((normalizedKey ?? string.Empty) + " " + GetTransformPath(os != null ? os.transform : null)).ToLowerInvariant();
+
+            string alias = null;
+            if (ContainsCI(haystack, "exps3") && (ContainsCI(haystack, "g33") || ContainsCI(haystack, "ftc") || ContainsCI(haystack, "fts")))
+                alias = "scope_all_eotech_hhs_1";
+            else if (ContainsCI(haystack, "leupold") && ContainsCI(haystack, "lco"))
+                alias = "scope_all_leupold_lco";
+            else if ((ContainsCI(haystack, "romeo") && ContainsCI(haystack, "8t")) || ContainsCI(haystack, "romeo8t"))
+                alias = "scope_all_sig_romeo_8t";
+            else if ((ContainsCI(haystack, "aimpoint") && ContainsCI(haystack, "t1")) || ContainsCI(haystack, "micro t1") || ContainsCI(haystack, "micro_t1"))
+                alias = "scope_base_aimpoint_micro_t1";
+            else if (ContainsCI(haystack, "uh-1") || (ContainsCI(haystack, "vortex") && ContainsCI(haystack, "amg") && ContainsCI(haystack, "uh")))
+                alias = "scope_all_vortex_razor_amg_uh-1";
+
+            if (!string.IsNullOrWhiteSpace(alias)
+                && !string.Equals(alias, normalizedKey, StringComparison.OrdinalIgnoreCase))
+            {
+                PiPDisablerPlugin.LogVerbose(
+                    $"[ScopeLifecycle] Scope key alias: '{normalizedKey}' -> '{alias}' path='{GetTransformPath(os != null ? os.transform : null)}'");
+                return alias;
+            }
+
+            return normalizedKey;
         }
 
         private static bool ContainsCI(string s, string token)
@@ -743,10 +782,8 @@ namespace PiPDisabler
 
         private static void DoScopeEnter()
         {
-            // Get the OpticSight — cached from OnEnable, or find from pwa
-            var os = _lastEnabledOptic;
-            if (os == null)
-                os = FindOpticFromPWA();
+            // Resolve active optic robustly (handles first-ADS hybrid timing before OnEnable cache warms).
+            var os = ResolveCurrentOpticRobust();
             if (os == null)
             {
                 PiPDisablerPlugin.LogVerbose(
@@ -1022,47 +1059,215 @@ namespace PiPDisabler
             catch { return null; }
         }
 
-        /// <summary>
-        /// Fallback: find OpticSight if _lastEnabledOptic wasn't cached.
-        /// Uses FindObjectsOfType as last resort.
-        /// </summary>
-        private static OpticSight FindOpticFromPWA()
+        private static OpticSight ResolveCurrentOpticRobust()
         {
-            try
+            int frame = Time.frameCount;
+            if (_lastResolveFrame == frame)
+                return _resolvedThisFrame;
+
+            _lastResolveFrame = frame;
+            _resolvedThisFrame = null;
+
+            if (IsLikelyActiveOptic(_activeOptic))
             {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
-                foreach (var os in all)
+                _resolvedThisFrame = _activeOptic;
+                LogResolverSuccess("active-cache", _resolvedThisFrame);
+                return _resolvedThisFrame;
+            }
+
+            if (IsLikelyActiveOptic(_lastEnabledOptic))
+            {
+                _resolvedThisFrame = _lastEnabledOptic;
+                LogResolverSuccess("last-cache", _resolvedThisFrame);
+                return _resolvedThisFrame;
+            }
+
+            var player = GetLocalPlayer();
+            if (player != null)
+            {
+                var fromUpdater = ResolveFromOpticComponentUpdaters(player);
+                if (fromUpdater != null)
                 {
-                    if (os != null && os.isActiveAndEnabled)
-                        return os;
+                    _resolvedThisFrame = fromUpdater;
+                    _lastEnabledOptic = fromUpdater;
+                    LogResolverSuccess("updater-scan", fromUpdater);
+                    return _resolvedThisFrame;
                 }
-                foreach (var os in all)
+
+                var fromGlobal = ResolveFromGlobalOpticScan(player);
+                if (fromGlobal != null)
                 {
-                    if (os != null) return os;
+                    _resolvedThisFrame = fromGlobal;
+                    _lastEnabledOptic = fromGlobal;
+                    LogResolverSuccess("global-scan", fromGlobal);
+                    return _resolvedThisFrame;
                 }
             }
-            catch { }
+
+            if (_lastResolverFailureFrame != frame)
+            {
+                _lastResolverFailureFrame = frame;
+                PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] Optic resolver failed to find active local-player optic.");
+            }
 
             return null;
         }
 
-        /// <summary>
-        /// Finds an enabled OpticSight from cached references only.
-        /// No scene-wide FindObjectsOfType — those cause multi-ms hitches.
-        /// The OnEnable/OnDisable patches keep _lastEnabledOptic warm.
-        /// </summary>
-        private static OpticSight FindEnabledOpticFromPWA()
+        private static OpticSight ResolveFromOpticComponentUpdaters(Player localPlayer)
         {
-            if (_activeOptic != null && _activeOptic.isActiveAndEnabled)
-                return _activeOptic;
+            try
+            {
+                var opticField = PiPDisabler.GetOpticSightField();
+                if (opticField == null) return null;
 
-            if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled)
-                return _lastEnabledOptic;
+                var preferredRoot = GetPreferredScopeRoot();
+                OpticSight best = null;
+                int bestScore = int.MinValue;
 
-            // During rapid transitions (mode switch), the incoming optic may not
-            // be marked enabled yet. Trust the cache rather than doing a scene scan.
-            // The OnEnable patch will fire imminently and update the cache.
+                var updaters = UnityEngine.Object.FindObjectsOfType<OpticComponentUpdater>(true);
+                for (int i = 0; i < updaters.Length; i++)
+                {
+                    var updater = updaters[i];
+                    if (updater == null) continue;
+
+                    var os = opticField.GetValue(updater) as OpticSight;
+                    if (!IsLikelyActiveOptic(os)) continue;
+                    if (!IsOwnedByLocalPlayer(os, localPlayer)) continue;
+
+                    int score = ScoreOpticCandidate(os, preferredRoot);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        best = os;
+                    }
+                }
+
+                return best;
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.LogVerbose($"[ScopeLifecycle] Updater optic resolve failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static OpticSight ResolveFromGlobalOpticScan(Player localPlayer)
+        {
+            try
+            {
+                var preferredRoot = GetPreferredScopeRoot();
+                OpticSight best = null;
+                int bestScore = int.MinValue;
+
+                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>(true);
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var os = all[i];
+                    if (!IsLikelyActiveOptic(os)) continue;
+                    if (!IsOwnedByLocalPlayer(os, localPlayer)) continue;
+
+                    int score = ScoreOpticCandidate(os, preferredRoot);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        best = os;
+                    }
+                }
+
+                return best;
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.LogVerbose($"[ScopeLifecycle] Global optic resolve failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static bool IsLikelyActiveOptic(OpticSight os)
+        {
+            if (os == null) return false;
+            try
+            {
+                if (os.gameObject == null || !os.gameObject.activeInHierarchy) return false;
+                if (!os.enabled) return false;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsOwnedByLocalPlayer(OpticSight os, Player localPlayer)
+        {
+            if (os == null || localPlayer == null) return false;
+            try
+            {
+                var owner = os.GetComponentInParent<Player>();
+                return owner == localPlayer;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static Transform GetPreferredScopeRoot()
+        {
+            try
+            {
+                if (_activeOptic != null && _activeOptic.transform != null)
+                    return ScopeHierarchy.FindScopeRoot(_activeOptic.transform);
+                if (_lastEnabledOptic != null && _lastEnabledOptic.transform != null)
+                    return ScopeHierarchy.FindScopeRoot(_lastEnabledOptic.transform);
+            }
+            catch { }
             return null;
+        }
+
+        private static int ScoreOpticCandidate(OpticSight os, Transform preferredRoot)
+        {
+            if (os == null) return int.MinValue;
+            int score = 0;
+
+            if (preferredRoot != null)
+            {
+                Transform root = ScopeHierarchy.FindScopeRoot(os.transform);
+                if (root == preferredRoot)
+                    score += 100;
+                else if (os.transform != null && os.transform.IsChildOf(preferredRoot))
+                    score += 50;
+            }
+
+            if (ContainsCI(os.name, "mode_000")) score += 1;
+            return score;
+        }
+
+        private static string GetTransformPath(Transform t)
+        {
+            if (t == null) return string.Empty;
+            try
+            {
+                var names = new List<string>(16);
+                for (var cur = t; cur != null; cur = cur.parent)
+                    names.Add(cur.name);
+                names.Reverse();
+                return string.Join("/", names);
+            }
+            catch
+            {
+                return t.name ?? string.Empty;
+            }
+        }
+
+        private static void LogResolverSuccess(string source, OpticSight os)
+        {
+            if (os == null) return;
+            if (string.Equals(_lastResolverSuccessSource, source, StringComparison.Ordinal)) return;
+
+            _lastResolverSuccessSource = source;
+            PiPDisablerPlugin.LogInfo(
+                $"[ScopeLifecycle] Optic resolver: source={source} optic='{os.name}' tpl='{FovController.GetOpticTemplateId(os)}' path='{GetTransformPath(os.transform)}'");
         }
 
     }
