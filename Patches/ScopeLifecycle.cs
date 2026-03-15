@@ -169,6 +169,25 @@ namespace PiPDisabler
             if (os != null)
                 _lastEnabledOptic = os;
 
+            // If NOT scoped but aiming and an OpticSight just enabled, this is a
+            // collimator→magnified switch while already ADS (e.g. LCO starting in
+            // red-dot mode). Log it distinctly; CheckAndUpdate below will call DoScopeEnter.
+            if (!_isScoped && os != null)
+            {
+                try
+                {
+                    var player = GetLocalPlayer();
+                    var pwa = player?.ProceduralWeaponAnimation;
+                    if (pwa != null && _reflectionReady && _getIsAiming(pwa))
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle] Collimator→optic switch while ADS: " +
+                            $"'{os.name}'[{FovController.GetOpticTemplateId(os)}] — treating as scope enter");
+                    }
+                }
+                catch { }
+            }
+
             // If already scoped and a DIFFERENT optic enables → genuine mode switch.
             // Guard against sibling mode_000/mode_001 co-activating on scope enter, which
             // would falsely trigger a restore+recut cycle and cause a 1-2 frame mesh flash.
@@ -267,10 +286,31 @@ namespace PiPDisabler
                 if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
 
                 bool isOptic = _getIsOptic(currentScope);
-                if (!isOptic) { reason = "not optic"; goto evaluate; }
 
                 var enabledOs = FindEnabledOpticFromPWA();
-                if (enabledOs == null)
+
+                if (!isOptic)
+                {
+                    // PWA.CurrentScope.IsOptic can lag by a frame behind OpticSight.OnEnable
+                    // on combo sights (e.g. LCO) that start in collimator mode: the OpticSight
+                    // enables first, then EFT updates CurrentScope on the next tick.
+                    // If an OpticSight is already active in the scene, trust the component
+                    // state over the stale PWA flag so the mod enters correctly.
+                    if (enabledOs != null)
+                    {
+                        reason = "IsOptic lagged but OpticSight active — treating as optic";
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle] IsOptic PWA lag detected for '{enabledOs.name}': " +
+                            $"CurrentScope.IsOptic=false but OpticSight is active. Proceeding.");
+                        // fall through — enabledOs is valid, skip the early-exit
+                    }
+                    else
+                    {
+                        reason = "not optic";
+                        goto evaluate;
+                    }
+                }
+                else if (enabledOs == null)
                 {
                     // Hybrid toggle case: CurrentScope may still report optic while the
                     // enabled OpticSight switched off (e.g., now in collimator mode).
