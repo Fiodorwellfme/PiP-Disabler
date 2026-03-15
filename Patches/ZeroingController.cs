@@ -2,11 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using EFT;
-using EFT.Animations;
 using EFT.CameraControl;
 using EFT.InventoryLogic;
-using Comfort.Common;
-using HarmonyLib;
 using UnityEngine;
 
 namespace PiPDisabler
@@ -432,39 +429,41 @@ namespace PiPDisabler
 
         // ── SightComponent accessors (reflection) ───────────────────────────
 
+        private static Type _sightCompType;
+        private static bool _sightCompTypeSearched;
+
         private static object GetSightComponent(Item item)
         {
             try
             {
-                // item.GetItemComponent<SightComponent>()
-                // SightComponent might be in EFT.InventoryLogic
                 var method = item.GetType().GetMethod("GetItemComponent",
                     BindingFlags.Public | BindingFlags.Instance);
                 if (method == null) return null;
 
-                // Find the SightComponent type
-                Type sightCompType = null;
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                if (!_sightCompTypeSearched)
                 {
-                    sightCompType = asm.GetType("EFT.InventoryLogic.SightComponent");
-                    if (sightCompType != null) break;
-                }
-                if (sightCompType == null)
-                {
-                    // Try without namespace
+                    _sightCompTypeSearched = true;
                     foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                     {
-                        foreach (var t in asm.GetTypes())
+                        _sightCompType = asm.GetType("EFT.InventoryLogic.SightComponent");
+                        if (_sightCompType != null) break;
+                    }
+                    if (_sightCompType == null)
+                    {
+                        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                         {
-                            if (t.Name == "SightComponent")
-                            { sightCompType = t; break; }
+                            foreach (var t in asm.GetTypes())
+                            {
+                                if (t.Name == "SightComponent")
+                                { _sightCompType = t; break; }
+                            }
+                            if (_sightCompType != null) break;
                         }
-                        if (sightCompType != null) break;
                     }
                 }
-                if (sightCompType == null) return null;
+                if (_sightCompType == null) return null;
 
-                var generic = method.MakeGenericMethod(sightCompType);
+                var generic = method.MakeGenericMethod(_sightCompType);
                 return generic.Invoke(item, null);
             }
             catch { return null; }
@@ -581,13 +580,6 @@ namespace PiPDisabler
         }
 
         private static Player GetLocalPlayer()
-        {
-            try
-            {
-                var gw = Singleton<GameWorld>.Instance;
-                return gw != null ? gw.MainPlayer : null;
-            }
-            catch { return null; }
-        }
+            => PiPDisablerPlugin.GetLocalPlayer();
     }
 }

@@ -1,6 +1,5 @@
 using System;
 using System.Reflection;
-using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
 using HarmonyLib;
@@ -175,13 +174,6 @@ namespace PiPDisabler.Patches
         }
 
         private static Player GetMainPlayer()
-        {
-            try
-            {
-                var gw = Singleton<GameWorld>.Instance;
-                return gw?.MainPlayer;
-            }
-            catch { return null; }
-        }
+            => PiPDisablerPlugin.GetLocalPlayer();
     }
 }

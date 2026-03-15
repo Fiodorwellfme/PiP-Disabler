@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using EFT;
 using EFT.Animations;
 using EFT.CameraControl;
-using Comfort.Common;
 using HarmonyLib;
 using UnityEngine;
 
@@ -361,35 +360,15 @@ namespace PiPDisabler
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
 
-            // Ensure lens stays hidden + update variable zoom
-            if (ZoomController.IsActive)
-            {
-                if (_activeOptic != null)
-                {
-                    float mag = ZoomController.GetMagnification(_activeOptic);
-                    ZoomController.SetZoom(mag);
-                    // Update reticle + effects position (smoothed), rotation, and scale each frame
-                    ReticleRenderer.UpdateTransform(mag);
-                    ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
-                }
-                ZoomController.EnsureLensVisible();
+            // Keep lens hidden (re-kill if EFT restores geometry)
+            LensTransparency.EnsureHidden();
 
-                // Always re-kill other lens surfaces.
-                // Pass the ZoomController's managed renderer as exclusion while
-                // any other glass/linza surfaces EFT restores get killed again immediately.
-                LensTransparency.EnsureHidden(ZoomController.ActiveLensRenderer);
-            }
-            else
+            // Update reticle position/rotation/scale and effects
+            if (_activeOptic != null)
             {
-                LensTransparency.EnsureHidden();
-
-                // Update reticle position/rotation/scale
-                if (_activeOptic != null)
-                {
-                    float mag = ZoomController.GetMagnification(_activeOptic);
-                    ReticleRenderer.UpdateTransform(mag);
-                    ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
-                }
+                float mag = ZoomController.GetMagnification(_activeOptic);
+                ReticleRenderer.UpdateTransform(mag);
+                ScopeEffectsRenderer.UpdateTransform();
             }
 
             // PiP stays disabled via Harmony patches — no per-frame action needed.
@@ -762,7 +741,6 @@ namespace PiPDisabler
                 RestoreFov();
             Patches.WeaponScalingPatch.RestoreScale();
             ZoomController.Restore();
-            ZoomController.ResetScrollZoom();
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
             LensTransparency.RestoreAll();
@@ -830,11 +808,7 @@ namespace PiPDisabler
             ReticleRenderer.Show(os, mag);
 
             // 4b. Show lens vignette + scope shadow effects
-            Transform lensT = os.LensRenderer != null ? os.LensRenderer.transform : os.transform;
-            float baseSize = PiPDisablerPlugin.GetReticleBaseSize();
-            if (baseSize < 0.001f) baseSize = PiPDisablerPlugin.GetCylinderRadius() * 2f;
-            if (baseSize < 0.001f) baseSize = 0.030f;
-            ScopeEffectsRenderer.Show(lensT, baseSize, mag);
+            ScopeEffectsRenderer.Show();
 
             // 5. Mesh surgery (once)
             if (PiPDisablerPlugin.EnableMeshSurgery.Value)
@@ -888,9 +862,6 @@ namespace PiPDisabler
 
             // 2. Restore zoom controller
             ZoomController.Restore();
-
-            // 2b. Reset cached zoom state
-            ZoomController.ResetScrollZoom();
 
             // 3. Hide reticle overlay + scope effects
             ReticleRenderer.Cleanup();
@@ -960,14 +931,8 @@ namespace PiPDisabler
                 if (!PiPDisablerPlugin.EnableZoom.Value) return;
                 if (!CameraClass.Exist) return;
 
-                var player = GetLocalPlayer();
-                if (player == null) return;
-                var pwa = player.ProceduralWeaponAnimation;
-                if (pwa == null) return;
-
-                float playerBaseFov = pwa.Single_2;
                 float zoomBaseFov = FovController.ZoomBaselineFov;
-                float zoomedFov = FovController.ComputeZoomedFov(playerBaseFov, pwa);
+                float zoomedFov = FovController.ComputeZoomedFov();
 
                 if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                 {
@@ -1053,14 +1018,7 @@ namespace PiPDisabler
         }
 
         private static Player GetLocalPlayer()
-        {
-            try
-            {
-                var gw = Singleton<GameWorld>.Instance;
-                return gw != null ? gw.MainPlayer : null;
-            }
-            catch { return null; }
-        }
+            => PiPDisablerPlugin.GetLocalPlayer();
 
         /// <summary>
         /// Fallback: find OpticSight if _lastEnabledOptic wasn't cached.

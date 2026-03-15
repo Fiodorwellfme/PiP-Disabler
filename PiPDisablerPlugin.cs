@@ -1,11 +1,10 @@
 using System;
+using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Configuration;
 using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
-using System.Collections.Generic;
-using PiPDisabler;
 using UnityEngine;
 
 namespace PiPDisabler
@@ -63,6 +62,55 @@ namespace PiPDisabler
             }
             catch { }
             return Camera.main;
+        }
+
+        /// <summary>
+        /// Returns the local player via GameWorld singleton.
+        /// Shared helper — used by WeaponScalingPatch, ZeroingController, ScopeLifecycle.
+        /// </summary>
+        internal static Player GetLocalPlayer()
+        {
+            try
+            {
+                var gw = Singleton<GameWorld>.Instance;
+                return gw?.MainPlayer;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Returns the display viewport in pixels (accounts for DLSS/FSR).
+        /// Shared helper — used by ReticleRenderer and ScopeEffectsRenderer.
+        /// </summary>
+        internal static Rect GetDisplayViewport(Camera cam)
+        {
+            float w = Mathf.Max(1f, Screen.width);
+            float h = Mathf.Max(1f, Screen.height);
+            if (cam != null)
+            {
+                w = Mathf.Max(w, cam.pixelWidth);
+                h = Mathf.Max(h, cam.pixelHeight);
+            }
+            return new Rect(0f, 0f, w, h);
+        }
+
+        /// <summary>
+        /// Check if two transforms share the same mode_XXX ancestor.
+        /// Shared helper — used by FovController, CameraSettingsManager.
+        /// </summary>
+        internal static bool IsOnSameMode(Transform a, Transform b)
+        {
+            var mA = FindModeAncestor(a);
+            var mB = FindModeAncestor(b);
+            return mA == mB;
+        }
+
+        private static Transform FindModeAncestor(Transform t)
+        {
+            for (var p = t; p != null; p = p.parent)
+                if (p.name != null && p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase))
+                    return p;
+            return null;
         }
 
         // --- 0. Global ---
@@ -533,9 +581,6 @@ namespace PiPDisabler
 
             // Initialize scope detection via PWA reflection
             ScopeLifecycle.Init();
-
-            // Initialize zoom system
-            ZoomController.LoadShader();
 
             // --- Config change handlers (catches config manager changes, not just hotkeys) ---
             ModEnabled.SettingChanged += OnModEnabledChanged;

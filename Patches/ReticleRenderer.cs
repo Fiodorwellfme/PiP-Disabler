@@ -195,9 +195,6 @@ namespace PiPDisabler
                 AttachToCamera();
         }
 
-        /// <summary>Legacy wrapper.</summary>
-        public static void UpdateScale(float magnification) => UpdateTransform(magnification);
-
         public static void Hide()
         {
             _alignmentActive = false;
@@ -512,22 +509,8 @@ namespace PiPDisabler
                 Mathf.Max(1f, cam.pixelHeight));
         }
 
-        /// <summary>
-        /// Returns the display viewport in pixels.
-        /// Used by the AfterEverything debug path where overlays are drawn to the
-        /// final display-sized camera target rather than the internal scene RT.
-        /// </summary>
         private static Rect GetDisplayViewport(Camera cam)
-        {
-            float w = Mathf.Max(1f, Screen.width);
-            float h = Mathf.Max(1f, Screen.height);
-            if (cam != null)
-            {
-                w = Mathf.Max(w, cam.pixelWidth);
-                h = Mathf.Max(h, cam.pixelHeight);
-            }
-            return new Rect(0f, 0f, w, h);
-        }
+            => PiPDisablerPlugin.GetDisplayViewport(cam);
 
         /// <summary>
         /// Returns the aspect ratio for the currently attached command-buffer event.

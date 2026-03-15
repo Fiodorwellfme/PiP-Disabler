@@ -69,9 +69,8 @@ namespace PiPDisabler.Patches
 
                 if (isOptic)
                 {
-                    float playerBaseFov = pwa.Single_2;
                     float zoomBaseFov = FovController.ZoomBaselineFov;
-                    float zoomedFov = FovController.ComputeZoomedFov(playerBaseFov, pwa);
+                    float zoomedFov = FovController.ComputeZoomedFov();
 
                     if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                     {
