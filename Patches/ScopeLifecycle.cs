@@ -5,6 +5,7 @@ using System.Text;
 using EFT;
 using EFT.Animations;
 using EFT.CameraControl;
+using EFT.InventoryLogic;
 using Comfort.Common;
 using HarmonyLib;
 using UnityEngine;
