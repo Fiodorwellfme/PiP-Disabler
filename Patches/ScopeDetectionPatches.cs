@@ -19,6 +19,7 @@ namespace PiPDisabler.Patches
             PiPDisablerPlugin.LogInfo(
                 $"[Patch] OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"enabled={__instance?.enabled} frame={Time.frameCount}");
+            ScopeLifecycle.RecordExternalEvent("Patch.OpticSight.OnEnable", __instance);
 
             if (!PiPDisablerPlugin.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticEnabled(__instance);
@@ -36,6 +37,7 @@ namespace PiPDisabler.Patches
             PiPDisablerPlugin.LogInfo(
                 $"[Patch] OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"frame={Time.frameCount}");
+            ScopeLifecycle.RecordExternalEvent("Patch.OpticSight.OnDisable", __instance);
 
             if (!PiPDisablerPlugin.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticDisabled(__instance);
@@ -54,7 +56,20 @@ namespace PiPDisabler.Patches
 
             PiPDisablerPlugin.LogInfo(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
+            ScopeLifecycle.RecordExternalEvent("Patch.ChangeAimingMode");
             ScopeLifecycle.CheckAndUpdate("ChangeAimingMode");
+        }
+    }
+
+    internal sealed class FirearmControllerSetAimIndexPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(Player.FirearmController), "SetAimIndex");
+
+        [PatchPostfix]
+        private static void Postfix(Player.FirearmController __instance, int index)
+        {
+            ScopeLifecycle.RecordExternalEvent("Patch.SetAimIndex", __instance, $"index={index}");
         }
     }
 }

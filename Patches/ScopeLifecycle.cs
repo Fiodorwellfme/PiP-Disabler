@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using System.Collections.Generic;
+using System.Text;
 using EFT;
 using EFT.Animations;
 using EFT.CameraControl;
@@ -44,6 +45,19 @@ namespace PiPDisabler
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
 
+        // Temporary high-signal diagnostics for hybrid scope detection races.
+        private const int ScopeEventCapacity = 32;
+        private static readonly string[] _recentScopeEvents = new string[ScopeEventCapacity];
+        private static int _recentScopeEventWriteIndex;
+        private static int _recentScopeEventCount;
+        private static bool _wasInFailureEdge;
+        private static bool _failureWasObserved;
+        private static int _lastFailureDumpFrame = -1;
+        private static bool _successSnapshotDumpedAfterFailure;
+        private static object _lastSeenCurrentScope;
+        private static Transform _lastSeenWeaponRoot;
+        private static Weapon _lastSeenWeapon;
+
         // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
         private static Type _scopeDataType;
         private static FieldInfo _scopeDataNightVisionField;
@@ -59,6 +73,12 @@ namespace PiPDisabler
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
         public static OpticSight ActiveOptic => _activeOptic;
+
+        internal static void RecordExternalEvent(string eventName, object target = null, string details = null)
+        {
+            string targetDesc = DescribeAny(target);
+            RecordScopeEvent(eventName, targetDesc, details);
+        }
 
         /// <summary>
         /// Shared optic classification helper for other systems that must make
@@ -166,6 +186,7 @@ namespace PiPDisabler
         /// </summary>
         public static void OnOpticEnabled(OpticSight os)
         {
+            RecordScopeEvent("OpticSight.OnEnable", DescribeOptic(os));
             if (os != null)
                 _lastEnabledOptic = os;
 
@@ -235,6 +256,7 @@ namespace PiPDisabler
         /// </summary>
         public static void OnOpticDisabled(OpticSight os)
         {
+            RecordScopeEvent("OpticSight.OnDisable", DescribeOptic(os));
             ReticleRenderer.Hide();
             ScopeEffectsRenderer.Hide();
             CheckAndUpdate("OnOpticDisabled");
@@ -260,11 +282,31 @@ namespace PiPDisabler
                 var pwa = player.ProceduralWeaponAnimation;
                 if (pwa == null) { reason = "no PWA"; goto evaluate; }
 
+                var currentWeapon = GetCurrentWeapon(player);
+                if (!ReferenceEquals(_lastSeenWeapon, currentWeapon))
+                {
+                    RecordScopeEvent("Weapon.changed", DescribeAny(currentWeapon), $"previous={DescribeAny(_lastSeenWeapon)}");
+                    _lastSeenWeapon = currentWeapon;
+                }
+
+                if (TryFindCurrentWeaponRoot(player, out var weaponRoot, out _)
+                    && !ReferenceEquals(_lastSeenWeaponRoot, weaponRoot))
+                {
+                    RecordScopeEvent("WeaponRoot.changed", DescribeTransform(weaponRoot), $"previous={DescribeTransform(_lastSeenWeaponRoot)}");
+                    _lastSeenWeaponRoot = weaponRoot;
+                }
+
                 bool isAiming = _getIsAiming(pwa);
                 if (!isAiming) { reason = "not aiming"; goto evaluate; }
 
                 object currentScope = _getCurrentScope(pwa);
                 if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
+
+                if (!ReferenceEquals(_lastSeenCurrentScope, currentScope))
+                {
+                    RecordScopeEvent("CurrentScope.changed", DescribeAny(currentScope));
+                    _lastSeenCurrentScope = currentScope;
+                }
 
                 bool isOptic = _getIsOptic(currentScope);
                 if (!isOptic) { reason = "not optic"; goto evaluate; }
@@ -272,6 +314,7 @@ namespace PiPDisabler
                 var enabledOs = FindEnabledOpticFromPWA();
                 if (enabledOs == null)
                 {
+                    MaybeDumpFailureSnapshot(player, pwa, currentScope, reason: "enabled OpticSight resolver returned null");
                     // Hybrid toggle case: CurrentScope may still report optic while the
                     // enabled OpticSight switched off (e.g., now in collimator mode).
                     // Force scope exit immediately so RestoreAll runs without waiting for
@@ -284,6 +327,7 @@ namespace PiPDisabler
                 shouldBeScoped = true;
                 _activeOptic = enabledOs;
                 _lastEnabledOptic = enabledOs;
+                MaybeDumpRecoverySnapshot(player, pwa, currentScope, enabledOs, "enabled OpticSight resolved after failure");
                 reason = "aiming+optic+enabled OpticSight";
             }
             catch (Exception ex) { reason = $"exception: {ex.Message}"; }
@@ -293,6 +337,7 @@ namespace PiPDisabler
             // Log every state CHANGE (not every frame)
             if (shouldBeScoped != _isScoped)
             {
+                RecordScopeEvent("ScopeState.changed", details: $"{(_isScoped ? "SCOPED" : "NOT_SCOPED")}->{(shouldBeScoped ? "SCOPED" : "NOT_SCOPED")}, reason={reason}, caller={_lastCaller}");
                 PiPDisablerPlugin.LogInfo(
                     $"[ScopeLifecycle] State change: {(_isScoped ? "SCOPED" : "NOT_SCOPED")} → " +
                     $"{(shouldBeScoped ? "SCOPED" : "NOT_SCOPED")} reason='{reason}' " +
@@ -1053,6 +1098,8 @@ namespace PiPDisabler
         /// </summary>
         private static OpticSight FindEnabledOpticFromPWA()
         {
+            RecordScopeEvent("Resolver.TryCachedEnabledOptic", details: $"active={DescribeOptic(_activeOptic)}, lastEnabled={DescribeOptic(_lastEnabledOptic)}");
+
             if (_activeOptic != null && _activeOptic.isActiveAndEnabled)
                 return _activeOptic;
 
@@ -1063,6 +1110,296 @@ namespace PiPDisabler
             // be marked enabled yet. Trust the cache rather than doing a scene scan.
             // The OnEnable patch will fire imminently and update the cache.
             return null;
+        }
+
+        private static void MaybeDumpFailureSnapshot(Player player, ProceduralWeaponAnimation pwa, object currentScope, string reason)
+        {
+            bool isAiming = SafeInvoke(() => _getIsAiming != null && pwa != null && _getIsAiming(pwa));
+            bool hasScope = currentScope != null;
+            bool isOptic = SafeInvoke(() => _getIsOptic != null && currentScope != null && _getIsOptic(currentScope));
+            bool failureEdge = isAiming && hasScope && isOptic;
+
+            if (!failureEdge)
+            {
+                _wasInFailureEdge = false;
+                return;
+            }
+
+            if (_lastFailureDumpFrame == Time.frameCount)
+                return;
+
+            if (_wasInFailureEdge)
+                return;
+
+            _wasInFailureEdge = true;
+            _failureWasObserved = true;
+            _successSnapshotDumpedAfterFailure = false;
+            _lastFailureDumpFrame = Time.frameCount;
+
+            DumpScopeSnapshot(prefix: "[ScopeFail]", player: player, pwa: pwa, currentScope: currentScope, resolvedOptic: null, reason: reason);
+        }
+
+        private static void MaybeDumpRecoverySnapshot(Player player, ProceduralWeaponAnimation pwa, object currentScope, OpticSight resolvedOptic, string reason)
+        {
+            _wasInFailureEdge = false;
+
+            if (!_failureWasObserved || _successSnapshotDumpedAfterFailure)
+                return;
+
+            DumpScopeSnapshot(prefix: "[ScopeDiag]", player: player, pwa: pwa, currentScope: currentScope, resolvedOptic: resolvedOptic, reason: reason);
+            _successSnapshotDumpedAfterFailure = true;
+        }
+
+        private static void DumpScopeSnapshot(string prefix, Player player, ProceduralWeaponAnimation pwa, object currentScope, OpticSight resolvedOptic, string reason)
+        {
+            try
+            {
+                var sb = new StringBuilder(4096);
+                sb.AppendLine($"{prefix} frame={Time.frameCount} reason='{reason}' caller={_lastCaller}");
+                sb.AppendLine($"{prefix} player='{(player != null ? player.name : "null")}' playerNull={player == null} pwaNull={pwa == null}");
+
+                bool isAiming = SafeInvoke(() => _getIsAiming != null && pwa != null && _getIsAiming(pwa));
+                bool isOptic = SafeInvoke(() => _getIsOptic != null && currentScope != null && _getIsOptic(currentScope));
+                sb.AppendLine($"{prefix} PWA.IsAiming={isAiming} CurrentScope={DescribeAny(currentScope)} CurrentScope.IsOptic={isOptic}");
+                sb.AppendLine($"{prefix} cache.activeOptic={DescribeOptic(_activeOptic)} cache.lastEnabledOptic={DescribeOptic(_lastEnabledOptic)} resolvedOptic={DescribeOptic(resolvedOptic)}");
+
+                var weapon = GetCurrentWeapon(player);
+                sb.AppendLine($"{prefix} weapon={DescribeAny(weapon)}");
+                sb.AppendLine($"{prefix} item-state: {DumpWeaponSightState(player, weapon)}");
+
+                if (TryFindCurrentWeaponRoot(player, out var weaponRoot, out var weaponRootReason))
+                {
+                    sb.AppendLine($"{prefix} weaponRoot={DescribeTransform(weaponRoot)} source={weaponRootReason}");
+                    sb.Append(DumpLiveSightComponents(weaponRoot, currentScope));
+                }
+                else
+                {
+                    sb.AppendLine($"{prefix} weaponRoot=(not found) source={weaponRootReason}");
+                }
+
+                sb.Append(DumpRecentEvents(prefix));
+                PiPDisablerPlugin.LogInfo(sb.ToString());
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.LogInfo($"{prefix} snapshot failed: {ex.Message}");
+            }
+        }
+
+        private static string DumpWeaponSightState(Player player, Weapon weapon)
+        {
+            var sb = new StringBuilder(512);
+            try
+            {
+                var fc = player != null ? player.HandsController as Player.FirearmController : null;
+                object currentItem = null;
+                if (fc != null)
+                {
+                    var itemProp = fc.GetType().GetProperty("Item", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    currentItem = itemProp?.GetValue(fc, null);
+                }
+
+                sb.Append($"handsItem={DescribeAny(currentItem)} ");
+                if (weapon != null)
+                {
+                    var aimIndex = weapon.GetType().GetProperty("AimIndex", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(weapon, null);
+                    var selectedScope = weapon.GetType().GetProperty("SelectedScope", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(weapon, null);
+                    var selectedScopeIndex = weapon.GetType().GetProperty("SelectedScopeIndex", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(weapon, null);
+                    sb.Append($"AimIndex={aimIndex ?? "n/a"} SelectedScope={DescribeAny(selectedScope)} SelectedScopeIndex={selectedScopeIndex ?? "n/a"} ");
+
+                    var getAllSightMods = weapon.GetType().GetMethod("GetAllSightMods", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    var sights = getAllSightMods?.Invoke(weapon, null) as System.Collections.IEnumerable;
+                    int c = 0;
+                    if (sights != null)
+                    {
+                        sb.Append("SightMods=[");
+                        foreach (var s in sights)
+                        {
+                            if (c > 0) sb.Append("; ");
+                            if (c >= 8) { sb.Append("..."); break; }
+                            sb.Append(DescribeAny(s));
+                            c++;
+                        }
+                        sb.Append("]");
+                    }
+                    else
+                    {
+                        sb.Append("SightMods=[n/a]");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.Append($"error={ex.Message}");
+            }
+
+            return sb.ToString();
+        }
+
+        private static string DumpLiveSightComponents(Transform weaponRoot, object currentScope)
+        {
+            var sb = new StringBuilder(2048);
+            var optics = weaponRoot.GetComponentsInChildren<OpticSight>(true);
+            var collimators = weaponRoot.GetComponentsInChildren<CollimatorSight>(true);
+            string currentScopeToken = ExtractCurrentScopeToken(currentScope);
+            sb.AppendLine($"[ScopeDiag] live-sights under weaponRoot: optic={optics.Length} collimator={collimators.Length} currentScope={DescribeAny(currentScope)} scopeToken={currentScopeToken}");
+
+            foreach (var os in optics)
+                sb.AppendLine($"[ScopeDiag]   OpticSight {DescribeSightComponent(os, weaponRoot, currentScopeToken)}");
+            foreach (var cs in collimators)
+                sb.AppendLine($"[ScopeDiag]   CollimatorSight {DescribeSightComponent(cs, weaponRoot, currentScopeToken)}");
+            return sb.ToString();
+        }
+
+        private static string DescribeSightComponent(Component c, Transform weaponRoot, string currentScopeToken)
+        {
+            if (c == null) return "null";
+            string path = GetPath(c.transform);
+            bool underRoot = weaponRoot != null && c.transform.IsChildOf(weaponRoot);
+            bool underScopeToken = !string.IsNullOrEmpty(currentScopeToken)
+                && path.IndexOf(currentScopeToken, StringComparison.OrdinalIgnoreCase) >= 0;
+            return $"{DescribeComponent(c)} underWeaponRoot={underRoot} underCurrentScopeToken={underScopeToken}";
+        }
+
+        private static bool TryFindCurrentWeaponRoot(Player player, out Transform weaponRoot, out string reason)
+        {
+            weaponRoot = null;
+            reason = "none";
+            try
+            {
+                var fc = player != null ? player.HandsController as Player.FirearmController : null;
+                if (fc != null)
+                {
+                    var weaponRootValue = fc.GetType().GetProperty("WeaponRoot", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                        ?.GetValue(fc, null);
+                    var weaponRootTf = weaponRootValue as Transform;
+                    if (weaponRootTf == null && weaponRootValue is Component weaponRootComp)
+                        weaponRootTf = weaponRootComp.transform;
+
+                    if (weaponRootTf != null)
+                    {
+                        weaponRoot = weaponRootTf;
+                        reason = "FirearmController.WeaponRoot";
+                        return true;
+                    }
+
+                    if (fc.transform != null)
+                    {
+                        weaponRoot = fc.transform;
+                        reason = "FirearmController.transform";
+                        return true;
+                    }
+                }
+
+                if (_lastEnabledOptic != null)
+                {
+                    weaponRoot = _lastEnabledOptic.transform.root;
+                    reason = "lastEnabledOptic.root";
+                    return weaponRoot != null;
+                }
+            }
+            catch (Exception ex)
+            {
+                reason = $"exception={ex.Message}";
+            }
+
+            return false;
+        }
+
+        private static Weapon GetCurrentWeapon(Player player)
+        {
+            try
+            {
+                var fc = player != null ? player.HandsController as Player.FirearmController : null;
+                if (fc == null) return null;
+                var itemProp = fc.GetType().GetProperty("Item", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                return itemProp?.GetValue(fc, null) as Weapon;
+            }
+            catch { return null; }
+        }
+
+        private static string DumpRecentEvents(string prefix)
+        {
+            var sb = new StringBuilder(1024);
+            sb.AppendLine($"{prefix} recent-events(count={_recentScopeEventCount}):");
+            int start = _recentScopeEventWriteIndex - _recentScopeEventCount;
+            if (start < 0) start += ScopeEventCapacity;
+            for (int i = 0; i < _recentScopeEventCount; i++)
+            {
+                int idx = (start + i) % ScopeEventCapacity;
+                var e = _recentScopeEvents[idx];
+                if (!string.IsNullOrEmpty(e))
+                    sb.AppendLine($"{prefix}   {e}");
+            }
+            return sb.ToString();
+        }
+
+        private static void RecordScopeEvent(string eventName, string target = null, string details = null)
+        {
+            string line = $"[ScopeEvent] frame={Time.frameCount} evt={eventName}";
+            if (!string.IsNullOrEmpty(target)) line += $" target={target}";
+            if (!string.IsNullOrEmpty(details)) line += $" details={details}";
+
+            _recentScopeEvents[_recentScopeEventWriteIndex] = line;
+            _recentScopeEventWriteIndex = (_recentScopeEventWriteIndex + 1) % ScopeEventCapacity;
+            if (_recentScopeEventCount < ScopeEventCapacity) _recentScopeEventCount++;
+        }
+
+        private static string DescribeOptic(OpticSight os)
+        {
+            if (os == null) return "null";
+            return DescribeComponent(os);
+        }
+
+        private static string DescribeComponent(Component c)
+        {
+            if (c == null) return "null";
+            var go = c.gameObject;
+            return $"{c.GetType().Name}('{c.name}',id={c.GetInstanceID()},enabled={c is Behaviour b ? b.enabled.ToString() : "n/a"},activeSelf={go.activeSelf},activeInHierarchy={go.activeInHierarchy},path='{GetPath(c.transform)}')";
+        }
+
+        private static string DescribeTransform(Transform t)
+        {
+            if (t == null) return "null";
+            return $"'{t.name}' id={t.GetInstanceID()} path='{GetPath(t)}'";
+        }
+
+        private static string DescribeAny(object o)
+        {
+            if (o == null) return "null";
+            if (o is Component c) return DescribeComponent(c);
+            if (o is UnityEngine.Object uo) return $"{uo.GetType().Name}('{uo.name}',id={uo.GetInstanceID()})";
+            return $"{o.GetType().Name}('{o}')";
+        }
+
+        private static string ExtractCurrentScopeToken(object currentScope)
+        {
+            if (currentScope == null) return null;
+            try
+            {
+                var nameProp = currentScope.GetType().GetProperty("Name", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var value = nameProp?.GetValue(currentScope, null) as string;
+                if (!string.IsNullOrWhiteSpace(value)) return value;
+            }
+            catch { }
+
+            var raw = currentScope.ToString();
+            return string.IsNullOrWhiteSpace(raw) ? null : raw;
+        }
+
+        private static bool SafeInvoke(Func<bool> fn)
+        {
+            try { return fn != null && fn(); } catch { return false; }
+        }
+
+        private static string GetPath(Transform t)
+        {
+            if (t == null) return "(null)";
+            var names = new List<string>(16);
+            for (var cur = t; cur != null; cur = cur.parent)
+                names.Add(cur.name ?? "?");
+            names.Reverse();
+            return string.Join("/", names.ToArray());
         }
 
     }
