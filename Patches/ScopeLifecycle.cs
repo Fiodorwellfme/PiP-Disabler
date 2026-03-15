@@ -1355,7 +1355,8 @@ namespace PiPDisabler
         {
             if (c == null) return "null";
             var go = c.gameObject;
-            return $"{c.GetType().Name}('{c.name}',id={c.GetInstanceID()},enabled={c is Behaviour b ? b.enabled.ToString() : "n/a"},activeSelf={go.activeSelf},activeInHierarchy={go.activeInHierarchy},path='{GetPath(c.transform)}')";
+            string enabledState = c is Behaviour b ? b.enabled.ToString() : "n/a";
+            return $"{c.GetType().Name}('{c.name}',id={c.GetInstanceID()},enabled={enabledState},activeSelf={go.activeSelf},activeInHierarchy={go.activeInHierarchy},path='{GetPath(c.transform)}')";
         }
 
         private static string DescribeTransform(Transform t)
