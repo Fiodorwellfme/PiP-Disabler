@@ -238,21 +238,36 @@ namespace PiPDisabler
                 "Master ON/OFF switch for the entire mod. When OFF, all effects are " +
                 "cleaned up and the game behaves as if the mod is not installed.");
             ModToggleKey = Config.Bind("0. Global", "ModToggleKey", KeyCode.Backspace,
-                "Toggle key for master mod enable/disable.");
+                new ConfigDescription(
+                    "Toggle key for master mod enable/disable.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             AutoSwitchReticleRenderForNvg = Config.Bind("0. Global", "AutoSwitchReticleRenderForNvg", true,
-                "Automatically switch reticle CommandBuffer event based on NVG state.\n" +
-                "ON: use AfterForwardAlpha while NVG are active and AfterEverything otherwise.\n" +
-                "OFF: keep the normal path (AfterForwardAlpha) unless debug override is enabled.");
+                new ConfigDescription(
+                    "Automatically switch reticle CommandBuffer event based on NVG state.\n" +
+                    "ON: use AfterForwardAlpha while NVG are active and AfterEverything otherwise.\n" +
+                    "OFF: keep the normal path (AfterForwardAlpha) unless debug override is enabled.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- General ---
             DisablePiP = Config.Bind("1. General", "DisablePiP", true,
-                "Disable Picture-in-Picture optic rendering (No-PiP mode). " +
-                "Core feature — gives identical perf between hip-fire and ADS.");
+                new ConfigDescription(
+                    "Disable Picture-in-Picture optic rendering (No-PiP mode). " +
+                    "Core feature — gives identical perf between hip-fire and ADS.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             AutoDisableForVariableScopes = Config.Bind("1. General", "AutoDisableForVariableScopes", true,
-                "Automatically disable all mod effects while scoped with variable magnification optics (IsAdjustableOptic=true).\n" +
-                "Also bypasses thermal/night-vision scopes detected via ScopeData.ThermalVisionData or NightVisionData.");
+                new ConfigDescription(
+                    "Automatically disable all mod effects while scoped with variable magnification optics (IsAdjustableOptic=true).\n" +
+                    "Also bypasses thermal/night-vision scopes detected via ScopeData.ThermalVisionData or NightVisionData.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             AutoBypassNameContains = Config.Bind("1. General", "AutoBypassNameContains", "npz, PU, vomz, d-evo",
-                "Comma-separated list of substrings. Any scope whose object name or scope key contains one of these ");
+                new ConfigDescription(
+                    "Comma-separated list of substrings. Any scope whose object name or scope key contains one of these ",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             ScopeWhitelistNames = Config.Bind("1. General", "ScopeWhitelistNames", "",
                 "Comma/semicolon/newline separated list of allowed scope keys.\n" +
                 "Primary key is derived from the object under mod_scope that does not contain mount (case-insensitive).\n" +
@@ -260,49 +275,70 @@ namespace PiPDisabler
             ScopeWhitelistToggleEntryKey = Config.Bind("1. General", "ScopeWhitelistToggleEntryKey", KeyCode.None,
                 "When pressed while scoped, add/remove the current scope key in ScopeWhitelistNames (derived from mod_scope non-mount object).");
             DisablePiPToggleKey = Config.Bind("1. General", "DisablePiPToggleKey", KeyCode.None,
-                "Toggle key for PiP disable.");
+                new ConfigDescription(
+                    "Toggle key for PiP disable.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             MakeLensesTransparent = Config.Bind("1. General", "MakeLensesTransparent", true,
-                "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.");
+                new ConfigDescription(
+                    "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             LensesTransparentToggleKey = Config.Bind("1. General", "LensesTransparentToggleKey", KeyCode.None,
-                "Toggle key for lens transparency.");
+                new ConfigDescription(
+                    "Toggle key for lens transparency.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             BlackLensWhenUnscoped = Config.Bind("1. General", "BlackLensWhenUnscoped", true,
-                "When unscoping, apply a solid black opaque material to the lens instead of restoring " +
-                "the original PiP/sight material. Eliminates the reticle flash during the unscope " +
-                "transition and gives the scope a realistic dark-glass appearance when not in use.");
+                new ConfigDescription(
+                    "When unscoping, apply a solid black opaque material to the lens instead of restoring " +
+                    "the original PiP/sight material. Eliminates the reticle flash during the unscope " +
+                    "transition and gives the scope a realistic dark-glass appearance when not in use.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- Weapon Scaling ---
             EnableWeaponScaling = Config.Bind("2. Zoom", "EnableWeaponScaling", true,
-                "Compensate weapon/arms model scale across magnification levels.\n" +
-                "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
-                "With this enabled, the weapon shrinks proportionally as you zoom in so it\n" +
-                "always occupies the same screen space at every magnification level.");
+                new ConfigDescription(
+                    "Compensate weapon/arms model scale across magnification levels.\n" +
+                    "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
+                    "With this enabled, the weapon shrinks proportionally as you zoom in so it\n" +
+                    "always occupies the same screen space at every magnification level.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             BaselineWeaponScale = Config.Bind("2. Zoom", "BaselineWeaponScale", 0.9624413f,
                 new ConfigDescription(
                     "Base weapon scale applied at all FOV values before compensation.\n" +
                     "1.00 = default EFT visual scale.",
-                    new AcceptableValueRange<float>(0.00f, 2.00f)));
+                    new AcceptableValueRange<float>(0.00f, 2.00f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             WeaponScaleStrength = Config.Bind("2. Zoom", "WeaponScaleStrength", 0.2723005f,
                 new ConfigDescription(
                     "Blends between no compensation and full inverse-FOV compensation.\n" +
                     "0.00 = no compensation, 1.00 = full compensation, values outside [0,1] over/under-compensate.",
-                    new AcceptableValueRange<float>(-2.00f, 2.00f)));
+                    new AcceptableValueRange<float>(-2.00f, 2.00f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- Zoom ---
             EnableZoom = Config.Bind("2. Zoom", "EnableZoom", true,
-                "Enable scope magnification via FOV zoom.");
+                new ConfigDescription(
+                    "Enable scope magnification via FOV zoom.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             DefaultZoom = Config.Bind("2. Zoom", "DefaultZoom", 4f,
                 new ConfigDescription(
                     "Default magnification when auto-detection fails (e.g. fixed scopes without zoom data).",
-                    new AcceptableValueRange<float>(1f, 16f)));
+                    new AcceptableValueRange<float>(1f, 16f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             AutoFovFromScope = Config.Bind("2. Zoom", "AutoFovFromScope", true,
-                "Auto-detect magnification from the scope's zoom data (ScopeZoomHandler). " +
-                "Works for variable-zoom scopes. Falls back to DefaultZoom for fixed scopes.");
+                new ConfigDescription(
+                    "Auto-detect magnification from the scope's zoom data (ScopeZoomHandler). " +
+                    "Works for variable-zoom scopes. Falls back to DefaultZoom for fixed scopes.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             ScopedFov = Config.Bind("2. Zoom", "ScopedFov", 15f,
                 new ConfigDescription(
                     "FOV (degrees) for FOV zoom fallback mode. Lower = more zoom. " +
                     "Used for FOV zoom.",
-                    new AcceptableValueRange<float>(5f, 75f)));
+                    new AcceptableValueRange<float>(5f, 75f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             FovAnimationDuration = Config.Bind("2. Zoom", "FovAnimationDuration", 1f,
                 new ConfigDescription(
                     "Duration (seconds) of the FOV zoom-in animation when entering ADS.\n" +
@@ -315,19 +351,19 @@ namespace PiPDisabler
                     "Manual LOD bias while scoped.\n" +
                     "0 = auto (baseLodBias * magnification).\n" +
                     ">0 = force this exact value (e.g. 4.0).",
-                    new AcceptableValueRange<float>(0f, 20f)));
+                    new AcceptableValueRange<float>(0f, 20f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             ManualMaximumLodLevel = Config.Bind("2. Zoom", "ManualMaximumLodLevel", -1,
                 new ConfigDescription(
                     "Manual QualitySettings.maximumLODLevel while scoped.\n" +
                     "-1 = auto (force 0 / highest detail).\n" +
                     ">=0 = force this exact max LOD level.",
-                    new AcceptableValueRange<int>(-1, 8)));
+                    new AcceptableValueRange<int>(-1, 8) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             ManualCullingMultiplier = Config.Bind("2. Zoom", "ManualCullingMultiplier", 0.8f,
                 new ConfigDescription(
                     "Manual multiplier for Camera.layerCullDistances while scoped.\n" +
                     "0 = auto (use magnification).\n" +
                     ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
-                    new AcceptableValueRange<float>(0f, 20f)));
+                    new AcceptableValueRange<float>(0f, 20f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             MapManualLodBias = new Dictionary<string, ConfigEntry<float>>(StringComparer.OrdinalIgnoreCase);
 
             BindPerMapLodBias("Woods", "Woods", "Woods");
@@ -341,26 +377,50 @@ namespace PiPDisabler
             BindPerMapLodBias("StreetsOfTarkov", "Streets of Tarkov", "TarkovStreets");
             BindPerMapLodBias("GroundZero", "Ground Zero", "Sandbox", "Sandbox_high");
             ZoomToggleKey = Config.Bind("2. Zoom", "ZoomToggleKey", KeyCode.None,
-                "Toggle key for zoom (None = always on when EnableZoom is true).");
+                new ConfigDescription(
+                    "Toggle key for zoom (None = always on when EnableZoom is true).",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- 4. Zeroing ---
             EnableZeroing = Config.Bind("4. Zeroing", "EnableZeroing", true,
-                "Enable optic zeroing (calibration distance adjustment) via keyboard.\n" +
-                "Uses the proper EFT pathway (works with Fika).");
+                new ConfigDescription(
+                    "Enable optic zeroing (calibration distance adjustment) via keyboard.\n" +
+                    "Uses the proper EFT pathway (works with Fika).",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             ZeroingUpKey = Config.Bind("4. Zeroing", "ZeroingUpKey", KeyCode.PageUp,
-                "Key to increase zeroing distance.");
+                new ConfigDescription(
+                    "Key to increase zeroing distance.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             ZeroingDownKey = Config.Bind("4. Zeroing", "ZeroingDownKey", KeyCode.PageDown,
-                "Key to decrease zeroing distance.");
+                new ConfigDescription(
+                    "Key to decrease zeroing distance.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- Mesh Surgery (ON by default, Cylinder mode) ---
             EnableMeshSurgery = Config.Bind("3. Global Mesh Surgery settings", "EnableMeshSurgery", true,
-                "Enable runtime mesh cutting to bore a hole through the scope housing.");
+                new ConfigDescription(
+                    "Enable runtime mesh cutting to bore a hole through the scope housing.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             MeshSurgeryToggleKey = Config.Bind("3. Global Mesh Surgery settings", "MeshSurgeryToggleKey", KeyCode.None,
-                "Toggle key for mesh surgery.");
+                new ConfigDescription(
+                    "Toggle key for mesh surgery.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             RestoreOnUnscope = Config.Bind("3. Global Mesh Surgery settings", "RestoreOnUnscope", true,
-                "Restore original meshes when leaving scope.");
+                new ConfigDescription(
+                    "Restore original meshes when leaving scope.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             PlaneOffsetMeters = Config.Bind("3. Global Mesh Surgery settings", "PlaneOffsetMeters", 0.001f,
-                "Offset applied along plane normal (meters).");
+                new ConfigDescription(
+                    "Offset applied along plane normal (meters).",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             PlaneNormalAxis = Config.Bind("3. Global Mesh Surgery settings", "PlaneNormalAxis", "-Y",
                 new ConfigDescription(
                     "Which local axis to use as the cut plane normal.\n" +
@@ -368,93 +428,91 @@ namespace PiPDisabler
                     "X/Y/Z = force that local axis as the plane normal.\n" +
                     "-X/-Y/-Z = force the negative of that axis.\n" +
                     "If the cut is horizontal when it should be vertical, try Z or Y.",
-                    new AcceptableValueList<string>("Auto", "X", "Y", "Z", "-X", "-Y", "-Z")));
+                    new AcceptableValueList<string>("Auto", "X", "Y", "Z", "-X", "-Y", "-Z") , new ConfigurationManagerAttributes { IsAdvanced = true }));
             CutRadius = Config.Bind("3. Global Mesh Surgery settings", "CutRadius", 0f,
                 new ConfigDescription(
                     "Max distance (meters) from scope center to cut. 0 = unlimited (cut all geometry).\n" +
                     "Set to e.g. 0.05 to only cut geometry near the lens opening.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-            ShowCutPlane = Config.Bind("3. Global Mesh Surgery settings", "ShowCutPlane", false,
-                "Show green/red semi-transparent circles at the near/far cut plane positions.\n" +
-                "Use this to visualize the cut endpoints.");
-            ShowCutVolume = Config.Bind("3. Global Mesh Surgery settings", "ShowCutVolume", false,
-                "Show a semi-transparent 3D tube representing the full cut volume.\n" +
-                "Visualizes the near→mid→far radius profile so you can see exactly what gets removed.");
+                    new AcceptableValueRange<float>(0f, 1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            ShowCutPlane = Config.Bind("3. Global Mesh Surgery settings", "ShowCutPlane", false, new ConfigDescription("Show green/red semi-transparent circles at the near/far cut plane positions.\n" +
+                "Use this to visualize the cut endpoints.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            ShowCutVolume = Config.Bind("3. Global Mesh Surgery settings", "ShowCutVolume", false, new ConfigDescription("Show a semi-transparent 3D tube representing the full cut volume.\n" +
+                "Visualizes the near→mid→far radius profile so you can see exactly what gets removed.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
             CutVolumeOpacity = Config.Bind("3. Global Mesh Surgery settings", "CutVolumeOpacity", 0.49f,
                 new ConfigDescription(
                     "Opacity of the 3D cut volume visualizer (0 = invisible, 1 = opaque).",
-                    new AcceptableValueRange<float>(0.05f, 0.8f)));
+                    new AcceptableValueRange<float>(0.05f, 0.8f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             CutMode = Config.Bind("3. Global Mesh Surgery settings", "CutMode", "Cylinder",
                 new ConfigDescription(
                     "Plane = flat infinite cut. Cylinder = cylindrical bore cut centered on the lens axis.\n" +
                     "Cylinder removes geometry inside a cylinder of CylinderRadius around the lens center.",
-                    new AcceptableValueList<string>("Plane", "Cylinder")));
+                    new AcceptableValueList<string>("Plane", "Cylinder") , new ConfigurationManagerAttributes { IsAdvanced = true }));
             CylinderRadius = Config.Bind("3. Global Mesh Surgery settings", "CylinderRadius", 0.011f,
                 new ConfigDescription(
                     "Near radius (meters) of the cylindrical/cone cut (camera side).\n" +
                     "Typical scope lens radius is ~0.01-0.02m.",
-                    new AcceptableValueRange<float>(0.001f, 0.1f)));
+                    new AcceptableValueRange<float>(0.001f, 0.1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             MidCylinderRadius = Config.Bind("3. Global Mesh Surgery settings", "MidCylinderRadius", 0.013f,
                 new ConfigDescription(
                     "Intermediate radius (meters) at MidCylinderPosition along the bore.\n" +
                     "0 = disabled (linear near→far interpolation).\n" +
                     ">0 = two-segment interpolation: near→mid, then mid→far.\n" +
                     "Set smaller than near/far to create a waist (hourglass). Set larger for a bulge.",
-                    new AcceptableValueRange<float>(0f, 0.2f)));
+                    new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             MidCylinderPosition = Config.Bind("3. Global Mesh Surgery settings", "MidCylinderPosition", 0.28f,
                 new ConfigDescription(
                     "Position of the mid-radius control point along the cut length (0=near, 1=far).\n" +
                     "0.5 = midpoint. 0.3 = closer to camera. 0.7 = closer to objective.",
-                    new AcceptableValueRange<float>(0.01f, 0.99f)));
+                    new AcceptableValueRange<float>(0.01f, 0.99f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             FarCylinderRadius = Config.Bind("3. Global Mesh Surgery settings", "FarCylinderRadius", 0.12f,
                 new ConfigDescription(
                     "Far radius (meters) of the cone cut (objective side).\n" +
                     "0 = same as CylinderRadius (pure cylinder). >0 creates a cone/frustum shape.\n" +
                     "Set larger than CylinderRadius to widen the bore toward the objective lens.",
-                    new AcceptableValueRange<float>(0f, 0.2f)));
+                    new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane1OffsetMeters = Config.Bind("3. Global Mesh Surgery settings", "Plane1OffsetMeters", 0f,
                 new ConfigDescription(
                     "Offset (meters) for plane 1 from linza/backLens origin along bore axis.\n" +
                     "Plane 1 radius is always CylinderRadius.",
-                    new AcceptableValueRange<float>(-0.02f, 0.02f)));
+                    new AcceptableValueRange<float>(-0.02f, 0.02f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane2Position = Config.Bind("3. Global Mesh Surgery settings", "Plane2Position", 0.1138498f,
                 new ConfigDescription(
                     "Plane 2 profile position (0..1) anchored from the near side.\n" +
                     "Changing CutLength keeps this plane at the same world-space depth from near.",
-                    new AcceptableValueRange<float>(0f, 1f)));
+                    new AcceptableValueRange<float>(0f, 1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane2Radius = Config.Bind("3. Global Mesh Surgery settings", "Plane2Radius", 0.0186338f,
                 new ConfigDescription(
                     "Radius (meters) at plane 2.",
-                    new AcceptableValueRange<float>(0f, 0.2f)));
+                    new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane3Position = Config.Bind("3. Global Mesh Surgery settings", "Plane3Position", 0.55f,
                 new ConfigDescription(
                     "Normalized depth of plane 3 from near (0) to far (1).",
-                    new AcceptableValueRange<float>(0f, 1f)));
+                    new AcceptableValueRange<float>(0f, 1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane3Radius = Config.Bind("3. Global Mesh Surgery settings", "Plane3Radius", 0.2f,
                 new ConfigDescription(
                     "Radius (meters) at plane 3.",
-                    new AcceptableValueRange<float>(0f, 0.2f)));
+                    new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane4Position = Config.Bind("3. Global Mesh Surgery settings", "Plane4Position", 1f,
                 new ConfigDescription(
                     "Normalized depth of plane 4 from near (0) to far (1). Usually 1.",
-                    new AcceptableValueRange<float>(0f, 1f)));
+                    new AcceptableValueRange<float>(0f, 1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane4Radius = Config.Bind("3. Global Mesh Surgery settings", "Plane4Radius", 0.2f,
                 new ConfigDescription(
                     "Radius (meters) at plane 4 (away from player).",
-                    new AcceptableValueRange<float>(0f, 0.2f)));
+                    new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             CutStartOffset = Config.Bind("3. Global Mesh Surgery settings", "CutStartOffset", 0.04084507f,
                 new ConfigDescription(
                     "How far behind the backLens (toward the camera) the near cut plane starts.\n" +
                     "The near plane is fixed at: backLens - (offset × boreAxis).\n" +
                     "0 = starts exactly at the backLens. 0.05 = 5cm behind it (catches interior tube geometry).\n" +
                     "Changing CutLength does NOT move this plane.",
-                    new AcceptableValueRange<float>(0f, 0.3f)));
+                    new AcceptableValueRange<float>(0f, 0.3f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             CutLength = Config.Bind("3. Global Mesh Surgery settings", "CutLength", 0.755493f,
                 new ConfigDescription(
                     "How far forward from the near plane the cut extends (toward the objective).\n" +
                     "The far plane is at: nearPlane + (length × boreAxis).\n" +
                     "Only the far plane moves when you change this value.",
-                    new AcceptableValueRange<float>(0.01f, 1f)));
+                    new AcceptableValueRange<float>(0.01f, 1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
             NearPreserveDepth = Config.Bind("3. Global Mesh Surgery settings", "NearPreserveDepth", 0.02549295f,
                 new ConfigDescription(
                     "Depth (meters) from the near cut plane where NO geometry is cut.\n" +
@@ -462,64 +520,58 @@ namespace PiPDisabler
                     "keep a thin ring framing the reticle while ADSing.\n" +
                     "0.01 = 1cm ring (default). 0.02-0.04 = thicker ring.\n" +
                     "0 = disabled (cut starts at the near plane — removes everything).",
-                    new AcceptableValueRange<float>(0f, 0.15f)));
-            ShowReticle = Config.Bind("3. Global Mesh Surgery settings", "ShowReticle", true,
-                "Render the scope reticle texture as a glowing overlay where the lens was.\n" +
-                "Uses alpha blending so the reticle's own alpha channel controls transparency.");
+                    new AcceptableValueRange<float>(0f, 0.15f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            ShowReticle = Config.Bind("3. Global Mesh Surgery settings", "ShowReticle", true, new ConfigDescription("Render the scope reticle texture as a glowing overlay where the lens was.\n" +
+                "Uses alpha blending so the reticle's own alpha channel controls transparency.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
             ReticleBaseSize = Config.Bind("3. Global Mesh Surgery settings", "ReticleBaseSize", 0.030f,
                 new ConfigDescription(
                     "Physical diameter (meters) of the reticle quad at 1x magnification.\n" +
                     "The quad is scaled by 1/magnification so screen-pixel coverage stays constant\n" +
                     "across all zoom levels.  Typical scope lens diameter is 0.02-0.04 m.\n" +
                     "Set to 0 to fall back to the legacy CylinderRadius x2 value.",
-                    new AcceptableValueRange<float>(0f, 0.2f)));
-            ExpandSearchToWeaponRoot = Config.Bind("3. Global Mesh Surgery settings", "ExpandSearchToWeaponRoot", true,
-                "Expand the mesh surgery search root all the way up to the Weapon_root node.\n" +
+                    new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            ExpandSearchToWeaponRoot = Config.Bind("3. Global Mesh Surgery settings", "ExpandSearchToWeaponRoot", true, new ConfigDescription("Expand the mesh surgery search root all the way up to the Weapon_root node.\n" +
                 "When enabled, meshes on the weapon body under Weapon_root are also candidates\n" +
                 "for cutting — not just those in the scope sub-hierarchy.\n" +
                 "Use this when scope geometry blends into the weapon receiver and you need to cut\n" +
                 "the underlying weapon meshes as well.\n" +
-                "Example path: Weapon_root/Weapon_root_anim/weapon/mod_scope/...");
-            DebugShowHousingMask = Config.Bind("3. Global Mesh Surgery settings", "DebugShowHousingMask", false,
-                "Render a red/yellow overlay wherever the scope housing stencil mask is\n" +
+                "Example path: Weapon_root/Weapon_root_anim/weapon/mod_scope/...", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            DebugShowHousingMask = Config.Bind("3. Global Mesh Surgery settings", "DebugShowHousingMask", false, new ConfigDescription("Render a red/yellow overlay wherever the scope housing stencil mask is\n" +
                 "suppressing the reticle.  Use this to diagnose which meshes are incorrectly\n" +
                 "masking the aperture.  Combine with the BepInEx log to see the exact renderer\n" +
-                "names printed by CollectHousingRenderers.  Disable in normal play.");
-            StencilIncludeWeaponMeshes = Config.Bind("3. Global Mesh Surgery settings", "StencilIncludeWeaponMeshes", true,
-                "Include weapon body renderers (found under the 'weapon' transform) in the\n" +
+                "names printed by CollectHousingRenderers.  Disable in normal play.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            StencilIncludeWeaponMeshes = Config.Bind("3. Global Mesh Surgery settings", "StencilIncludeWeaponMeshes", true, new ConfigDescription("Include weapon body renderers (found under the 'weapon' transform) in the\n" +
                 "stencil mask alongside the scope housing.  Prevents the reticle from\n" +
-                "bleeding through the weapon mesh at screen centre.");
+                "bleeding through the weapon mesh at screen centre.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- Custom Mesh Surgery settings ---
-            SaveCustomMeshSurgerySettingsKey = Config.Bind("4. Custom Mesh Surgery settings", "SaveCustomMeshSurgerySettingsKey", KeyCode.None,
-                "When pressed while scoped, save all values from this category for the active scope key into custom_mesh_surgery_settings.json.");
-            DeleteCustomMeshSurgerySettingsKey = Config.Bind("4. Custom Mesh Surgery settings", "DeleteCustomMeshSurgerySettingsKey", KeyCode.None,
-                "When pressed while scoped, delete custom mesh surgery settings for the active scope key from custom_mesh_surgery_settings.json.");
-            CustomPlaneOffsetMeters = Config.Bind("4. Custom Mesh Surgery settings", "PlaneOffsetMeters", 0.001f, "Custom per-scope plane offset applied along plane normal (meters).");
-            CustomPlaneNormalAxis = Config.Bind("4. Custom Mesh Surgery settings", "PlaneNormalAxis", "-Y", new ConfigDescription("Custom per-scope local axis for the cut plane normal.", new AcceptableValueList<string>("Auto", "X", "Y", "Z", "-X", "-Y", "-Z")));
-            CustomCutRadius = Config.Bind("4. Custom Mesh Surgery settings", "CutRadius", 0f, new ConfigDescription("Custom per-scope max cut distance in meters (0 = unlimited).", new AcceptableValueRange<float>(0f, 1f)));
-            CustomShowCutPlane = Config.Bind("4. Custom Mesh Surgery settings", "ShowCutPlane", false, "Custom per-scope cut plane visualizer toggle.");
-            CustomShowCutVolume = Config.Bind("4. Custom Mesh Surgery settings", "ShowCutVolume", false, "Custom per-scope cut volume visualizer toggle.");
-            CustomCutVolumeOpacity = Config.Bind("4. Custom Mesh Surgery settings", "CutVolumeOpacity", 0.49f, new ConfigDescription("Custom per-scope cut volume opacity.", new AcceptableValueRange<float>(0.05f, 0.8f)));
-            CustomCutMode = Config.Bind("4. Custom Mesh Surgery settings", "CutMode", "Cylinder", new ConfigDescription("Custom per-scope mesh cut mode.", new AcceptableValueList<string>("Plane", "Cylinder")));
-            CustomCylinderRadius = Config.Bind("4. Custom Mesh Surgery settings", "CylinderRadius", 0.011f, new ConfigDescription("Custom per-scope near radius in meters.", new AcceptableValueRange<float>(0.001f, 0.1f)));
-            CustomMidCylinderRadius = Config.Bind("4. Custom Mesh Surgery settings", "MidCylinderRadius", 0.013f, new ConfigDescription("Custom per-scope mid profile radius in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
-            CustomMidCylinderPosition = Config.Bind("4. Custom Mesh Surgery settings", "MidCylinderPosition", 0.28f, new ConfigDescription("Custom per-scope mid profile position (0..1).", new AcceptableValueRange<float>(0.01f, 0.99f)));
-            CustomFarCylinderRadius = Config.Bind("4. Custom Mesh Surgery settings", "FarCylinderRadius", 0.12f, new ConfigDescription("Custom per-scope far radius in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
-            CustomPlane1OffsetMeters = Config.Bind("4. Custom Mesh Surgery settings", "Plane1OffsetMeters", 0f, new ConfigDescription("Custom per-scope plane 1 offset in meters.", new AcceptableValueRange<float>(-0.02f, 0.02f)));
-            CustomPlane2Position = Config.Bind("4. Custom Mesh Surgery settings", "Plane2Position", 0.1138498f, new ConfigDescription("Custom per-scope plane 2 position (0..1), anchored from near when CutLength changes.", new AcceptableValueRange<float>(0f, 1f)));
-            CustomPlane2Radius = Config.Bind("4. Custom Mesh Surgery settings", "Plane2Radius", 0.0186338f, new ConfigDescription("Custom per-scope plane 2 radius in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
-            CustomPlane3Position = Config.Bind("4. Custom Mesh Surgery settings", "Plane3Position", 0.55f, new ConfigDescription("Custom per-scope plane 3 depth (0..1).", new AcceptableValueRange<float>(0f, 1f)));
-            CustomPlane3Radius = Config.Bind("4. Custom Mesh Surgery settings", "Plane3Radius", 0.2f, new ConfigDescription("Custom per-scope plane 3 radius in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
-            CustomPlane4Position = Config.Bind("4. Custom Mesh Surgery settings", "Plane4Position", 1f, new ConfigDescription("Custom per-scope plane 4 depth (0..1).", new AcceptableValueRange<float>(0f, 1f)));
-            CustomPlane4Radius = Config.Bind("4. Custom Mesh Surgery settings", "Plane4Radius", 0.2f, new ConfigDescription("Custom per-scope plane 4 radius in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
-            CustomCutStartOffset = Config.Bind("4. Custom Mesh Surgery settings", "CutStartOffset", 0.04084507f, new ConfigDescription("Custom per-scope cut start offset in meters.", new AcceptableValueRange<float>(-0.2f, 0.2f)));
-            CustomCutLength = Config.Bind("4. Custom Mesh Surgery settings", "CutLength", 0.755493f, new ConfigDescription("Custom per-scope cut length in meters.", new AcceptableValueRange<float>(0.01f, 4f)));
-            CustomNearPreserveDepth = Config.Bind("4. Custom Mesh Surgery settings", "NearPreserveDepth", 0.02549295f, new ConfigDescription("Custom per-scope near preserve depth in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
-            CustomShowReticle = Config.Bind("4. Custom Mesh Surgery settings", "ShowReticle", true, "Custom per-scope reticle visibility.");
-            CustomReticleBaseSize = Config.Bind("4. Custom Mesh Surgery settings", "ReticleBaseSize", 0.030f, new ConfigDescription("Custom per-scope reticle base diameter in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
-            CustomRestoreOnUnscope = Config.Bind("4. Custom Mesh Surgery settings", "RestoreOnUnscope", true, "Custom per-scope restore behavior when leaving scope.");
-            CustomExpandSearchToWeaponRoot = Config.Bind("4. Custom Mesh Surgery settings", "ExpandSearchToWeaponRoot", true, "Custom per-scope search root expansion to Weapon_root.");
+            SaveCustomMeshSurgerySettingsKey = Config.Bind("4. Custom Mesh Surgery settings", "SaveCustomMeshSurgerySettingsKey", KeyCode.None, new ConfigDescription("When pressed while scoped, save all values from this category for the active scope key into custom_mesh_surgery_settings.json.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            DeleteCustomMeshSurgerySettingsKey = Config.Bind("4. Custom Mesh Surgery settings", "DeleteCustomMeshSurgerySettingsKey", KeyCode.None, new ConfigDescription("When pressed while scoped, delete custom mesh surgery settings for the active scope key from custom_mesh_surgery_settings.json.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomPlaneOffsetMeters = Config.Bind("4. Custom Mesh Surgery settings", "PlaneOffsetMeters", 0.001f, new ConfigDescription("Custom per-scope plane offset applied along plane normal (meters).", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomPlaneNormalAxis = Config.Bind("4. Custom Mesh Surgery settings", "PlaneNormalAxis", "-Y", new ConfigDescription("Custom per-scope local axis for the cut plane normal.", new AcceptableValueList<string>("Auto", "X", "Y", "Z", "-X", "-Y", "-Z") , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomCutRadius = Config.Bind("4. Custom Mesh Surgery settings", "CutRadius", 0f, new ConfigDescription("Custom per-scope max cut distance in meters (0 = unlimited).", new AcceptableValueRange<float>(0f, 1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomShowCutPlane = Config.Bind("4. Custom Mesh Surgery settings", "ShowCutPlane", false, new ConfigDescription("Custom per-scope cut plane visualizer toggle.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomShowCutVolume = Config.Bind("4. Custom Mesh Surgery settings", "ShowCutVolume", false, new ConfigDescription("Custom per-scope cut volume visualizer toggle.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomCutVolumeOpacity = Config.Bind("4. Custom Mesh Surgery settings", "CutVolumeOpacity", 0.49f, new ConfigDescription("Custom per-scope cut volume opacity.", new AcceptableValueRange<float>(0.05f, 0.8f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomCutMode = Config.Bind("4. Custom Mesh Surgery settings", "CutMode", "Cylinder", new ConfigDescription("Custom per-scope mesh cut mode.", new AcceptableValueList<string>("Plane", "Cylinder") , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomCylinderRadius = Config.Bind("4. Custom Mesh Surgery settings", "CylinderRadius", 0.011f, new ConfigDescription("Custom per-scope near radius in meters.", new AcceptableValueRange<float>(0.001f, 0.1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomMidCylinderRadius = Config.Bind("4. Custom Mesh Surgery settings", "MidCylinderRadius", 0.013f, new ConfigDescription("Custom per-scope mid profile radius in meters.", new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomMidCylinderPosition = Config.Bind("4. Custom Mesh Surgery settings", "MidCylinderPosition", 0.28f, new ConfigDescription("Custom per-scope mid profile position (0..1).", new AcceptableValueRange<float>(0.01f, 0.99f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomFarCylinderRadius = Config.Bind("4. Custom Mesh Surgery settings", "FarCylinderRadius", 0.12f, new ConfigDescription("Custom per-scope far radius in meters.", new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomPlane1OffsetMeters = Config.Bind("4. Custom Mesh Surgery settings", "Plane1OffsetMeters", 0f, new ConfigDescription("Custom per-scope plane 1 offset in meters.", new AcceptableValueRange<float>(-0.02f, 0.02f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomPlane2Position = Config.Bind("4. Custom Mesh Surgery settings", "Plane2Position", 0.1138498f, new ConfigDescription("Custom per-scope plane 2 position (0..1), anchored from near when CutLength changes.", new AcceptableValueRange<float>(0f, 1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomPlane2Radius = Config.Bind("4. Custom Mesh Surgery settings", "Plane2Radius", 0.0186338f, new ConfigDescription("Custom per-scope plane 2 radius in meters.", new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomPlane3Position = Config.Bind("4. Custom Mesh Surgery settings", "Plane3Position", 0.55f, new ConfigDescription("Custom per-scope plane 3 depth (0..1).", new AcceptableValueRange<float>(0f, 1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomPlane3Radius = Config.Bind("4. Custom Mesh Surgery settings", "Plane3Radius", 0.2f, new ConfigDescription("Custom per-scope plane 3 radius in meters.", new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomPlane4Position = Config.Bind("4. Custom Mesh Surgery settings", "Plane4Position", 1f, new ConfigDescription("Custom per-scope plane 4 depth (0..1).", new AcceptableValueRange<float>(0f, 1f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomPlane4Radius = Config.Bind("4. Custom Mesh Surgery settings", "Plane4Radius", 0.2f, new ConfigDescription("Custom per-scope plane 4 radius in meters.", new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomCutStartOffset = Config.Bind("4. Custom Mesh Surgery settings", "CutStartOffset", 0.04084507f, new ConfigDescription("Custom per-scope cut start offset in meters.", new AcceptableValueRange<float>(-0.2f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomCutLength = Config.Bind("4. Custom Mesh Surgery settings", "CutLength", 0.755493f, new ConfigDescription("Custom per-scope cut length in meters.", new AcceptableValueRange<float>(0.01f, 4f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomNearPreserveDepth = Config.Bind("4. Custom Mesh Surgery settings", "NearPreserveDepth", 0.02549295f, new ConfigDescription("Custom per-scope near preserve depth in meters.", new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomShowReticle = Config.Bind("4. Custom Mesh Surgery settings", "ShowReticle", true, new ConfigDescription("Custom per-scope reticle visibility.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomReticleBaseSize = Config.Bind("4. Custom Mesh Surgery settings", "ReticleBaseSize", 0.030f, new ConfigDescription("Custom per-scope reticle base diameter in meters.", new AcceptableValueRange<float>(0f, 0.2f) , new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomRestoreOnUnscope = Config.Bind("4. Custom Mesh Surgery settings", "RestoreOnUnscope", true, new ConfigDescription("Custom per-scope restore behavior when leaving scope.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomExpandSearchToWeaponRoot = Config.Bind("4. Custom Mesh Surgery settings", "ExpandSearchToWeaponRoot", true, new ConfigDescription("Custom per-scope search root expansion to Weapon_root.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- Scope Effects ---
             VignetteEnabled = Config.Bind("5. Scope Effects", "VignetteEnabled", true,
