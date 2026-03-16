@@ -21,6 +21,7 @@ namespace PiPDisabler.Patches
             SafeEnable<PiPDisabler.OpticSightLensFade_NoPipPatch>();
             // FOV zoom
             SafeEnable<PWAMethod23Patch>();
+            SafeEnable<FreelookFOVpatch>();
             // Weapon scaling (freeze ribcage scale while scoped)
             SafeEnable<WeaponScalingPatch>();
             // Fika compatibility patch
