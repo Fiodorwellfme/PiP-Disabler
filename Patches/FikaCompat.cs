@@ -54,10 +54,10 @@ namespace PiPDisabler.Patches
 
         private static bool IsZoomedOpticAimingPrefix(ref bool __result)
         {
-            if (!ModSettings.ModEnabled.Value)
+            if (!PiPDisablerPlugin.ModEnabled.Value)
                 return true;
 
-            if (!ModSettings.DisablePiP.Value)
+            if (!PiPDisablerPlugin.DisablePiP.Value)
                 return true;
 
             if (!ScopeLifecycle.IsScoped)

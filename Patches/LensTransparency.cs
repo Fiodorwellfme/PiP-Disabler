@@ -156,8 +156,8 @@ namespace PiPDisabler
         {
             if (os == null) return;
 
-            bool shouldHide = ModSettings.MakeLensesTransparent.Value
-                              || ModSettings.DisablePiP.Value;
+            bool shouldHide = PiPDisablerPlugin.MakeLensesTransparent.Value
+                              || PiPDisablerPlugin.DisablePiP.Value;
             if (!shouldHide) return;
 
             Transform searchRoot = FindScopeSearchRoot(os.transform);
@@ -255,8 +255,8 @@ namespace PiPDisabler
         {
             if (_hidden.Count == 0) return;
 
-            bool blackLens = ModSettings.BlackLensWhenUnscoped != null
-                             && ModSettings.BlackLensWhenUnscoped.Value;
+            bool blackLens = PiPDisablerPlugin.BlackLensWhenUnscoped != null
+                             && PiPDisablerPlugin.BlackLensWhenUnscoped.Value;
 
             for (int i = 0; i < _hidden.Count; i++)
             {
@@ -717,7 +717,7 @@ namespace PiPDisabler
         private static bool _dumpedOnce;
         private static void DumpHierarchy(Transform root)
         {
-            if (_dumpedOnce && !ModSettings.VerboseLogging.Value)
+            if (_dumpedOnce && !PiPDisablerPlugin.VerboseLogging.Value)
                 return;
             _dumpedOnce = true;
 

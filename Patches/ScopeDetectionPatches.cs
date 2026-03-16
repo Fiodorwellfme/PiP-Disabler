@@ -20,7 +20,7 @@ namespace PiPDisabler.Patches
                 $"[Patch] OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"enabled={__instance?.enabled} frame={Time.frameCount}");
 
-            if (!ModSettings.ModEnabled.Value) return;
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticEnabled(__instance);
         }
     }
@@ -37,7 +37,7 @@ namespace PiPDisabler.Patches
                 $"[Patch] OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"frame={Time.frameCount}");
 
-            if (!ModSettings.ModEnabled.Value) return;
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticDisabled(__instance);
         }
     }
@@ -50,7 +50,7 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix()
         {
-            if (!ModSettings.ModEnabled.Value) return;
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
 
             PiPDisablerPlugin.LogInfo(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");

@@ -55,15 +55,15 @@ namespace PiPDisabler
         /// </summary>
         public static void Tick()
         {
-            if (!ModSettings.EnableZeroing.Value) return;
+            if (!PiPDisablerPlugin.EnableZeroing.Value) return;
             if (!ScopeLifecycle.IsScoped) return;
 
             // Cooldown
             if (Time.unscaledTime - _lastZeroingTime < ZEROING_COOLDOWN) return;
 
             // Poll input
-            KeyCode upKey   = ModSettings.ZeroingUpKey.Value;
-            KeyCode downKey = ModSettings.ZeroingDownKey.Value;
+            KeyCode upKey   = PiPDisablerPlugin.ZeroingUpKey.Value;
+            KeyCode downKey = PiPDisablerPlugin.ZeroingDownKey.Value;
 
             bool wantsUp   = UnityEngine.Input.GetKeyDown(upKey);
             bool wantsDown = UnityEngine.Input.GetKeyDown(downKey);

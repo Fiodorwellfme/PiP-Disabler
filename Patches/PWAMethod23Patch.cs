@@ -56,10 +56,11 @@ namespace PiPDisabler.Patches
                 return;
 
             if (pwa != null &&
-                ModSettings.ModEnabled.Value &&
-                ModSettings.EnableZoom.Value &&
+                PiPDisablerPlugin.ModEnabled.Value &&
+                PiPDisablerPlugin.EnableZoom.Value &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
+                !FreelookTracker.IsFreelooking &&
                 pwa.IsAiming &&
                 !pwa.Sprint)
             {
@@ -75,6 +76,7 @@ namespace PiPDisabler.Patches
                     if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                     {
                         targetFov = zoomedFov;
+                        FreelookTracker.CacheAppliedFov(zoomedFov);
                         // Keep the game's original duration so ADS/unADS speed is unaffected
                         force = false;
                     }

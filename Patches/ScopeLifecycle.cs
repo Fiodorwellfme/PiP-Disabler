@@ -221,15 +221,11 @@ namespace PiPDisabler
                 // Recollect housing + weapon renderers for the new mode's geometry.
                 ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
 
-                // Show reticle for the new mode (with magnification scaling)
-                float modeMag = ZoomController.GetMagnification(os);
-                ReticleRenderer.Show(os, modeMag);
-
                 // Notify FOV controller the mode changed so it re-reads ScopeCameraData
                 FovController.OnModeSwitch();
 
                 // RESTORE all meshes first, then re-cut with new mode's plane position.
-                if (ModSettings.EnableMeshSurgery.Value)
+                if (PiPDisablerPlugin.EnableMeshSurgery.Value)
                 {
                     MeshSurgeryManager.RestoreForScope(os.transform);
                     MeshSurgeryManager.ApplyForOptic(os);
@@ -241,8 +237,17 @@ namespace PiPDisabler
                 // Capture weapon base scale/FOV before FOV changes
                 Patches.WeaponScalingPatch.CaptureBaseState();
 
-                // Animated FOV change for mode switch (uses configured duration)
-                ApplyFov(true);
+                // If freelooking, defer reticle/effects/FOV — they'll be restored
+                // when freelook ends via FreelookTracker.OnFreelookExit().
+                if (!FreelookTracker.IsFreelooking)
+                {
+                    // Show reticle for the new mode (with magnification scaling)
+                    float modeMag = ZoomController.GetMagnification(os);
+                    ReticleRenderer.Show(os, modeMag);
+
+                    // Animated FOV change for mode switch (uses configured duration)
+                    ApplyFov(true);
+                }
             }
 
             CheckAndUpdate("OnOpticEnabled");
@@ -360,6 +365,27 @@ namespace PiPDisabler
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
 
+            // ── Freelook tracking ────────────────────────────────────────
+            // Poll each frame.  Returns true on the exact frame freelook ends.
+            bool freelookJustEnded = FreelookTracker.Tick();
+
+            if (FreelookTracker.IsFreelooking)
+            {
+                // While freelooking: skip all mod per-frame updates.
+                // Camera rotation is unlocked (checked in ReticleRenderer.OnPreCull).
+                // FOV override is skipped (checked in PWAMethod23Patch).
+                // Reticle/effects are hidden (done by FreelookTracker.OnFreelookEnter).
+                return;
+            }
+
+            if (freelookJustEnded)
+            {
+                // FOV restore is handled by the PlayerLookPatch transpiler which
+                // intercepts Player.Look's SetFov(35) and substitutes our cached FOV.
+                // Re-hide lenses in case EFT restored them during freelook.
+                LensTransparency.EnsureHidden();
+            }
+
             // Keep lens hidden (re-kill if EFT restores geometry)
             LensTransparency.EnsureHidden();
 
@@ -386,6 +412,7 @@ namespace PiPDisabler
         /// </summary>
         public static void ForceExit()
         {
+            FreelookTracker.Reset();
             if (_isScoped)
                 DoScopeExit();
             _modBypassedForCurrentScope = false;
@@ -450,13 +477,13 @@ namespace PiPDisabler
                 removed = false;
             }
 
-            ModSettings.ScopeWhitelistNames.Value = string.Join(",", _scopeWhitelistNames);
-            _scopeWhitelistRawCached = ModSettings.ScopeWhitelistNames.Value ?? string.Empty;
+            PiPDisablerPlugin.ScopeWhitelistNames.Value = string.Join(",", _scopeWhitelistNames);
+            _scopeWhitelistRawCached = PiPDisablerPlugin.ScopeWhitelistNames.Value ?? string.Empty;
 
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] Whitelist {(removed ? "removed" : "added")}: scopeKey='{scopeName}'");
 
-            if (ModSettings.ModEnabled.Value && _isScoped)
+            if (PiPDisablerPlugin.ModEnabled.Value && _isScoped)
             {
                 ForceExit();
                 SyncState();
@@ -548,7 +575,7 @@ namespace PiPDisabler
             if (ShouldBypassByWhitelist(os))
                 return true;
 
-            if (ModSettings.AutoDisableForVariableScopes.Value
+            if (PiPDisablerPlugin.AutoDisableForVariableScopes.Value
                 && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
                 return true;
 
@@ -561,7 +588,7 @@ namespace PiPDisabler
         private static bool ScopeNameMatchesBypassPattern(OpticSight os)
         {
             if (os == null) return false;
-            string raw = ModSettings.AutoBypassNameContains?.Value;
+            string raw = PiPDisablerPlugin.AutoBypassNameContains?.Value;
             if (string.IsNullOrWhiteSpace(raw)) return false;
 
             string scopeKey   = ResolveWhitelistScopeKey(os) ?? string.Empty;
@@ -604,7 +631,7 @@ namespace PiPDisabler
 
         private static void RefreshScopeWhitelistCache()
         {
-            string raw = ModSettings.ScopeWhitelistNames.Value ?? string.Empty;
+            string raw = PiPDisablerPlugin.ScopeWhitelistNames.Value ?? string.Empty;
             if (string.Equals(raw, _scopeWhitelistRawCached, StringComparison.Ordinal))
                 return;
 
@@ -811,12 +838,12 @@ namespace PiPDisabler
             ScopeEffectsRenderer.Show();
 
             // 5. Mesh surgery (once)
-            if (ModSettings.EnableMeshSurgery.Value)
+            if (PiPDisablerPlugin.EnableMeshSurgery.Value)
                 MeshSurgeryManager.ApplyForOptic(os);
 
             // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
             if (PiPDisablerPlugin.GetShowCutPlane()
-                && !ModSettings.EnableMeshSurgery.Value)
+                && !PiPDisablerPlugin.EnableMeshSurgery.Value)
             {
                 ShowPlaneOnly(os);
             }
@@ -837,6 +864,9 @@ namespace PiPDisabler
         private static void DoScopeExit()
         {
             if (!_isScoped) return;
+
+            // Reset freelook tracking so stale state doesn't persist into next scope
+            FreelookTracker.Reset();
 
             var prevOptic = _activeOptic;
             PiPDisablerPlugin.LogInfo(
@@ -901,6 +931,7 @@ namespace PiPDisabler
         {
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
+            if (FreelookTracker.IsFreelooking) return;
             ApplyFov(false); // false = short duration for scroll feel
         }
 
@@ -911,8 +942,8 @@ namespace PiPDisabler
         private static List<Renderer> CollectStencilRenderers(OpticSight os)
         {
             var housing = LensTransparency.CollectHousingRenderers(os);
-            if (ModSettings.StencilIncludeWeaponMeshes != null
-                && ModSettings.StencilIncludeWeaponMeshes.Value)
+            if (PiPDisablerPlugin.StencilIncludeWeaponMeshes != null
+                && PiPDisablerPlugin.StencilIncludeWeaponMeshes.Value)
             {
                 housing.AddRange(LensTransparency.CollectWeaponRenderers(os, housing));
             }
@@ -928,7 +959,7 @@ namespace PiPDisabler
             try
             {
                 if (_modBypassedForCurrentScope) return;
-                if (!ModSettings.EnableZoom.Value) return;
+                if (!PiPDisablerPlugin.EnableZoom.Value) return;
                 if (!CameraClass.Exist) return;
 
                 float zoomBaseFov = FovController.ZoomBaselineFov;
@@ -937,10 +968,11 @@ namespace PiPDisabler
                 if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                 {
                     float duration = isTransition
-                        ? ModSettings.FovAnimationDuration.Value
+                        ? PiPDisablerPlugin.FovAnimationDuration.Value
                         : 0.1f; // Short duration for variable zoom updates
 
                     CameraClass.Instance.SetFov(zoomedFov, duration, false);
+                    FreelookTracker.CacheAppliedFov(zoomedFov);
                     PiPDisablerPlugin.LogInfo(
                         $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
                 }
@@ -948,8 +980,9 @@ namespace PiPDisabler
                 {
                     // High-to-low mode switch where new mode has no zoom:
                     // restore to baseline with configured duration so both directions are consistent
-                    float duration = ModSettings.FovAnimationDuration.Value;
+                    float duration = PiPDisablerPlugin.FovAnimationDuration.Value;
                     CameraClass.Instance.SetFov(zoomBaseFov, duration, false);
+                    FreelookTracker.CacheAppliedFov(zoomBaseFov);
                     PiPDisablerPlugin.LogInfo(
                         $"[ScopeLifecycle] ApplyFov (restore baseline): {zoomBaseFov:F1}° dur={duration:F2}s");
                 }
@@ -980,7 +1013,7 @@ namespace PiPDisabler
                 float baseFov = pwa.Single_2;
                 if (baseFov > 30f)
                 {
-                float duration = ModSettings.FovAnimationDuration.Value;
+                float duration = PiPDisablerPlugin.FovAnimationDuration.Value;
                     cc.SetFov(baseFov, duration, true);
                     PiPDisablerPlugin.LogVerbose(
                         $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° dur={duration:F2}s");

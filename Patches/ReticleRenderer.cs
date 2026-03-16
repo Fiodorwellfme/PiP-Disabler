@@ -351,11 +351,14 @@ namespace PiPDisabler
             // scope's look direction every frame.  We let LateUpdate run
             // (v4.5.2 fix), so the transform is always up to date even though
             // the optic camera itself can't render.
-            if (_alignmentActive)
+            if (_alignmentActive && !FreelookTracker.IsFreelooking)
             {
                 // Primary source: optic camera transform kept in sync by EFT updater.
                 // Fallback: optic transform itself, so sway-follow remains active even
                 // if optic camera cache is temporarily unavailable.
+                //
+                // Skipped during freelook: the player is looking around independently
+                // of the scope direction, so the camera must NOT be locked to the optic.
                 Transform swaySource = PiPDisabler.OpticCameraTransform ?? _opticTransform;
                 if (swaySource != null)
                 {

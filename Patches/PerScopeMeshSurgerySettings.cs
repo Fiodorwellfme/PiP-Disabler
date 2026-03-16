@@ -68,33 +68,33 @@ namespace PiPDisabler
 
             try
             {
-                ModSettings.CustomPlaneOffsetMeters.Value = entry.PlaneOffsetMeters;
+                PiPDisablerPlugin.CustomPlaneOffsetMeters.Value = entry.PlaneOffsetMeters;
                 if (!string.IsNullOrWhiteSpace(entry.PlaneNormalAxis))
-                    ModSettings.CustomPlaneNormalAxis.Value = entry.PlaneNormalAxis;
-                ModSettings.CustomCutRadius.Value = entry.CutRadius;
-                ModSettings.CustomShowCutPlane.Value = entry.ShowCutPlane;
-                ModSettings.CustomShowCutVolume.Value = entry.ShowCutVolume;
-                ModSettings.CustomCutVolumeOpacity.Value = entry.CutVolumeOpacity;
+                    PiPDisablerPlugin.CustomPlaneNormalAxis.Value = entry.PlaneNormalAxis;
+                PiPDisablerPlugin.CustomCutRadius.Value = entry.CutRadius;
+                PiPDisablerPlugin.CustomShowCutPlane.Value = entry.ShowCutPlane;
+                PiPDisablerPlugin.CustomShowCutVolume.Value = entry.ShowCutVolume;
+                PiPDisablerPlugin.CustomCutVolumeOpacity.Value = entry.CutVolumeOpacity;
                 if (!string.IsNullOrWhiteSpace(entry.CutMode))
-                    ModSettings.CustomCutMode.Value = entry.CutMode;
-                ModSettings.CustomCylinderRadius.Value = entry.CylinderRadius;
-                ModSettings.CustomMidCylinderRadius.Value = entry.MidCylinderRadius;
-                ModSettings.CustomMidCylinderPosition.Value = entry.MidCylinderPosition;
-                ModSettings.CustomFarCylinderRadius.Value = entry.FarCylinderRadius;
-                ModSettings.CustomPlane1OffsetMeters.Value = entry.Plane1OffsetMeters;
-                ModSettings.CustomPlane2Position.Value = entry.Plane2Position;
-                ModSettings.CustomPlane2Radius.Value = entry.Plane2Radius;
-                ModSettings.CustomPlane3Position.Value = entry.Plane3Position;
-                ModSettings.CustomPlane3Radius.Value = entry.Plane3Radius;
-                ModSettings.CustomPlane4Position.Value = entry.Plane4Position;
-                ModSettings.CustomPlane4Radius.Value = entry.Plane4Radius;
-                ModSettings.CustomCutStartOffset.Value = entry.CutStartOffset;
-                ModSettings.CustomCutLength.Value = entry.CutLength;
-                ModSettings.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
-                ModSettings.CustomShowReticle.Value = entry.ShowReticle;
-                ModSettings.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
-                ModSettings.CustomRestoreOnUnscope.Value = entry.RestoreOnUnscope;
-                ModSettings.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
+                    PiPDisablerPlugin.CustomCutMode.Value = entry.CutMode;
+                PiPDisablerPlugin.CustomCylinderRadius.Value = entry.CylinderRadius;
+                PiPDisablerPlugin.CustomMidCylinderRadius.Value = entry.MidCylinderRadius;
+                PiPDisablerPlugin.CustomMidCylinderPosition.Value = entry.MidCylinderPosition;
+                PiPDisablerPlugin.CustomFarCylinderRadius.Value = entry.FarCylinderRadius;
+                PiPDisablerPlugin.CustomPlane1OffsetMeters.Value = entry.Plane1OffsetMeters;
+                PiPDisablerPlugin.CustomPlane2Position.Value = entry.Plane2Position;
+                PiPDisablerPlugin.CustomPlane2Radius.Value = entry.Plane2Radius;
+                PiPDisablerPlugin.CustomPlane3Position.Value = entry.Plane3Position;
+                PiPDisablerPlugin.CustomPlane3Radius.Value = entry.Plane3Radius;
+                PiPDisablerPlugin.CustomPlane4Position.Value = entry.Plane4Position;
+                PiPDisablerPlugin.CustomPlane4Radius.Value = entry.Plane4Radius;
+                PiPDisablerPlugin.CustomCutStartOffset.Value = entry.CutStartOffset;
+                PiPDisablerPlugin.CustomCutLength.Value = entry.CutLength;
+                PiPDisablerPlugin.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
+                PiPDisablerPlugin.CustomShowReticle.Value = entry.ShowReticle;
+                PiPDisablerPlugin.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
+                PiPDisablerPlugin.CustomRestoreOnUnscope.Value = entry.RestoreOnUnscope;
+                PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
                 PiPDisablerPlugin.LogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
             }
             catch (Exception ex)
@@ -152,31 +152,31 @@ namespace PiPDisabler
                 _file.Entries.Add(target);
             }
 
-            target.PlaneOffsetMeters = ModSettings.CustomPlaneOffsetMeters.Value;
-            target.PlaneNormalAxis = ModSettings.CustomPlaneNormalAxis.Value;
-            target.CutRadius = ModSettings.CustomCutRadius.Value;
-            target.ShowCutPlane = ModSettings.CustomShowCutPlane.Value;
-            target.ShowCutVolume = ModSettings.CustomShowCutVolume.Value;
-            target.CutVolumeOpacity = ModSettings.CustomCutVolumeOpacity.Value;
-            target.CutMode = ModSettings.CustomCutMode.Value;
-            target.CylinderRadius = ModSettings.CustomCylinderRadius.Value;
-            target.MidCylinderRadius = ModSettings.CustomMidCylinderRadius.Value;
-            target.MidCylinderPosition = ModSettings.CustomMidCylinderPosition.Value;
-            target.FarCylinderRadius = ModSettings.CustomFarCylinderRadius.Value;
-            target.Plane1OffsetMeters = ModSettings.CustomPlane1OffsetMeters.Value;
-            target.Plane2Position = ModSettings.CustomPlane2Position.Value;
-            target.Plane2Radius = ModSettings.CustomPlane2Radius.Value;
-            target.Plane3Position = ModSettings.CustomPlane3Position.Value;
-            target.Plane3Radius = ModSettings.CustomPlane3Radius.Value;
-            target.Plane4Position = ModSettings.CustomPlane4Position.Value;
-            target.Plane4Radius = ModSettings.CustomPlane4Radius.Value;
-            target.CutStartOffset = ModSettings.CustomCutStartOffset.Value;
-            target.CutLength = ModSettings.CustomCutLength.Value;
-            target.NearPreserveDepth = ModSettings.CustomNearPreserveDepth.Value;
-            target.ShowReticle = ModSettings.CustomShowReticle.Value;
-            target.ReticleBaseSize = ModSettings.CustomReticleBaseSize.Value;
-            target.RestoreOnUnscope = ModSettings.CustomRestoreOnUnscope.Value;
-            target.ExpandSearchToWeaponRoot = ModSettings.CustomExpandSearchToWeaponRoot.Value;
+            target.PlaneOffsetMeters = PiPDisablerPlugin.CustomPlaneOffsetMeters.Value;
+            target.PlaneNormalAxis = PiPDisablerPlugin.CustomPlaneNormalAxis.Value;
+            target.CutRadius = PiPDisablerPlugin.CustomCutRadius.Value;
+            target.ShowCutPlane = PiPDisablerPlugin.CustomShowCutPlane.Value;
+            target.ShowCutVolume = PiPDisablerPlugin.CustomShowCutVolume.Value;
+            target.CutVolumeOpacity = PiPDisablerPlugin.CustomCutVolumeOpacity.Value;
+            target.CutMode = PiPDisablerPlugin.CustomCutMode.Value;
+            target.CylinderRadius = PiPDisablerPlugin.CustomCylinderRadius.Value;
+            target.MidCylinderRadius = PiPDisablerPlugin.CustomMidCylinderRadius.Value;
+            target.MidCylinderPosition = PiPDisablerPlugin.CustomMidCylinderPosition.Value;
+            target.FarCylinderRadius = PiPDisablerPlugin.CustomFarCylinderRadius.Value;
+            target.Plane1OffsetMeters = PiPDisablerPlugin.CustomPlane1OffsetMeters.Value;
+            target.Plane2Position = PiPDisablerPlugin.CustomPlane2Position.Value;
+            target.Plane2Radius = PiPDisablerPlugin.CustomPlane2Radius.Value;
+            target.Plane3Position = PiPDisablerPlugin.CustomPlane3Position.Value;
+            target.Plane3Radius = PiPDisablerPlugin.CustomPlane3Radius.Value;
+            target.Plane4Position = PiPDisablerPlugin.CustomPlane4Position.Value;
+            target.Plane4Radius = PiPDisablerPlugin.CustomPlane4Radius.Value;
+            target.CutStartOffset = PiPDisablerPlugin.CustomCutStartOffset.Value;
+            target.CutLength = PiPDisablerPlugin.CustomCutLength.Value;
+            target.NearPreserveDepth = PiPDisablerPlugin.CustomNearPreserveDepth.Value;
+            target.ShowReticle = PiPDisablerPlugin.CustomShowReticle.Value;
+            target.ReticleBaseSize = PiPDisablerPlugin.CustomReticleBaseSize.Value;
+            target.RestoreOnUnscope = PiPDisablerPlugin.CustomRestoreOnUnscope.Value;
+            target.ExpandSearchToWeaponRoot = PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value;
 
             WriteToDisk();
             return true;

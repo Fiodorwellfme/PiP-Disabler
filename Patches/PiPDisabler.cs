@@ -61,7 +61,7 @@ namespace PiPDisabler
 
 internal static void TickBaseOpticCamera()
         {
-            if (!ModSettings.DisablePiP.Value) return;
+            if (!PiPDisablerPlugin.DisablePiP.Value) return;
 
             // Any condition that should preserve vanilla PiP must restore and skip disabling.
             if (ShouldAllowVanillaPiP())
@@ -205,7 +205,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 if (ScopeLifecycle.IsNameBypassed(os))
                     return true;
 
-                if (!ModSettings.AutoDisableForVariableScopes.Value)
+                if (!PiPDisablerPlugin.AutoDisableForVariableScopes.Value)
                     return false;
 
                 if (FovController.IsOpticAdjustable(os))
@@ -318,8 +318,8 @@ _ignoreOnDisableFrame.Clear();
 
         private static bool ShouldAllowVanillaPiP()
         {
-            return !ModSettings.ModEnabled.Value
-                || !ModSettings.DisablePiP.Value
+            return !PiPDisablerPlugin.ModEnabled.Value
+                || !PiPDisablerPlugin.DisablePiP.Value
                 || ScopeLifecycle.IsModBypassedForCurrentScope
                 || ScopeLifecycle.IsLastOpticNameBypassed();
         }
@@ -332,8 +332,8 @@ _ignoreOnDisableFrame.Clear();
             [PatchPostfix]
             private static void Postfix(OpticComponentUpdater __instance)
             {
-                if (!ModSettings.ModEnabled.Value) return;
-                if (!ModSettings.DisablePiP.Value) return;
+                if (!PiPDisablerPlugin.ModEnabled.Value) return;
+                if (!PiPDisablerPlugin.DisablePiP.Value) return;
                 if (__instance == null) return;
                 if (ShouldSuppressPiPDisableForCurrentOptic(__instance)) return;
 
@@ -356,10 +356,10 @@ _ignoreOnDisableFrame.Clear();
             [PatchPrefix]
             private static bool Prefix(OpticComponentUpdater __instance)
             {
-                if (!ModSettings.ModEnabled.Value) return true;
+                if (!PiPDisablerPlugin.ModEnabled.Value) return true;
                 if (__instance == null) return true;
 
-                if (ModSettings.DisablePiP.Value)
+                if (PiPDisablerPlugin.DisablePiP.Value)
                 {
                     OpticCameraTransform = __instance.transform;
                     Debug_LastOpticCameraTransform = OpticCameraTransform;

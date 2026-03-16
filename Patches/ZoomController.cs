@@ -21,7 +21,7 @@ namespace PiPDisabler
         /// </summary>
         public static float GetMagnification(OpticSight os)
         {
-            if (os == null) return ModSettings.DefaultZoom.Value;
+            if (os == null) return PiPDisablerPlugin.DefaultZoom.Value;
 
             // Ensure range is discovered
             if (!_rangeDiscovered)
@@ -39,7 +39,7 @@ namespace PiPDisabler
         /// </summary>
         public static float GetMinFov(OpticSight os)
         {
-            if (os == null) return 35f / ModSettings.DefaultZoom.Value;
+            if (os == null) return 35f / PiPDisablerPlugin.DefaultZoom.Value;
 
             // Try template zoom range first
             var (minZoom, maxZoom) = FovController.GetTemplateZoomRange();
