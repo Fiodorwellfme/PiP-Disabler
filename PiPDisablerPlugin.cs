@@ -133,24 +133,24 @@ namespace PiPDisabler
             LogInfo($"  WhitelistNames='{ModSettings.ScopeWhitelistNames.Value}'");
             LogInfo($"  EnableZoom={ModSettings.EnableZoom.Value}");
             LogInfo($"  AutoFov={ModSettings.AutoFovFromScope.Value}  DefaultZoom={ModSettings.DefaultZoom.Value}  FovAnimDur={ModSettings.FovAnimationDuration.Value}s");
-            LogInfo($"  EnableMeshSurgery={ModSettings.EnableMeshSurgery.Value}  CutMode={ModSettings.CutMode.Value}  CutLen={ModSettings.CutLength.Value}  NearPreserve={ModSettings.NearPreserveDepth.Value}  ShowReticle={ModSettings.ShowReticle.Value}");
+            LogInfo($"  MeshSurgery=always-on  CutMode={ModSettings.CustomCutMode.Value}  CutLen={ModSettings.CustomCutLength.Value}  NearPreserve={ModSettings.CustomNearPreserveDepth.Value}  ShowReticle={ModSettings.CustomShowReticle.Value}");
         }
 
         private static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => PerScopeMeshSurgerySettings.GetActiveOverride();
 
-        internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : ModSettings.PlaneOffsetMeters.Value;
-        internal static string GetPlaneNormalAxis() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneNormalAxis : ModSettings.PlaneNormalAxis.Value;
-        internal static float GetCutRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.CutRadius : ModSettings.CutRadius.Value;
-        internal static bool GetShowCutPlane() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutPlane : ModSettings.ShowCutPlane.Value;
-        internal static bool GetShowCutVolume() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutVolume : ModSettings.ShowCutVolume.Value;
-        internal static float GetCutVolumeOpacity() => ActiveScopeOverride != null ? ActiveScopeOverride.CutVolumeOpacity : ModSettings.CutVolumeOpacity.Value;
-        internal static string GetCutMode() => ActiveScopeOverride != null ? ActiveScopeOverride.CutMode : ModSettings.CutMode.Value;
-        internal static float GetCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.CylinderRadius : ModSettings.CylinderRadius.Value;
-        internal static float GetMidCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.MidCylinderRadius : ModSettings.MidCylinderRadius.Value;
-        internal static float GetMidCylinderPosition() => ActiveScopeOverride != null ? ActiveScopeOverride.MidCylinderPosition : ModSettings.MidCylinderPosition.Value;
-        internal static float GetFarCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.FarCylinderRadius : ModSettings.FarCylinderRadius.Value;
-        internal static float GetPlane1OffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1OffsetMeters : ModSettings.Plane1OffsetMeters.Value;
-        internal static float GetPlane2Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Position : ModSettings.Plane2Position.Value;
+        internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : ModSettings.CustomPlaneOffsetMeters.Value;
+        internal static string GetPlaneNormalAxis() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneNormalAxis : ModSettings.CustomPlaneNormalAxis.Value;
+        internal static float GetCutRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.CutRadius : ModSettings.CustomCutRadius.Value;
+        internal static bool GetShowCutPlane() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutPlane : ModSettings.CustomShowCutPlane.Value;
+        internal static bool GetShowCutVolume() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutVolume : ModSettings.CustomShowCutVolume.Value;
+        internal static float GetCutVolumeOpacity() => ActiveScopeOverride != null ? ActiveScopeOverride.CutVolumeOpacity : ModSettings.CustomCutVolumeOpacity.Value;
+        internal static string GetCutMode() => ActiveScopeOverride != null ? ActiveScopeOverride.CutMode : ModSettings.CustomCutMode.Value;
+        internal static float GetCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.CylinderRadius : ModSettings.CustomCylinderRadius.Value;
+        internal static float GetMidCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.MidCylinderRadius : ModSettings.CustomMidCylinderRadius.Value;
+        internal static float GetMidCylinderPosition() => ActiveScopeOverride != null ? ActiveScopeOverride.MidCylinderPosition : ModSettings.CustomMidCylinderPosition.Value;
+        internal static float GetFarCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.FarCylinderRadius : ModSettings.CustomFarCylinderRadius.Value;
+        internal static float GetPlane1OffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1OffsetMeters : ModSettings.CustomPlane1OffsetMeters.Value;
+        internal static float GetPlane2Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Position : ModSettings.CustomPlane2Position.Value;
         internal static float GetPlane2PositionNormalized(float cutLength)
         {
             const float legacyReferenceCutLength = 0.755493f;
@@ -158,19 +158,20 @@ namespace PiPDisabler
             float anchoredDepth = p2LegacyNormalized * legacyReferenceCutLength;
             return cutLength > 1e-5f ? Mathf.Clamp01(anchoredDepth / cutLength) : 0f;
         }
-        internal static float GetPlane2Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Radius : ModSettings.Plane2Radius.Value;
-        internal static float GetPlane3Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Position : ModSettings.Plane3Position.Value;
-        internal static float GetPlane3Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Radius : ModSettings.Plane3Radius.Value;
-        internal static float GetPlane4Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Position : ModSettings.Plane4Position.Value;
-        internal static float GetPlane4Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Radius : ModSettings.Plane4Radius.Value;
-        internal static float GetCutStartOffset() => ActiveScopeOverride != null ? ActiveScopeOverride.CutStartOffset : ModSettings.CutStartOffset.Value;
-        internal static float GetCutLength() => ActiveScopeOverride != null ? ActiveScopeOverride.CutLength : ModSettings.CutLength.Value;
-        internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : ModSettings.NearPreserveDepth.Value;
-        internal static bool GetShowReticle() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowReticle : ModSettings.ShowReticle.Value;
-        internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : ModSettings.ReticleBaseSize.Value;
-        internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : ModSettings.RestoreOnUnscope.Value;
-        internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ModSettings.ExpandSearchToWeaponRoot.Value;
-        internal static bool GetDebugShowHousingMask() => ModSettings.DebugShowHousingMask?.Value ?? false;
+        internal static float GetPlane2Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Radius : ModSettings.CustomPlane2Radius.Value;
+        internal static float GetPlane3Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Position : ModSettings.CustomPlane3Position.Value;
+        internal static float GetPlane3Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Radius : ModSettings.CustomPlane3Radius.Value;
+        internal static float GetPlane4Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Position : ModSettings.CustomPlane4Position.Value;
+        internal static float GetPlane4Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Radius : ModSettings.CustomPlane4Radius.Value;
+        internal static float GetCutStartOffset() => ActiveScopeOverride != null ? ActiveScopeOverride.CutStartOffset : ModSettings.CustomCutStartOffset.Value;
+        internal static float GetCutLength() => ActiveScopeOverride != null ? ActiveScopeOverride.CutLength : ModSettings.CustomCutLength.Value;
+        internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : ModSettings.CustomNearPreserveDepth.Value;
+        internal static bool GetShowReticle() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowReticle : ModSettings.CustomShowReticle.Value;
+        internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : ModSettings.CustomReticleBaseSize.Value;
+        internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : ModSettings.CustomRestoreOnUnscope.Value;
+        internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ModSettings.CustomExpandSearchToWeaponRoot.Value;
+        internal static bool GetDebugShowHousingMask() => false;
+        internal static bool GetStencilIncludeWeaponMeshes() => true;
         internal static bool GetDebugLogCutCandidates() => ModSettings.DebugLogCutCandidates?.Value ?? false;
         internal static bool GetDebugReticleAfterEverything() => ModSettings.DebugReticleAfterEverything?.Value ?? false;
         internal static bool GetAutoSwitchReticleRenderForNvg() => ModSettings.AutoSwitchReticleRenderForNvg?.Value ?? false;
@@ -248,13 +249,6 @@ namespace PiPDisabler
             if (!ModSettings.ModEnabled.Value) return;
 
             // --- Feature toggle keys ---
-            if (InputProxy.GetKeyDown(ModSettings.MeshSurgeryToggleKey.Value))
-            {
-                ModSettings.EnableMeshSurgery.Value = !ModSettings.EnableMeshSurgery.Value;
-                LogInfo($"Mesh surgery toggled: {ModSettings.EnableMeshSurgery.Value}");
-                if (!ModSettings.EnableMeshSurgery.Value)
-                    MeshSurgeryManager.RestoreAll();
-            }
 
             if (InputProxy.GetKeyDown(ModSettings.DisablePiPToggleKey.Value))
             {

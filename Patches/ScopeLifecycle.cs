@@ -229,11 +229,8 @@ namespace PiPDisabler
                 FovController.OnModeSwitch();
 
                 // RESTORE all meshes first, then re-cut with new mode's plane position.
-                if (ModSettings.EnableMeshSurgery.Value)
-                {
-                    MeshSurgeryManager.RestoreForScope(os.transform);
-                    MeshSurgeryManager.ApplyForOptic(os);
-                }
+                MeshSurgeryManager.RestoreForScope(os.transform);
+                MeshSurgeryManager.ApplyForOptic(os);
 
                 // Re-apply camera settings for the new mode's FOV
                 CameraSettingsManager.ApplyForOptic(os);
@@ -811,12 +808,10 @@ namespace PiPDisabler
             ScopeEffectsRenderer.Show();
 
             // 5. Mesh surgery (once)
-            if (ModSettings.EnableMeshSurgery.Value)
-                MeshSurgeryManager.ApplyForOptic(os);
+            MeshSurgeryManager.ApplyForOptic(os);
 
             // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
-            if (PiPDisablerPlugin.GetShowCutPlane()
-                && !ModSettings.EnableMeshSurgery.Value)
+            if (PiPDisablerPlugin.GetShowCutPlane())
             {
                 ShowPlaneOnly(os);
             }
@@ -911,8 +906,7 @@ namespace PiPDisabler
         private static List<Renderer> CollectStencilRenderers(OpticSight os)
         {
             var housing = LensTransparency.CollectHousingRenderers(os);
-            if (ModSettings.StencilIncludeWeaponMeshes != null
-                && ModSettings.StencilIncludeWeaponMeshes.Value)
+            if (PiPDisablerPlugin.GetStencilIncludeWeaponMeshes())
             {
                 housing.AddRange(LensTransparency.CollectWeaponRenderers(os, housing));
             }
