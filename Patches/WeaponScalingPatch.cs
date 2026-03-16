@@ -58,7 +58,7 @@ namespace PiPDisabler.Patches
         /// </summary>
         public static void CaptureBaseState()
         {
-            if (!PiPDisablerPlugin.EnableWeaponScaling.Value) return;
+            if (!ModSettings.EnableWeaponScaling.Value) return;
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) { _isActive = false; return; }
             _isActive = true;
@@ -72,7 +72,7 @@ namespace PiPDisabler.Patches
         public static void UpdateScale()
         {
             if (!_isActive) return;
-            if (!PiPDisablerPlugin.EnableWeaponScaling.Value) return;
+            if (!ModSettings.EnableWeaponScaling.Value) return;
 
             try
             {
@@ -132,8 +132,8 @@ namespace PiPDisabler.Patches
         {
             float halfRefRad = ZoomBaseline * 0.5f * Mathf.Deg2Rad;
             float halfCurRad = currentFov * 0.5f * Mathf.Deg2Rad;
-            float baseline = PiPDisablerPlugin.BaselineWeaponScale.Value;
-            float strength = PiPDisablerPlugin.WeaponScaleStrength.Value;
+            float baseline = ModSettings.BaselineWeaponScale.Value;
+            float strength = ModSettings.WeaponScaleStrength.Value;
             float tanRef = Mathf.Tan(halfRefRad);
             float tanCur = Mathf.Tan(halfCurRad);
             float invRatio = tanRef / tanCur;
@@ -157,7 +157,7 @@ namespace PiPDisabler.Patches
             try
             {
                 if (!__instance.IsYourPlayer) return;
-                if (!PiPDisablerPlugin.EnableWeaponScaling.Value) return;
+                if (!ModSettings.EnableWeaponScaling.Value) return;
                 if (!ScopeLifecycle.IsScoped) return;
                 if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
                 if (!_isActive) return;

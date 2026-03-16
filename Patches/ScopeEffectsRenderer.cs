@@ -60,7 +60,7 @@ namespace PiPDisabler
 
         public static void Show()
         {
-            if (PiPDisablerPlugin.VignetteEnabled.Value)
+            if (ModSettings.VignetteEnabled.Value)
             {
                 EnsureVignetteMeshAndMat();
                 RefreshVignetteTexture();
@@ -71,7 +71,7 @@ namespace PiPDisabler
                 _vigActive = false;
             }
 
-            if (PiPDisablerPlugin.ScopeShadowEnabled.Value)
+            if (ModSettings.ScopeShadowEnabled.Value)
             {
                 EnsureShadowMeshAndMat();
                 RefreshShadowTexture();
@@ -282,9 +282,9 @@ namespace PiPDisabler
         /// </summary>
         private static void RefreshVignetteTexture()
         {
-            float soft = PiPDisablerPlugin.VignetteSoftness.Value;
-            float opac = PiPDisablerPlugin.VignetteOpacity.Value;
-            float mult = PiPDisablerPlugin.VignetteSizeMult.Value;
+            float soft = ModSettings.VignetteSoftness.Value;
+            float opac = ModSettings.VignetteOpacity.Value;
+            float mult = ModSettings.VignetteSizeMult.Value;
 
             var cam = PiPDisablerPlugin.GetMainCamera();
             float aspect = GetDisplayAspect(cam);
@@ -371,9 +371,9 @@ namespace PiPDisabler
         /// </summary>
         private static void RefreshShadowTexture()
         {
-            float radius = PiPDisablerPlugin.ScopeShadowRadius.Value;
-            float soft   = PiPDisablerPlugin.ScopeShadowSoftness.Value;
-            float opac   = PiPDisablerPlugin.ScopeShadowOpacity.Value;
+            float radius = ModSettings.ScopeShadowRadius.Value;
+            float soft   = ModSettings.ScopeShadowSoftness.Value;
+            float opac   = ModSettings.ScopeShadowOpacity.Value;
 
             var cam = PiPDisablerPlugin.GetMainCamera();
             Rect viewport = GetDisplayViewport(cam);

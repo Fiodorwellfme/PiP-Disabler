@@ -229,7 +229,7 @@ namespace PiPDisabler
                 FovController.OnModeSwitch();
 
                 // RESTORE all meshes first, then re-cut with new mode's plane position.
-                if (PiPDisablerPlugin.EnableMeshSurgery.Value)
+                if (ModSettings.EnableMeshSurgery.Value)
                 {
                     MeshSurgeryManager.RestoreForScope(os.transform);
                     MeshSurgeryManager.ApplyForOptic(os);
@@ -450,13 +450,13 @@ namespace PiPDisabler
                 removed = false;
             }
 
-            PiPDisablerPlugin.ScopeWhitelistNames.Value = string.Join(",", _scopeWhitelistNames);
-            _scopeWhitelistRawCached = PiPDisablerPlugin.ScopeWhitelistNames.Value ?? string.Empty;
+            ModSettings.ScopeWhitelistNames.Value = string.Join(",", _scopeWhitelistNames);
+            _scopeWhitelistRawCached = ModSettings.ScopeWhitelistNames.Value ?? string.Empty;
 
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] Whitelist {(removed ? "removed" : "added")}: scopeKey='{scopeName}'");
 
-            if (PiPDisablerPlugin.ModEnabled.Value && _isScoped)
+            if (ModSettings.ModEnabled.Value && _isScoped)
             {
                 ForceExit();
                 SyncState();
@@ -548,7 +548,7 @@ namespace PiPDisabler
             if (ShouldBypassByWhitelist(os))
                 return true;
 
-            if (PiPDisablerPlugin.AutoDisableForVariableScopes.Value
+            if (ModSettings.AutoDisableForVariableScopes.Value
                 && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
                 return true;
 
@@ -561,7 +561,7 @@ namespace PiPDisabler
         private static bool ScopeNameMatchesBypassPattern(OpticSight os)
         {
             if (os == null) return false;
-            string raw = PiPDisablerPlugin.AutoBypassNameContains?.Value;
+            string raw = ModSettings.AutoBypassNameContains?.Value;
             if (string.IsNullOrWhiteSpace(raw)) return false;
 
             string scopeKey   = ResolveWhitelistScopeKey(os) ?? string.Empty;
@@ -604,7 +604,7 @@ namespace PiPDisabler
 
         private static void RefreshScopeWhitelistCache()
         {
-            string raw = PiPDisablerPlugin.ScopeWhitelistNames.Value ?? string.Empty;
+            string raw = ModSettings.ScopeWhitelistNames.Value ?? string.Empty;
             if (string.Equals(raw, _scopeWhitelistRawCached, StringComparison.Ordinal))
                 return;
 
@@ -811,12 +811,12 @@ namespace PiPDisabler
             ScopeEffectsRenderer.Show();
 
             // 5. Mesh surgery (once)
-            if (PiPDisablerPlugin.EnableMeshSurgery.Value)
+            if (ModSettings.EnableMeshSurgery.Value)
                 MeshSurgeryManager.ApplyForOptic(os);
 
             // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
             if (PiPDisablerPlugin.GetShowCutPlane()
-                && !PiPDisablerPlugin.EnableMeshSurgery.Value)
+                && !ModSettings.EnableMeshSurgery.Value)
             {
                 ShowPlaneOnly(os);
             }
@@ -911,8 +911,8 @@ namespace PiPDisabler
         private static List<Renderer> CollectStencilRenderers(OpticSight os)
         {
             var housing = LensTransparency.CollectHousingRenderers(os);
-            if (PiPDisablerPlugin.StencilIncludeWeaponMeshes != null
-                && PiPDisablerPlugin.StencilIncludeWeaponMeshes.Value)
+            if (ModSettings.StencilIncludeWeaponMeshes != null
+                && ModSettings.StencilIncludeWeaponMeshes.Value)
             {
                 housing.AddRange(LensTransparency.CollectWeaponRenderers(os, housing));
             }
@@ -928,7 +928,7 @@ namespace PiPDisabler
             try
             {
                 if (_modBypassedForCurrentScope) return;
-                if (!PiPDisablerPlugin.EnableZoom.Value) return;
+                if (!ModSettings.EnableZoom.Value) return;
                 if (!CameraClass.Exist) return;
 
                 float zoomBaseFov = FovController.ZoomBaselineFov;
@@ -937,7 +937,7 @@ namespace PiPDisabler
                 if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                 {
                     float duration = isTransition
-                        ? PiPDisablerPlugin.FovAnimationDuration.Value
+                        ? ModSettings.FovAnimationDuration.Value
                         : 0.1f; // Short duration for variable zoom updates
 
                     CameraClass.Instance.SetFov(zoomedFov, duration, false);
@@ -948,7 +948,7 @@ namespace PiPDisabler
                 {
                     // High-to-low mode switch where new mode has no zoom:
                     // restore to baseline with configured duration so both directions are consistent
-                    float duration = PiPDisablerPlugin.FovAnimationDuration.Value;
+                    float duration = ModSettings.FovAnimationDuration.Value;
                     CameraClass.Instance.SetFov(zoomBaseFov, duration, false);
                     PiPDisablerPlugin.LogInfo(
                         $"[ScopeLifecycle] ApplyFov (restore baseline): {zoomBaseFov:F1}° dur={duration:F2}s");
@@ -980,7 +980,7 @@ namespace PiPDisabler
                 float baseFov = pwa.Single_2;
                 if (baseFov > 30f)
                 {
-                float duration = PiPDisablerPlugin.FovAnimationDuration.Value;
+                float duration = ModSettings.FovAnimationDuration.Value;
                     cc.SetFov(baseFov, duration, true);
                     PiPDisablerPlugin.LogVerbose(
                         $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° dur={duration:F2}s");
