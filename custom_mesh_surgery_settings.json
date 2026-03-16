@@ -25,7 +25,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0206103288,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -54,7 +53,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -83,7 +81,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.025,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -112,7 +109,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.025,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -141,7 +137,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -170,7 +165,6 @@
       "NearPreserveDepth": 0.0,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0215492956,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -199,7 +193,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03657277,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -228,7 +221,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -257,7 +249,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0215492956,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -286,7 +277,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.2,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -315,7 +305,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0215492956,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -344,7 +333,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0243661962,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -373,7 +361,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0206103288,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -402,7 +389,6 @@
       "NearPreserveDepth": 0.02173708,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0318779349,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -431,7 +417,6 @@
       "NearPreserveDepth": 0.02173708,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0318779349,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -460,7 +445,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.02248826,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -489,7 +473,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -518,7 +501,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -547,7 +529,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.01967136,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -576,7 +557,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.02248826,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -605,7 +585,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.02248826,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -634,7 +613,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.02248826,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -663,7 +641,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0149765247,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -692,7 +669,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.01967136,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -721,7 +697,6 @@
       "NearPreserveDepth": 0.077136144,
       "ShowReticle": true,
       "ReticleBaseSize": 0.014037556,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -750,7 +725,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -779,7 +753,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0253051631,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -808,7 +781,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -837,7 +809,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -866,7 +837,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -895,7 +865,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -924,7 +893,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -953,7 +921,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -982,7 +949,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1011,7 +977,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1040,7 +1005,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1069,7 +1033,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1098,7 +1061,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1127,7 +1089,6 @@
       "NearPreserveDepth": 0.0,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1156,7 +1117,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1185,7 +1145,6 @@
       "NearPreserveDepth": 0.0,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1214,7 +1173,6 @@
       "NearPreserveDepth": 0.00281690154,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0177934263,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1243,7 +1201,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1272,7 +1229,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1301,7 +1257,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1330,7 +1285,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1359,7 +1313,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1388,7 +1341,6 @@
       "NearPreserveDepth": 0.0367605537,
       "ShowReticle": true,
       "ReticleBaseSize": 0.03,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1417,7 +1369,6 @@
       "NearPreserveDepth": 0.0,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0224882625,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1446,7 +1397,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0206103288,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     },
@@ -1475,7 +1425,6 @@
       "NearPreserveDepth": 0.02549295,
       "ShowReticle": true,
       "ReticleBaseSize": 0.0187323932,
-      "ReticleOverlayCamera": true,
       "RestoreOnUnscope": true,
       "ExpandSearchToWeaponRoot": true
     }

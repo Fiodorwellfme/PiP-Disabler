@@ -156,7 +156,6 @@ namespace PiPDisabler
         internal static ConfigEntry<float> NearPreserveDepth;
         internal static ConfigEntry<bool> ShowReticle;
         internal static ConfigEntry<float> ReticleBaseSize;
-        internal static ConfigEntry<bool> ReticleOverlayCamera;
         internal static ConfigEntry<bool> ExpandSearchToWeaponRoot;
         internal static ConfigEntry<bool> DebugShowHousingMask;
         internal static ConfigEntry<bool> StencilIncludeWeaponMeshes;
@@ -187,7 +186,6 @@ namespace PiPDisabler
         internal static ConfigEntry<float> CustomNearPreserveDepth;
         internal static ConfigEntry<bool> CustomShowReticle;
         internal static ConfigEntry<float> CustomReticleBaseSize;
-        internal static ConfigEntry<bool> CustomReticleOverlayCamera;
         internal static ConfigEntry<bool> CustomRestoreOnUnscope;
         internal static ConfigEntry<bool> CustomExpandSearchToWeaponRoot;
 
@@ -475,9 +473,6 @@ namespace PiPDisabler
                     "across all zoom levels.  Typical scope lens diameter is 0.02-0.04 m.\n" +
                     "Set to 0 to fall back to the legacy CylinderRadius x2 value.",
                     new AcceptableValueRange<float>(0f, 0.2f)));
-            ReticleOverlayCamera = Config.Bind("3. Global Mesh Surgery settings", "ReticleOverlayCamera", true,
-                "[DEPRECATED — reticle now uses a CommandBuffer with nonJitteredProjectionMatrix.\n" +
-                "The overlay camera has been removed. This setting has no effect.]");
             ExpandSearchToWeaponRoot = Config.Bind("3. Global Mesh Surgery settings", "ExpandSearchToWeaponRoot", true,
                 "Expand the mesh surgery search root all the way up to the Weapon_root node.\n" +
                 "When enabled, meshes on the weapon body under Weapon_root are also candidates\n" +
@@ -523,7 +518,6 @@ namespace PiPDisabler
             CustomNearPreserveDepth = Config.Bind("4. Custom Mesh Surgery settings", "NearPreserveDepth", 0.02549295f, new ConfigDescription("Custom per-scope near preserve depth in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
             CustomShowReticle = Config.Bind("4. Custom Mesh Surgery settings", "ShowReticle", true, "Custom per-scope reticle visibility.");
             CustomReticleBaseSize = Config.Bind("4. Custom Mesh Surgery settings", "ReticleBaseSize", 0.030f, new ConfigDescription("Custom per-scope reticle base diameter in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
-            CustomReticleOverlayCamera = Config.Bind("4. Custom Mesh Surgery settings", "ReticleOverlayCamera", true, "Deprecated setting mirrored for per-scope persistence.");
             CustomRestoreOnUnscope = Config.Bind("4. Custom Mesh Surgery settings", "RestoreOnUnscope", true, "Custom per-scope restore behavior when leaving scope.");
             CustomExpandSearchToWeaponRoot = Config.Bind("4. Custom Mesh Surgery settings", "ExpandSearchToWeaponRoot", true, "Custom per-scope search root expansion to Weapon_root.");
 
@@ -627,7 +621,6 @@ namespace PiPDisabler
         internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : NearPreserveDepth.Value;
         internal static bool GetShowReticle() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowReticle : ShowReticle.Value;
         internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : ReticleBaseSize.Value;
-        internal static bool GetReticleOverlayCamera() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleOverlayCamera : ReticleOverlayCamera.Value;
         internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : RestoreOnUnscope.Value;
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
