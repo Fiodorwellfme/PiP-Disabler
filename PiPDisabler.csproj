@@ -3,10 +3,18 @@
     <TargetFramework>net472</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
+
+    <!-- Produces PiPDisabler.dll -->
     <AssemblyName>PiPDisabler</AssemblyName>
     <RootNamespace>PiPDisabler</RootNamespace>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+
+    <!-- Packaging -->
+    <PackageRoot>$(MSBuildProjectDirectory)\_package</PackageRoot>
+    <PackageModDir>$(PackageRoot)\BepInEx\plugins\PiP-Disabler</PackageModDir>
+    <PackageZip>$(MSBuildProjectDirectory)\PiP-Disabler.zip</PackageZip>
   </PropertyGroup>
+
   <ItemGroup>
     <Compile Remove="BepInEx\**" />
     <Compile Remove="images\**" />
@@ -25,14 +33,10 @@
       <HintPath>..\..\BepInEx\core\0Harmony.dll</HintPath>
       <Private>False</Private>
     </Reference>
-
-    <!-- SPT ModulePatch -->
     <Reference Include="spt-reflection">
       <HintPath>..\..\BepInEx\plugins\spt\spt-reflection.dll</HintPath>
       <Private>False</Private>
     </Reference>
-
-    <!-- EFT + Unity -->
     <Reference Include="Assembly-CSharp">
       <HintPath>..\..\EscapeFromTarkov_Data\Managed\Assembly-CSharp.dll</HintPath>
       <Private>False</Private>
@@ -64,11 +68,32 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
-  <!-- Post-build: copy DLL to BepInEx plugins folder -->
+  <ItemGroup>
+    <None Update="custom_mesh_surgery_settings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <Target Name="CopyToPlugins" AfterTargets="Build" Condition="Exists('..\..\BepInEx\plugins')">
+    <MakeDir Directories="..\..\BepInEx\plugins\PiP-Disabler" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="..\..\BepInEx\plugins\PiP-Disabler\" />
-    <Message Importance="High" Text="Copied $(TargetFileName) → ..\..\BepInEx\plugins\PiP-Disabler\" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\custom_mesh_surgery_settings.json"
+          DestinationFolder="..\..\BepInEx\plugins\PiP-Disabler\" />
+    <Message Importance="High" Text="Copied files to ..\..\BepInEx\plugins\PiP-Disabler\" />
+  </Target>
+
+  <Target Name="CreateReleaseZip" AfterTargets="Build">
+    <Exec Command="if exist &quot;$(PackageRoot)&quot; rmdir /s /q &quot;$(PackageRoot)&quot;" />
+    <MakeDir Directories="$(PackageModDir)" />
+
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PackageModDir)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\custom_mesh_surgery_settings.json"
+          DestinationFolder="$(PackageModDir)" />
+
+    <Delete Files="$(PackageZip)" Condition="Exists('$(PackageZip)')" />
+
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Compress-Archive -Path '$(PackageRoot)\*' -DestinationPath '$(PackageZip)' -Force&quot;" />
+
+    <Message Importance="High" Text="Created $(PackageZip)" />
   </Target>
 </Project>
-
-
