@@ -373,7 +373,7 @@ namespace PiPDisabler
 
             return fallback;
         }
-
+    }
 
     internal static class InputProxy
     {
