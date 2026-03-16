@@ -466,7 +466,7 @@ namespace PiPDisabler
             CustomExpandSearchToWeaponRoot = plugin.Config.Bind("4. Custom Mesh Surgery settings", "ExpandSearchToWeaponRoot", true, new ConfigDescription("Custom per-scope search root expansion to Weapon_root.", null, new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- Scope Effects ---
-            VignetteEnabled = plugin.Config.Bind("5. Scope Effects", "VignetteEnabled", true,
+            VignetteEnabled = plugin.Config.Bind("5. Scope Effects", "VignetteEnabled", false,
                 "Render a circular vignette ring around the scope aperture.\n" +
                 "A world-space quad at the lens position fading from transparent centre to black edge.");
             VignetteOpacity = plugin.Config.Bind("5. Scope Effects", "VignetteOpacity", 0.39f,
@@ -483,7 +483,7 @@ namespace PiPDisabler
                     "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
                     new AcceptableValueRange<float>(0f, 1f)));
 
-            ScopeShadowEnabled = plugin.Config.Bind("5. Scope Effects", "ScopeShadowEnabled", true,
+            ScopeShadowEnabled = plugin.Config.Bind("5. Scope Effects", "ScopeShadowEnabled", false,
                 "Overlay a fullscreen scope-tube shadow: black everywhere except a transparent\n" +
                 "circular window in the centre.  Simulates looking down a scope tube.");
             ScopeShadowOpacity = plugin.Config.Bind("5. Scope Effects", "ScopeShadowOpacity", 0.75f,
