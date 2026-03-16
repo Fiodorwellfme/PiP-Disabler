@@ -352,7 +352,7 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             FovAnimationDuration = Config.Bind("General", "FovAnimationDuration", 0.25f,
                 new ConfigDescription(
-                    "Duration of the FOV transitions (ADS in/out and magnification changes).",
+                    "Duration of the FOV transitions during magnification changes.",
                     new AcceptableValueRange<float>(0f, 10f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
 
