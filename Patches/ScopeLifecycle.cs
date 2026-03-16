@@ -225,7 +225,7 @@ namespace PiPDisabler
                 FovController.OnModeSwitch();
 
                 // RESTORE all meshes first, then re-cut with new mode's plane position.
-                if (PiPDisablerPlugin.EnableMeshSurgery.Value)
+                if (PiPDisablerPlugin.EnableMeshSurgery)
                 {
                     MeshSurgeryManager.RestoreForScope(os.transform);
                     MeshSurgeryManager.ApplyForOptic(os);
@@ -575,7 +575,7 @@ namespace PiPDisabler
             if (ShouldBypassByWhitelist(os))
                 return true;
 
-            if (PiPDisablerPlugin.AutoDisableForVariableScopes.Value
+            if (PiPDisablerPlugin.AutoDisableForVariableScopes
                 && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
                 return true;
 
@@ -588,7 +588,7 @@ namespace PiPDisabler
         private static bool ScopeNameMatchesBypassPattern(OpticSight os)
         {
             if (os == null) return false;
-            string raw = PiPDisablerPlugin.AutoBypassNameContains?.Value;
+            string raw = PiPDisablerPlugin.AutoBypassNameContains;
             if (string.IsNullOrWhiteSpace(raw)) return false;
 
             string scopeKey   = ResolveWhitelistScopeKey(os) ?? string.Empty;
@@ -838,12 +838,12 @@ namespace PiPDisabler
             ScopeEffectsRenderer.Show();
 
             // 5. Mesh surgery (once)
-            if (PiPDisablerPlugin.EnableMeshSurgery.Value)
+            if (PiPDisablerPlugin.EnableMeshSurgery)
                 MeshSurgeryManager.ApplyForOptic(os);
 
             // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
             if (PiPDisablerPlugin.GetShowCutPlane()
-                && !PiPDisablerPlugin.EnableMeshSurgery.Value)
+                && !PiPDisablerPlugin.EnableMeshSurgery)
             {
                 ShowPlaneOnly(os);
             }
@@ -942,8 +942,7 @@ namespace PiPDisabler
         private static List<Renderer> CollectStencilRenderers(OpticSight os)
         {
             var housing = LensTransparency.CollectHousingRenderers(os);
-            if (PiPDisablerPlugin.StencilIncludeWeaponMeshes != null
-                && PiPDisablerPlugin.StencilIncludeWeaponMeshes.Value)
+            if (PiPDisablerPlugin.StencilIncludeWeaponMeshes)
             {
                 housing.AddRange(LensTransparency.CollectWeaponRenderers(os, housing));
             }
@@ -959,7 +958,7 @@ namespace PiPDisabler
             try
             {
                 if (_modBypassedForCurrentScope) return;
-                if (!PiPDisablerPlugin.EnableZoom.Value) return;
+                if (!PiPDisablerPlugin.EnableZoom) return;
                 if (!CameraClass.Exist) return;
 
                 float zoomBaseFov = FovController.ZoomBaselineFov;

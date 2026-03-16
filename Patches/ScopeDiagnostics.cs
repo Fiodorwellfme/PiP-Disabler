@@ -107,7 +107,7 @@ namespace PiPDisabler
                 }
                 else
                 {
-                    sb.AppendLine($"[Diagnostics] Magnification   : no ScopeZoomHandler — using DefaultZoom ({PiPDisablerPlugin.DefaultZoom.Value:F1}x)");
+                    sb.AppendLine($"[Diagnostics] Magnification   : no ScopeZoomHandler — using DefaultZoom ({PiPDisablerPlugin.DefaultZoom:F1}x)");
                 }
             }
             catch (System.Exception ex)

@@ -57,7 +57,7 @@ namespace PiPDisabler.Patches
 
             if (pwa != null &&
                 PiPDisablerPlugin.ModEnabled.Value &&
-                PiPDisablerPlugin.EnableZoom.Value &&
+                PiPDisablerPlugin.EnableZoom &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
                 !FreelookTracker.IsFreelooking &&

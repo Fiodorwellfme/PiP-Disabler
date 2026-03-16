@@ -95,9 +95,7 @@ namespace PiPDisabler
             QualitySettings.lodBias = newLodBias;
 
             // Force highest LOD by default unless overridden by manual max LOD level.
-            int manualMaxLod = PiPDisablerPlugin.ManualMaximumLodLevel != null
-                ? PiPDisablerPlugin.ManualMaximumLodLevel.Value
-                : -1;
+            int manualMaxLod = PiPDisablerPlugin.ManualMaximumLodLevel;
             int appliedMaxLod = manualMaxLod >= 0 ? manualMaxLod : 0;
             QualitySettings.maximumLODLevel = appliedMaxLod;
 
@@ -109,9 +107,7 @@ namespace PiPDisabler
             // Increase cull distances proportionally so objects stay visible when zoomed
             if (_savedCullDistances != null)
             {
-                float manualCullMultiplier = PiPDisablerPlugin.ManualCullingMultiplier != null
-                    ? PiPDisablerPlugin.ManualCullingMultiplier.Value
-                    : 0f;
+                float manualCullMultiplier = PiPDisablerPlugin.ManualCullingMultiplier;
                 float cullingMultiplier = manualCullMultiplier > 0f
                     ? manualCullMultiplier
                     : Mathf.Max(magnification, 1f);

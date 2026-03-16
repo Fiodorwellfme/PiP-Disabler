@@ -57,7 +57,7 @@ namespace PiPDisabler.Patches
             if (!PiPDisablerPlugin.ModEnabled.Value)
                 return true;
 
-            if (!PiPDisablerPlugin.DisablePiP.Value)
+            if (!PiPDisablerPlugin.DisablePiP)
                 return true;
 
             if (!ScopeLifecycle.IsScoped)

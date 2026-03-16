@@ -156,8 +156,8 @@ namespace PiPDisabler
         {
             if (os == null) return;
 
-            bool shouldHide = PiPDisablerPlugin.MakeLensesTransparent.Value
-                              || PiPDisablerPlugin.DisablePiP.Value;
+            bool shouldHide = PiPDisablerPlugin.MakeLensesTransparent
+                              || PiPDisablerPlugin.DisablePiP;
             if (!shouldHide) return;
 
             Transform searchRoot = FindScopeSearchRoot(os.transform);
@@ -255,8 +255,7 @@ namespace PiPDisabler
         {
             if (_hidden.Count == 0) return;
 
-            bool blackLens = PiPDisablerPlugin.BlackLensWhenUnscoped != null
-                             && PiPDisablerPlugin.BlackLensWhenUnscoped.Value;
+            bool blackLens = PiPDisablerPlugin.BlackLensWhenUnscoped;
 
             for (int i = 0; i < _hidden.Count; i++)
             {

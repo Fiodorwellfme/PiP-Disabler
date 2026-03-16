@@ -176,7 +176,7 @@ namespace PiPDisabler
             //  - The game is trying to set a non-freelook FOV (i.e. freelook just ended
             //    and EFT wants to set 35° — we know because targetFov < settingsFov)
             if (PiPDisablerPlugin.ModEnabled.Value &&
-                PiPDisablerPlugin.EnableZoom.Value &&
+                PiPDisablerPlugin.EnableZoom &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
                 _lastAppliedScopedFov > 0.5f)

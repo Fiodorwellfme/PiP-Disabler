@@ -61,7 +61,7 @@ namespace PiPDisabler
 
 internal static void TickBaseOpticCamera()
         {
-            if (!PiPDisablerPlugin.DisablePiP.Value) return;
+            if (!PiPDisablerPlugin.DisablePiP) return;
 
             // Any condition that should preserve vanilla PiP must restore and skip disabling.
             if (ShouldAllowVanillaPiP())
@@ -205,7 +205,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 if (ScopeLifecycle.IsNameBypassed(os))
                     return true;
 
-                if (!PiPDisablerPlugin.AutoDisableForVariableScopes.Value)
+                if (!PiPDisablerPlugin.AutoDisableForVariableScopes)
                     return false;
 
                 if (FovController.IsOpticAdjustable(os))
@@ -319,7 +319,7 @@ _ignoreOnDisableFrame.Clear();
         private static bool ShouldAllowVanillaPiP()
         {
             return !PiPDisablerPlugin.ModEnabled.Value
-                || !PiPDisablerPlugin.DisablePiP.Value
+                || !PiPDisablerPlugin.DisablePiP
                 || ScopeLifecycle.IsModBypassedForCurrentScope
                 || ScopeLifecycle.IsLastOpticNameBypassed();
         }
@@ -333,7 +333,7 @@ _ignoreOnDisableFrame.Clear();
             private static void Postfix(OpticComponentUpdater __instance)
             {
                 if (!PiPDisablerPlugin.ModEnabled.Value) return;
-                if (!PiPDisablerPlugin.DisablePiP.Value) return;
+                if (!PiPDisablerPlugin.DisablePiP) return;
                 if (__instance == null) return;
                 if (ShouldSuppressPiPDisableForCurrentOptic(__instance)) return;
 
@@ -359,7 +359,7 @@ _ignoreOnDisableFrame.Clear();
                 if (!PiPDisablerPlugin.ModEnabled.Value) return true;
                 if (__instance == null) return true;
 
-                if (PiPDisablerPlugin.DisablePiP.Value)
+                if (PiPDisablerPlugin.DisablePiP)
                 {
                     OpticCameraTransform = __instance.transform;
                     Debug_LastOpticCameraTransform = OpticCameraTransform;
