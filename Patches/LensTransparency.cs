@@ -196,18 +196,6 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Legacy single-renderer API.
-        /// </summary>
-        public static void HideLens(Renderer lens)
-        {
-            if (lens == null) return;
-            bool shouldHide = PiPDisablerPlugin.MakeLensesTransparent.Value
-                              || PiPDisablerPlugin.DisablePiP.Value;
-            if (!shouldHide) return;
-            KillMesh(lens);
-        }
-
-        /// <summary>
         /// Per-frame: re-apply empty mesh if EFT somehow restores geometry.
         /// Also keep renderer disabled as secondary measure.
         ///
@@ -516,11 +504,7 @@ namespace PiPDisabler
 
             return ContainsCI(name, "linza")
                    || ContainsCI(name, "lens")
-                   || ContainsCI(name, "glass")
-                   || ContainsCI(name, "front_lens")
-                   || ContainsCI(name, "back_lens")
-                   || ContainsCI(name, "frontlens")
-                   || ContainsCI(name, "backlens");
+                   || ContainsCI(name, "glass");
         }
 
 

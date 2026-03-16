@@ -1,6 +1,5 @@
 using System;
 using System.Reflection;
-using EFT.Animations;
 using EFT.CameraControl;
 using HarmonyLib;
 using UnityEngine;
@@ -70,11 +69,8 @@ namespace PiPDisabler
         ///   2. ScopeCameraData.FieldOfView fallback (mag = 35 / fov)
         ///   3. Config ScopedFov manual fallback
         /// </summary>
-        public static float ComputeZoomedFov(float baseFov, ProceduralWeaponAnimation pwa)
+        public static float ComputeZoomedFov()
         {
-            _ = baseFov;
-            _ = pwa;
-
             if (!PiPDisablerPlugin.AutoFovFromScope.Value)
                 return PiPDisablerPlugin.ScopedFov.Value;
 
@@ -285,15 +281,6 @@ namespace PiPDisabler
             catch { }
 
             return (0f, 0f);
-        }
-
-        /// <summary>
-        /// Returns true when the current optic exposes AdjustableOpticData.IsAdjustableOptic.
-        /// Used for optional auto-bypass of variable scopes.
-        /// </summary>
-        public static bool IsCurrentOpticAdjustable()
-        {
-            return IsOpticAdjustable(ScopeLifecycle.ActiveOptic);
         }
 
         public static bool IsOpticAdjustable(OpticSight os)
@@ -846,18 +833,6 @@ namespace PiPDisabler
         // =====================================================================
 
         private static bool IsOnSameModeAs(Transform candidate, Transform optic)
-        {
-            Transform GetMode(Transform t)
-            {
-                for (var p = t; p != null; p = p.parent)
-                    if (p.name != null && p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase))
-                        return p;
-                return null;
-            }
-            var modeC = GetMode(candidate);
-            var modeO = GetMode(optic);
-            if (modeC == null || modeO == null) return modeC == modeO;
-            return modeC == modeO;
-        }
+            => PiPDisablerPlugin.IsOnSameMode(candidate, optic);
     }
 }

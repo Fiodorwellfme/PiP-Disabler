@@ -20,7 +20,7 @@ namespace PiPDisabler
             public RenderTexture TargetTexture;
         }
 
-        private static readonly System.Collections.Generic.List<CameraState> _cams = new System.Collections.Generic.List<CameraState>(16);
+        private static readonly List<CameraState> _cams = new List<CameraState>(16);
 
         // Cached reflection field for OpticSight inside OpticComponentUpdater.
         // The field name is obfuscated and varies between EFT builds, so we
@@ -34,8 +34,8 @@ namespace PiPDisabler
         // IMPORTANT: we disable Camera components (enabled=false, cullingMask=0, targetTexture=null)
         // but keep the GameObject active so our OpticComponentUpdater LateUpdate prefix can still run
         // and keep scope lifecycle working.
-        private static readonly System.Collections.Generic.List<Camera> _baseOpticCams =
-            new System.Collections.Generic.List<Camera>(4);
+        private static readonly List<Camera> _baseOpticCams =
+            new List<Camera>(4);
 
         private static int _nextBaseScanFrame = -1;
         private static bool _loggedBase;
@@ -52,12 +52,12 @@ namespace PiPDisabler
 
         
         // Track OpticSight.enabled state so we can disable it while scoped and restore on un-scope.
-        private static readonly System.Collections.Generic.Dictionary<OpticSight, bool> _opticOrigEnabled =
-            new System.Collections.Generic.Dictionary<OpticSight, bool>(32);
+        private static readonly Dictionary<OpticSight, bool> _opticOrigEnabled =
+            new Dictionary<OpticSight, bool>(32);
 
         // Used to suppress our own OpticSight.OnDisable postfix (same-frame).
-        private static readonly System.Collections.Generic.Dictionary<OpticSight, int> _ignoreOnDisableFrame =
-            new System.Collections.Generic.Dictionary<OpticSight, int>(32);
+        private static readonly Dictionary<OpticSight, int> _ignoreOnDisableFrame =
+            new Dictionary<OpticSight, int>(32);
 
 internal static void TickBaseOpticCamera()
         {

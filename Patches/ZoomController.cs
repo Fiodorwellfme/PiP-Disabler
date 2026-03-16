@@ -10,39 +10,10 @@ namespace PiPDisabler
     /// </summary>
     internal static class ZoomController
     {
-        public static Renderer ActiveLensRenderer => null;
-
         // Range info (discovered from template or FOV fallback)
         private static float _nativeMinMag;        // minimum magnification (widest view)
         private static float _nativeMaxMag;        // maximum magnification (tightest view)
         private static bool  _rangeDiscovered;
-
-        public static bool ShaderAvailable => false;
-
-        /// <summary>No shader state is active.</summary>
-        public static bool IsActive => false;
-
-        /// <summary>Kept for API compatibility with existing startup flow.</summary>
-        public static void LoadShader()
-        {
-            PiPDisablerPlugin.LogInfo(
-                "[ZoomController] Using template-based FOV zoom.");
-        }
-
-        /// <summary>Kept for API compatibility. No-op.</summary>
-        public static void Apply(OpticSight os, float magnification) { }
-
-        /// <summary>Kept for API compatibility. No-op.</summary>
-        public static void SetZoom(float magnification) { }
-
-        /// <summary>Resets zoom state on scope-out.</summary>
-        public static void Restore()
-        {
-            ResetScrollZoom();
-        }
-
-        /// <summary>Kept for API compatibility. No-op.</summary>
-        public static void EnsureLensVisible() { }
 
         /// <summary>
         /// Returns the current effective magnification.
@@ -61,8 +32,6 @@ namespace PiPDisabler
 
             return FovController.GetEffectiveMagnification();
         }
-
-        public static float GetScrollZoomMagnification() => 0f;
 
         /// <summary>
         /// Returns the optic's minimum FOV (maximum magnification) in degrees.
@@ -129,38 +98,8 @@ namespace PiPDisabler
             return FovController.MagnificationToFov(currentMag, FovController.ZoomBaselineFov);
         }
 
-        /// <summary>
-        /// Returns the optic's minimum magnification (widest view).
-        /// For variable zoom scopes this is from template min zoom.
-        /// For fixed scopes this equals the current magnification.
-        /// </summary>
-        public static float GetMinMagnification(OpticSight os)
-        {
-            if (os == null) return PiPDisablerPlugin.DefaultZoom.Value;
-
-            var (minZoom, maxZoom) = FovController.GetTemplateZoomRange();
-            if (minZoom > 0.1f)
-                return minZoom;
-
-            // Fallback: if range discovered from FOV
-            if (_rangeDiscovered && _nativeMinMag > 0.1f)
-                return _nativeMinMag;
-
-            return FovController.GetEffectiveMagnification();
-        }
-
-        /// <summary>
-        /// No runtime input zoom override.
-        /// </summary>
-        public static bool HandleScrollZoom(float scrollDelta)
-        {
-            return false;
-        }
-
-        /// <summary>
-        /// Reset cached zoom range. Called on scope exit.
-        /// </summary>
-        public static void ResetScrollZoom()
+        /// <summary>Resets zoom state on scope-out.</summary>
+        public static void Restore()
         {
             _rangeDiscovered = false;
         }
@@ -260,25 +199,6 @@ namespace PiPDisabler
                 PiPDisablerPlugin.LogVerbose(
                     $"[ZoomController] DiscoverZoomRange exception: {ex.Message}");
             }
-        }
-
-        /// <summary>
-        /// Check if a candidate and optic share the same mode_XXX ancestor.
-        /// </summary>
-        private static bool IsOnSameMode(Transform candidate, Transform optic)
-        {
-            Transform GetMode(Transform t)
-            {
-                for (var p = t; p != null; p = p.parent)
-                    if (p.name != null && (p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
-                        || p.name.Equals("mode", StringComparison.OrdinalIgnoreCase)))
-                        return p;
-                return null;
-            }
-            var modeC = GetMode(candidate);
-            var modeO = GetMode(optic);
-            if (modeC == null || modeO == null) return modeC == modeO;
-            return modeC == modeO;
         }
     }
 }

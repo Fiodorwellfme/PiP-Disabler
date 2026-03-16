@@ -209,18 +209,7 @@ namespace PiPDisabler
         }
 
         private static bool IsOnSameMode(Transform a, Transform b)
-        {
-            Transform GetMode(Transform t)
-            {
-                for (var p = t; p != null; p = p.parent)
-                    if (p.name != null && p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase))
-                        return p;
-                return null;
-            }
-            var mA = GetMode(a);
-            var mB = GetMode(b);
-            return mA == mB;
-        }
+            => PiPDisablerPlugin.IsOnSameMode(a, b);
 
         private static void DiscoverType()
         {

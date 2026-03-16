@@ -58,12 +58,8 @@ namespace PiPDisabler
         // Public API
         // ─────────────────────────────────────────────────────────────────────
 
-        public static void Show(Transform lensTransform, float baseSize, float magnification)
+        public static void Show()
         {
-            _ = lensTransform;
-            _ = baseSize;
-            _ = magnification;
-
             if (PiPDisablerPlugin.VignetteEnabled.Value)
             {
                 EnsureVignetteMeshAndMat();
@@ -95,11 +91,8 @@ namespace PiPDisabler
         }
 
         /// <summary>Per-frame update — call from ScopeLifecycle.Tick().</summary>
-        public static void UpdateTransform(float baseSize, float magnification)
+        public static void UpdateTransform()
         {
-            _ = baseSize;
-            _ = magnification;
-
             // Refresh textures if config changed
             if (_vigActive)  RefreshVignetteTexture();
             if (_shadowActive) RefreshShadowTexture();
@@ -434,20 +427,7 @@ namespace PiPDisabler
         }
 
         private static Rect GetDisplayViewport(Camera cam)
-        {
-            float w = Mathf.Max(1f, Screen.width);
-            float h = Mathf.Max(1f, Screen.height);
-
-            // DLSS/FSR may shrink camera pixelRect to internal resolution.
-            // Use display-space dimensions so overlays stay centered full-frame.
-            if (cam != null)
-            {
-                w = Mathf.Max(w, cam.pixelWidth);
-                h = Mathf.Max(h, cam.pixelHeight);
-            }
-
-            return new Rect(0f, 0f, w, h);
-        }
+            => PiPDisablerPlugin.GetDisplayViewport(cam);
 
         private static float GetDisplayAspect(Camera cam)
         {

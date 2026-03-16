@@ -1,11 +1,10 @@
 using System;
+using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Configuration;
 using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
-using System.Collections.Generic;
-using PiPDisabler;
 using UnityEngine;
 
 namespace PiPDisabler
@@ -65,6 +64,55 @@ namespace PiPDisabler
             return Camera.main;
         }
 
+        /// <summary>
+        /// Returns the local player via GameWorld singleton.
+        /// Shared helper — used by WeaponScalingPatch, ZeroingController, ScopeLifecycle.
+        /// </summary>
+        internal static Player GetLocalPlayer()
+        {
+            try
+            {
+                var gw = Singleton<GameWorld>.Instance;
+                return gw?.MainPlayer;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Returns the display viewport in pixels (accounts for DLSS/FSR).
+        /// Shared helper — used by ReticleRenderer and ScopeEffectsRenderer.
+        /// </summary>
+        internal static Rect GetDisplayViewport(Camera cam)
+        {
+            float w = Mathf.Max(1f, Screen.width);
+            float h = Mathf.Max(1f, Screen.height);
+            if (cam != null)
+            {
+                w = Mathf.Max(w, cam.pixelWidth);
+                h = Mathf.Max(h, cam.pixelHeight);
+            }
+            return new Rect(0f, 0f, w, h);
+        }
+
+        /// <summary>
+        /// Check if two transforms share the same mode_XXX ancestor.
+        /// Shared helper — used by FovController, CameraSettingsManager.
+        /// </summary>
+        internal static bool IsOnSameMode(Transform a, Transform b)
+        {
+            var mA = FindModeAncestor(a);
+            var mB = FindModeAncestor(b);
+            return mA == mB;
+        }
+
+        private static Transform FindModeAncestor(Transform t)
+        {
+            for (var p = t; p != null; p = p.parent)
+                if (p.name != null && p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase))
+                    return p;
+            return null;
+        }
+
         // --- 0. Global ---
         internal static ConfigEntry<bool> ModEnabled;
         internal static ConfigEntry<KeyCode> ModToggleKey;
@@ -108,7 +156,6 @@ namespace PiPDisabler
         internal static ConfigEntry<float> NearPreserveDepth;
         internal static ConfigEntry<bool> ShowReticle;
         internal static ConfigEntry<float> ReticleBaseSize;
-        internal static ConfigEntry<bool> ReticleOverlayCamera;
         internal static ConfigEntry<bool> ExpandSearchToWeaponRoot;
         internal static ConfigEntry<bool> DebugShowHousingMask;
         internal static ConfigEntry<bool> StencilIncludeWeaponMeshes;
@@ -139,7 +186,6 @@ namespace PiPDisabler
         internal static ConfigEntry<float> CustomNearPreserveDepth;
         internal static ConfigEntry<bool> CustomShowReticle;
         internal static ConfigEntry<float> CustomReticleBaseSize;
-        internal static ConfigEntry<bool> CustomReticleOverlayCamera;
         internal static ConfigEntry<bool> CustomRestoreOnUnscope;
         internal static ConfigEntry<bool> CustomExpandSearchToWeaponRoot;
 
@@ -427,9 +473,6 @@ namespace PiPDisabler
                     "across all zoom levels.  Typical scope lens diameter is 0.02-0.04 m.\n" +
                     "Set to 0 to fall back to the legacy CylinderRadius x2 value.",
                     new AcceptableValueRange<float>(0f, 0.2f)));
-            ReticleOverlayCamera = Config.Bind("3. Global Mesh Surgery settings", "ReticleOverlayCamera", true,
-                "[DEPRECATED — reticle now uses a CommandBuffer with nonJitteredProjectionMatrix.\n" +
-                "The overlay camera has been removed. This setting has no effect.]");
             ExpandSearchToWeaponRoot = Config.Bind("3. Global Mesh Surgery settings", "ExpandSearchToWeaponRoot", true,
                 "Expand the mesh surgery search root all the way up to the Weapon_root node.\n" +
                 "When enabled, meshes on the weapon body under Weapon_root are also candidates\n" +
@@ -475,7 +518,6 @@ namespace PiPDisabler
             CustomNearPreserveDepth = Config.Bind("4. Custom Mesh Surgery settings", "NearPreserveDepth", 0.02549295f, new ConfigDescription("Custom per-scope near preserve depth in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
             CustomShowReticle = Config.Bind("4. Custom Mesh Surgery settings", "ShowReticle", true, "Custom per-scope reticle visibility.");
             CustomReticleBaseSize = Config.Bind("4. Custom Mesh Surgery settings", "ReticleBaseSize", 0.030f, new ConfigDescription("Custom per-scope reticle base diameter in meters.", new AcceptableValueRange<float>(0f, 0.2f)));
-            CustomReticleOverlayCamera = Config.Bind("4. Custom Mesh Surgery settings", "ReticleOverlayCamera", true, "Deprecated setting mirrored for per-scope persistence.");
             CustomRestoreOnUnscope = Config.Bind("4. Custom Mesh Surgery settings", "RestoreOnUnscope", true, "Custom per-scope restore behavior when leaving scope.");
             CustomExpandSearchToWeaponRoot = Config.Bind("4. Custom Mesh Surgery settings", "ExpandSearchToWeaponRoot", true, "Custom per-scope search root expansion to Weapon_root.");
 
@@ -534,9 +576,6 @@ namespace PiPDisabler
             // Initialize scope detection via PWA reflection
             ScopeLifecycle.Init();
 
-            // Initialize zoom system
-            ZoomController.LoadShader();
-
             // --- Config change handlers (catches config manager changes, not just hotkeys) ---
             ModEnabled.SettingChanged += OnModEnabledChanged;
             EnableWeaponScaling.SettingChanged += OnWeaponScalingToggled;
@@ -582,7 +621,6 @@ namespace PiPDisabler
         internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : NearPreserveDepth.Value;
         internal static bool GetShowReticle() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowReticle : ShowReticle.Value;
         internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : ReticleBaseSize.Value;
-        internal static bool GetReticleOverlayCamera() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleOverlayCamera : ReticleOverlayCamera.Value;
         internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : RestoreOnUnscope.Value;
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
