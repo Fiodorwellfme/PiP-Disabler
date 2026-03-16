@@ -1,11 +1,11 @@
 using System;
+using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Configuration;
 using Comfort.Common;
 using EFT;
 using EFT.CameraControl;
 using UnityEngine;
-using static PiPDisabler.ModSettings;
 
 namespace PiPDisabler
 {
@@ -113,11 +113,109 @@ namespace PiPDisabler
             return null;
         }
 
+        // Compatibility shims: keep existing PiPDisablerPlugin.* references working
+        internal static ConfigEntry<bool> ModEnabled => ModSettings.ModEnabled;
+        internal static ConfigEntry<KeyCode> ModToggleKey => ModSettings.ModToggleKey;
+        internal static ConfigEntry<bool> AutoSwitchReticleRenderForNvg => ModSettings.AutoSwitchReticleRenderForNvg;
+        internal static ConfigEntry<bool> DisablePiP => ModSettings.DisablePiP;
+        internal static ConfigEntry<bool> AutoDisableForVariableScopes => ModSettings.AutoDisableForVariableScopes;
+        internal static ConfigEntry<string> AutoBypassNameContains => ModSettings.AutoBypassNameContains;
+        internal static ConfigEntry<string> ScopeWhitelistNames => ModSettings.ScopeWhitelistNames;
+        internal static ConfigEntry<KeyCode> ScopeWhitelistToggleEntryKey => ModSettings.ScopeWhitelistToggleEntryKey;
+        internal static ConfigEntry<KeyCode> DisablePiPToggleKey => ModSettings.DisablePiPToggleKey;
+        internal static ConfigEntry<bool> MakeLensesTransparent => ModSettings.MakeLensesTransparent;
+        internal static ConfigEntry<KeyCode> LensesTransparentToggleKey => ModSettings.LensesTransparentToggleKey;
+        internal static ConfigEntry<bool> BlackLensWhenUnscoped => ModSettings.BlackLensWhenUnscoped;
+        internal static ConfigEntry<bool> EnableMeshSurgery => ModSettings.EnableMeshSurgery;
+        internal static ConfigEntry<KeyCode> MeshSurgeryToggleKey => ModSettings.MeshSurgeryToggleKey;
+        internal static ConfigEntry<bool> RestoreOnUnscope => ModSettings.RestoreOnUnscope;
+        internal static ConfigEntry<float> PlaneOffsetMeters => ModSettings.PlaneOffsetMeters;
+        internal static ConfigEntry<string> PlaneNormalAxis => ModSettings.PlaneNormalAxis;
+        internal static ConfigEntry<float> CutRadius => ModSettings.CutRadius;
+        internal static ConfigEntry<bool> ShowCutPlane => ModSettings.ShowCutPlane;
+        internal static ConfigEntry<bool> ShowCutVolume => ModSettings.ShowCutVolume;
+        internal static ConfigEntry<float> CutVolumeOpacity => ModSettings.CutVolumeOpacity;
+        internal static ConfigEntry<string> CutMode => ModSettings.CutMode;
+        internal static ConfigEntry<float> CylinderRadius => ModSettings.CylinderRadius;
+        internal static ConfigEntry<float> MidCylinderRadius => ModSettings.MidCylinderRadius;
+        internal static ConfigEntry<float> MidCylinderPosition => ModSettings.MidCylinderPosition;
+        internal static ConfigEntry<float> FarCylinderRadius => ModSettings.FarCylinderRadius;
+        internal static ConfigEntry<float> Plane1OffsetMeters => ModSettings.Plane1OffsetMeters;
+        internal static ConfigEntry<float> Plane2Position => ModSettings.Plane2Position;
+        internal static ConfigEntry<float> Plane2Radius => ModSettings.Plane2Radius;
+        internal static ConfigEntry<float> Plane3Position => ModSettings.Plane3Position;
+        internal static ConfigEntry<float> Plane3Radius => ModSettings.Plane3Radius;
+        internal static ConfigEntry<float> Plane4Position => ModSettings.Plane4Position;
+        internal static ConfigEntry<float> Plane4Radius => ModSettings.Plane4Radius;
+        internal static ConfigEntry<float> CutStartOffset => ModSettings.CutStartOffset;
+        internal static ConfigEntry<float> CutLength => ModSettings.CutLength;
+        internal static ConfigEntry<float> NearPreserveDepth => ModSettings.NearPreserveDepth;
+        internal static ConfigEntry<bool> ShowReticle => ModSettings.ShowReticle;
+        internal static ConfigEntry<float> ReticleBaseSize => ModSettings.ReticleBaseSize;
+        internal static ConfigEntry<bool> ExpandSearchToWeaponRoot => ModSettings.ExpandSearchToWeaponRoot;
+        internal static ConfigEntry<bool> DebugShowHousingMask => ModSettings.DebugShowHousingMask;
+        internal static ConfigEntry<bool> StencilIncludeWeaponMeshes => ModSettings.StencilIncludeWeaponMeshes;
+        internal static ConfigEntry<KeyCode> SaveCustomMeshSurgerySettingsKey => ModSettings.SaveCustomMeshSurgerySettingsKey;
+        internal static ConfigEntry<KeyCode> DeleteCustomMeshSurgerySettingsKey => ModSettings.DeleteCustomMeshSurgerySettingsKey;
+        internal static ConfigEntry<float> CustomPlaneOffsetMeters => ModSettings.CustomPlaneOffsetMeters;
+        internal static ConfigEntry<string> CustomPlaneNormalAxis => ModSettings.CustomPlaneNormalAxis;
+        internal static ConfigEntry<float> CustomCutRadius => ModSettings.CustomCutRadius;
+        internal static ConfigEntry<bool> CustomShowCutPlane => ModSettings.CustomShowCutPlane;
+        internal static ConfigEntry<bool> CustomShowCutVolume => ModSettings.CustomShowCutVolume;
+        internal static ConfigEntry<float> CustomCutVolumeOpacity => ModSettings.CustomCutVolumeOpacity;
+        internal static ConfigEntry<string> CustomCutMode => ModSettings.CustomCutMode;
+        internal static ConfigEntry<float> CustomCylinderRadius => ModSettings.CustomCylinderRadius;
+        internal static ConfigEntry<float> CustomMidCylinderRadius => ModSettings.CustomMidCylinderRadius;
+        internal static ConfigEntry<float> CustomMidCylinderPosition => ModSettings.CustomMidCylinderPosition;
+        internal static ConfigEntry<float> CustomFarCylinderRadius => ModSettings.CustomFarCylinderRadius;
+        internal static ConfigEntry<float> CustomPlane1OffsetMeters => ModSettings.CustomPlane1OffsetMeters;
+        internal static ConfigEntry<float> CustomPlane2Position => ModSettings.CustomPlane2Position;
+        internal static ConfigEntry<float> CustomPlane2Radius => ModSettings.CustomPlane2Radius;
+        internal static ConfigEntry<float> CustomPlane3Position => ModSettings.CustomPlane3Position;
+        internal static ConfigEntry<float> CustomPlane3Radius => ModSettings.CustomPlane3Radius;
+        internal static ConfigEntry<float> CustomPlane4Position => ModSettings.CustomPlane4Position;
+        internal static ConfigEntry<float> CustomPlane4Radius => ModSettings.CustomPlane4Radius;
+        internal static ConfigEntry<float> CustomCutStartOffset => ModSettings.CustomCutStartOffset;
+        internal static ConfigEntry<float> CustomCutLength => ModSettings.CustomCutLength;
+        internal static ConfigEntry<float> CustomNearPreserveDepth => ModSettings.CustomNearPreserveDepth;
+        internal static ConfigEntry<bool> CustomShowReticle => ModSettings.CustomShowReticle;
+        internal static ConfigEntry<float> CustomReticleBaseSize => ModSettings.CustomReticleBaseSize;
+        internal static ConfigEntry<bool> CustomRestoreOnUnscope => ModSettings.CustomRestoreOnUnscope;
+        internal static ConfigEntry<bool> CustomExpandSearchToWeaponRoot => ModSettings.CustomExpandSearchToWeaponRoot;
+        internal static ConfigEntry<bool> VignetteEnabled => ModSettings.VignetteEnabled;
+        internal static ConfigEntry<float> VignetteOpacity => ModSettings.VignetteOpacity;
+        internal static ConfigEntry<float> VignetteSizeMult => ModSettings.VignetteSizeMult;
+        internal static ConfigEntry<float> VignetteSoftness => ModSettings.VignetteSoftness;
+        internal static ConfigEntry<bool> ScopeShadowEnabled => ModSettings.ScopeShadowEnabled;
+        internal static ConfigEntry<float> ScopeShadowOpacity => ModSettings.ScopeShadowOpacity;
+        internal static ConfigEntry<float> ScopeShadowRadius => ModSettings.ScopeShadowRadius;
+        internal static ConfigEntry<float> ScopeShadowSoftness => ModSettings.ScopeShadowSoftness;
+        internal static ConfigEntry<KeyCode> DiagnosticsKey => ModSettings.DiagnosticsKey;
+        internal static ConfigEntry<bool> EnableWeaponScaling => ModSettings.EnableWeaponScaling;
+        internal static ConfigEntry<float> BaselineWeaponScale => ModSettings.BaselineWeaponScale;
+        internal static ConfigEntry<float> WeaponScaleStrength => ModSettings.WeaponScaleStrength;
+        internal static ConfigEntry<bool> EnableZoom => ModSettings.EnableZoom;
+        internal static ConfigEntry<float> DefaultZoom => ModSettings.DefaultZoom;
+        internal static ConfigEntry<bool> AutoFovFromScope => ModSettings.AutoFovFromScope;
+        internal static ConfigEntry<float> ScopedFov => ModSettings.ScopedFov;
+        internal static ConfigEntry<float> FovAnimationDuration => ModSettings.FovAnimationDuration;
+        internal static ConfigEntry<KeyCode> ZoomToggleKey => ModSettings.ZoomToggleKey;
+        internal static ConfigEntry<float> ManualLodBias => ModSettings.ManualLodBias;
+        internal static ConfigEntry<int> ManualMaximumLodLevel => ModSettings.ManualMaximumLodLevel;
+        internal static ConfigEntry<float> ManualCullingMultiplier => ModSettings.ManualCullingMultiplier;
+        internal static Dictionary<string, ConfigEntry<float>> MapManualLodBias => ModSettings.MapManualLodBias;
+        internal static ConfigEntry<bool> EnableZeroing => ModSettings.EnableZeroing;
+        internal static ConfigEntry<KeyCode> ZeroingUpKey => ModSettings.ZeroingUpKey;
+        internal static ConfigEntry<KeyCode> ZeroingDownKey => ModSettings.ZeroingDownKey;
+        internal static ConfigEntry<bool> VerboseLogging => ModSettings.VerboseLogging;
+        internal static ConfigEntry<bool> DebugLogCutCandidates => ModSettings.DebugLogCutCandidates;
+        internal static ConfigEntry<bool> DebugReticleAfterEverything => ModSettings.DebugReticleAfterEverything;
+
         private void Awake()
         {
             Instance = this;
 
-            Initialize(this);
+            ModSettings.Bind(this);
 
             Patches.Patcher.Enable();
 
