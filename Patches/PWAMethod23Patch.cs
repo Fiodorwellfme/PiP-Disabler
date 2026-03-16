@@ -56,8 +56,8 @@ namespace PiPDisabler.Patches
                 return;
 
             if (pwa != null &&
-                PiPDisablerPlugin.ModEnabled.Value &&
-                PiPDisablerPlugin.EnableZoom.Value &&
+                ModSettings.ModEnabled.Value &&
+                ModSettings.EnableZoom.Value &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
                 pwa.IsAiming &&

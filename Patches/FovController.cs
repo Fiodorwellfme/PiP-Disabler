@@ -71,8 +71,8 @@ namespace PiPDisabler
         /// </summary>
         public static float ComputeZoomedFov()
         {
-            if (!PiPDisablerPlugin.AutoFovFromScope.Value)
-                return PiPDisablerPlugin.ScopedFov.Value;
+            if (!ModSettings.AutoFovFromScope.Value)
+                return ModSettings.ScopedFov.Value;
 
             float magnification = GetEffectiveMagnification();
             if (magnification > 0.1f)
@@ -92,7 +92,7 @@ namespace PiPDisabler
                 return resultFov;
             }
 
-            return PiPDisablerPlugin.ScopedFov.Value;
+            return ModSettings.ScopedFov.Value;
         }
 
         /// <summary>
@@ -134,7 +134,7 @@ namespace PiPDisabler
 
             // 3. Config default
             _lastLoggedSource = "DEFAULT";
-            return PiPDisablerPlugin.DefaultZoom.Value;
+            return ModSettings.DefaultZoom.Value;
         }
 
         /// <summary>
