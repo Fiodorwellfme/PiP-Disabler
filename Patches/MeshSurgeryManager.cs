@@ -80,9 +80,42 @@ namespace PiPDisabler
             }
 
             if (cache.Dirty || !cache.Built)
-                RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode);
+                RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode, applyMeshes: true);
             else
                 ReapplyCachedCutMeshes(cache, scopeRoot);
+        }
+
+        /// <summary>
+        /// Pre-warm the mesh surgery cut cache for <paramref name="os"/> WITHOUT applying
+        /// the cut meshes to any MeshFilters.  Call this when the weapon is equipped but
+        /// the player is not yet ADS'd so the expensive GPU readback + CPU cutting work
+        /// happens outside the ADS transition.  When the player later ADS with the same
+        /// weapon, <see cref="ApplyForOptic"/> finds the cache already built and takes the
+        /// fast <see cref="ReapplyCachedCutMeshes"/> path (no GPU stall, no mesh cutting).
+        /// </summary>
+        public static void TryPreWarmForOptic(OpticSight os)
+        {
+            if (os == null) return;
+
+            var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
+            if (!scopeRoot) return;
+
+            var activeMode = ResolveActiveMode(os, scopeRoot);
+            var cache = GetOrCreateCurrentWeaponCache(scopeRoot, activeMode);
+            if (cache == null) return;
+
+            // Already warm — nothing to do.
+            if (cache.Built && !cache.Dirty) return;
+
+            string currentSignature = BuildCutSettingsSignature();
+            if (cache.Built && !string.Equals(cache.SettingsSignature, currentSignature, StringComparison.Ordinal))
+                cache.Dirty = true;
+
+            if (cache.Dirty || !cache.Built)
+            {
+                PiPDisablerPlugin.LogInfo("[MeshSurgery] Pre-warming cut cache (no-apply pass).");
+                RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode, applyMeshes: false);
+            }
         }
 
         public static void RestoreForScope(Transform anyTransformUnderScope)
@@ -201,7 +234,7 @@ namespace PiPDisabler
             return profileCache;
         }
 
-        private static void RebuildCutCacheForOptic(CutProfileCache cache, OpticSight os, Transform scopeRoot, Transform activeMode)
+        private static void RebuildCutCacheForOptic(CutProfileCache cache, OpticSight os, Transform scopeRoot, Transform activeMode, bool applyMeshes = true)
         {
             if (cache == null || os == null || scopeRoot == null) return;
             if (!activeMode) activeMode = os.transform;
@@ -226,7 +259,8 @@ namespace PiPDisabler
                 ? MeshPlaneCutter.KeepSide.Positive
                 : MeshPlaneCutter.KeepSide.Negative;
 
-            PlaneVisualizer.Show(planePoint, planeNormal);
+            if (applyMeshes)
+                PlaneVisualizer.Show(planePoint, planeNormal);
 
             RestoreOriginalMeshes(cache);
             DestroyCutMeshes(cache);
@@ -236,8 +270,12 @@ namespace PiPDisabler
             float cutRadius = PiPDisablerPlugin.GetCutRadius();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
-            DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
-            DisableWeaponSphereObjects(scopeRoot, logCandidates);
+            // Light/sphere effects are visual-state changes — only apply during a real ADS enter.
+            if (applyMeshes)
+            {
+                DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
+                DisableWeaponSphereObjects(scopeRoot, logCandidates);
+            }
 
             foreach (var mf in targets)
             {
@@ -306,13 +344,18 @@ namespace PiPDisabler
                     PiPDisablerPlugin.LogVerbose(
                         $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
 
-                    mf.sharedMesh = readable;
+                    // When pre-warming (applyMeshes=false) we build the cut mesh but do NOT
+                    // assign it to the MeshFilter yet — that happens later in ApplyForOptic /
+                    // ReapplyCachedCutMeshes when the player actually ADS.
+                    if (applyMeshes)
+                        mf.sharedMesh = readable;
+
                     cache.Entries.Add(new CutMeshEntry
                     {
                         Filter = mf,
                         OriginalMesh = originalAsset,
                         CutMesh = readable,
-                        Applied = true,
+                        Applied = applyMeshes,
                         FilterPath = GetRelativePath(weaponRootTf, mf.transform)
                     });
                 }

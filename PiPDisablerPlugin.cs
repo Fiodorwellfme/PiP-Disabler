@@ -576,6 +576,11 @@ namespace PiPDisabler
             // Initialize scope detection via PWA reflection
             ScopeLifecycle.Init();
 
+            // Pre-warm shader/material resources so they are not created on the first ADS frame.
+            // These calls are idempotent — safe to invoke during Awake before any scene is loaded.
+            ReticleRenderer.PreWarmMaterials();
+            LensTransparency.PreWarm();
+
             // --- Config change handlers (catches config manager changes, not just hotkeys) ---
             ModEnabled.SettingChanged += OnModEnabledChanged;
             EnableWeaponScaling.SettingChanged += OnWeaponScalingToggled;

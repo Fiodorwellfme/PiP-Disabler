@@ -535,6 +535,17 @@ namespace PiPDisabler
             };
         }
 
+        /// <summary>
+        /// Pre-warm the reticle mesh and all shader materials at startup so that
+        /// Shader.Find and new Material() do not run on the first ADS frame.
+        /// Safe to call multiple times — creation is skipped if already done.
+        /// </summary>
+        public static void PreWarmMaterials()
+        {
+            try { EnsureMeshAndMaterial(); }
+            catch { }
+        }
+
         private static void EnsureMeshAndMaterial()
         {
             if (_reticleMesh != null && _reticleMat != null) return;

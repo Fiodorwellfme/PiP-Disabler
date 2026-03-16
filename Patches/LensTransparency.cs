@@ -62,6 +62,20 @@ namespace PiPDisabler
         // Solid black unlit material applied to lens surfaces when unscoped.
         private static Material _blackLensMaterial;
 
+        /// <summary>
+        /// Pre-warm the empty mesh and black lens material at startup so they are not
+        /// created on the first ADS frame.  Safe to call multiple times.
+        /// </summary>
+        public static void PreWarm()
+        {
+            try
+            {
+                GetEmptyMesh();
+                GetBlackLensMaterial();
+            }
+            catch { }
+        }
+
         private static Mesh GetEmptyMesh()
         {
             if (_emptyMesh != null) return _emptyMesh;

@@ -246,6 +246,14 @@ namespace PiPDisabler
             }
 
             CheckAndUpdate("OnOpticEnabled");
+
+            // If we did NOT enter scope (player isn't ADS'd yet), pre-warm the mesh surgery
+            // cut cache now.  The expensive GPU readbacks and CPU mesh cutting happen here,
+            // during weapon equip / collimator-mode activation, rather than on the first ADS
+            // frame.  When the player ADS, ApplyForOptic finds the cache already built and
+            // takes the fast ReapplyCachedCutMeshes path.
+            if (!_isScoped && os != null && PiPDisablerPlugin.EnableMeshSurgery.Value)
+                MeshSurgeryManager.TryPreWarmForOptic(os);
         }
 
         /// <summary>
