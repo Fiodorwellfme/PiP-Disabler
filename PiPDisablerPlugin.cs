@@ -205,7 +205,7 @@ namespace PiPDisabler
             AutoDisableForVariableScopes = Config.Bind("1. General", "AutoDisableForVariableScopes", true,
                 "Automatically disable all mod effects while scoped with variable magnification optics (IsAdjustableOptic=true).\n" +
                 "Also bypasses thermal/night-vision scopes detected via ScopeData.ThermalVisionData or NightVisionData.");
-            AutoBypassNameContains = Config.Bind("1. General", "AutoBypassNameContains", "npz, PU, vomz",
+            AutoBypassNameContains = Config.Bind("1. General", "AutoBypassNameContains", "npz, PU, vomz, d-evo",
                 "Comma-separated list of substrings. Any scope whose object name or scope key contains one of these ");
             ScopeWhitelistNames = Config.Bind("1. General", "ScopeWhitelistNames", "",
                 "Comma/semicolon/newline separated list of allowed scope keys.\n" +
@@ -213,12 +213,12 @@ namespace PiPDisabler
                 "Fallbacks: template _name, template _id, then optic object name. Empty list = whitelist ignored.");
             ScopeWhitelistToggleEntryKey = Config.Bind("1. General", "ScopeWhitelistToggleEntryKey", KeyCode.None,
                 "When pressed while scoped, add/remove the current scope key in ScopeWhitelistNames (derived from mod_scope non-mount object).");
-            DisablePiPToggleKey = Config.Bind("1. General", "DisablePiPToggleKey", KeyCode.F10,
+            DisablePiPToggleKey = Config.Bind("1. General", "DisablePiPToggleKey", KeyCode.None,
                 "Toggle key for PiP disable.");
 
             MakeLensesTransparent = Config.Bind("1. General", "MakeLensesTransparent", true,
                 "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.");
-            LensesTransparentToggleKey = Config.Bind("1. General", "LensesTransparentToggleKey", KeyCode.F11,
+            LensesTransparentToggleKey = Config.Bind("1. General", "LensesTransparentToggleKey", KeyCode.None,
                 "Toggle key for lens transparency.");
             BlackLensWhenUnscoped = Config.Bind("1. General", "BlackLensWhenUnscoped", true,
                 "When unscoping, apply a solid black opaque material to the lens instead of restoring " +
@@ -309,7 +309,7 @@ namespace PiPDisabler
             // --- Mesh Surgery (ON by default, Cylinder mode) ---
             EnableMeshSurgery = Config.Bind("3. Global Mesh Surgery settings", "EnableMeshSurgery", true,
                 "Enable runtime mesh cutting to bore a hole through the scope housing.");
-            MeshSurgeryToggleKey = Config.Bind("3. Global Mesh Surgery settings", "MeshSurgeryToggleKey", KeyCode.F9,
+            MeshSurgeryToggleKey = Config.Bind("3. Global Mesh Surgery settings", "MeshSurgeryToggleKey", KeyCode.None,
                 "Toggle key for mesh surgery.");
             RestoreOnUnscope = Config.Bind("3. Global Mesh Surgery settings", "RestoreOnUnscope", true,
                 "Restore original meshes when leaving scope.");
@@ -515,7 +515,7 @@ namespace PiPDisabler
                     new AcceptableValueRange<float>(0f, 0.3f)));
 
             // --- Diagnostics ---
-            DiagnosticsKey = Config.Bind("6. Diagnostics", "DiagnosticsKey", KeyCode.F8,
+            DiagnosticsKey = Config.Bind("6. Diagnostics", "DiagnosticsKey", KeyCode.None,
                 "Press to log full diagnostics for the currently active scope: name, hierarchy,\n" +
                 "magnification and cut-plane config.");
 
