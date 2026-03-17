@@ -1119,32 +1119,5 @@ namespace PiPDisabler
             }
             catch { return false; }
         }
-
-        /// <summary>Returns true while the key is held down.</summary>
-        public static bool GetKey(KeyCode key)
-        {
-            try
-            {
-                if (_getKey == null) return false;
-                return (bool)_getKey.Invoke(null, new object[] { key });
-            }
-            catch { return false; }
-        }
-
-        /// <summary>
-        /// Returns the Y component of Input.mouseScrollDelta.
-        /// Positive = scroll up, negative = scroll down.
-        /// </summary>
-        public static float GetScrollDelta()
-        {
-            try
-            {
-                if (_mouseScrollDelta == null) return 0f;
-                var vec = (Vector2)_mouseScrollDelta.GetValue(null);
-                return vec.y;
-            }
-            catch { return 0f; }
-        }
-
     }
 }
