@@ -1094,9 +1094,6 @@ namespace PiPDisabler
     {
         private static System.Type _inputType;
         private static System.Reflection.MethodInfo _getKeyDown;
-        private static System.Reflection.MethodInfo _getKey;
-        private static System.Reflection.PropertyInfo _mouseScrollDelta;
-
         static InputProxy()
         {
             _inputType = System.Type.GetType("UnityEngine.Input, UnityEngine.InputLegacyModule")
@@ -1104,9 +1101,6 @@ namespace PiPDisabler
             if (_inputType != null)
             {
                 _getKeyDown = _inputType.GetMethod("GetKeyDown", new[] { typeof(KeyCode) });
-                _getKey = _inputType.GetMethod("GetKey", new[] { typeof(KeyCode) });
-                _mouseScrollDelta = _inputType.GetProperty("mouseScrollDelta",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
             }
         }
 
