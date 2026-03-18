@@ -71,7 +71,9 @@ namespace PiPDisabler.Patches
                 if (isOptic)
                 {
                     float zoomBaseFov = FovController.ZoomBaselineFov;
-                    float zoomedFov = FovController.ComputeZoomedFov();
+                    float zoomedFov;
+                    if (!FreelookTracker.TryGetCachedScopedFov(out zoomedFov))
+                        zoomedFov = FovController.ComputeZoomedFov();
 
                     if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                     {

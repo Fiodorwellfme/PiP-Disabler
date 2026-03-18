@@ -62,6 +62,15 @@ namespace PiPDisabler
         }
 
         /// <summary>
+        /// Returns the last scoped FOV written by the mod.
+        /// </summary>
+        public static bool TryGetCachedScopedFov(out float fov)
+        {
+            fov = _lastAppliedScopedFov;
+            return fov > 0.5f;
+        }
+
+        /// <summary>
         /// Called once from plugin Awake to cache the reflection accessor.
         /// </summary>
         public static void Init()
