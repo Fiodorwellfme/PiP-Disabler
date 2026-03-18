@@ -42,6 +42,7 @@ namespace PiPDisabler
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
+        private static ScopeSubScopeKind _activeSubScopeKind = ScopeSubScopeKind.Unknown;
 
         // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
         private static Type _scopeDataType;
@@ -58,6 +59,7 @@ namespace PiPDisabler
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
         public static OpticSight ActiveOptic => _activeOptic;
+        internal static bool IsOpticSubScopeActive => _activeSubScopeKind != ScopeSubScopeKind.IntegratedIrons;
 
         /// <summary>
         /// Shared optic classification helper for other systems that must make
@@ -215,38 +217,14 @@ namespace PiPDisabler
                 ReticleRenderer.Cleanup();
                 ReticleRenderer.ExtractReticle(os);
 
-                // Re-hide lenses (the new mode's lens might not be hidden yet)
-                LensTransparency.HideAllLensSurfaces(os);
-
-                // Recollect housing + weapon renderers for the new mode's geometry.
-                ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
-
                 // Notify FOV controller the mode changed so it re-reads ScopeCameraData
                 FovController.OnModeSwitch();
-
-                // RESTORE all meshes first, then re-cut with new mode's plane position.
-                if (PiPDisablerPlugin.EnableMeshSurgery.Value)
-                {
-                    MeshSurgeryManager.RestoreForScope(os.transform);
-                    MeshSurgeryManager.ApplyForOptic(os);
-                }
-
-                // Re-apply camera settings for the new mode's FOV
-                CameraSettingsManager.ApplyForOptic(os);
-
-                // Capture weapon base scale/FOV before FOV changes
-                Patches.WeaponScalingPatch.CaptureBaseState();
 
                 // If freelooking, defer reticle/effects/FOV — they'll be restored
                 // when freelook ends via FreelookTracker.OnFreelookExit().
                 if (!FreelookTracker.IsFreelooking)
                 {
-                    // Show reticle for the new mode (with magnification scaling)
-                    float modeMag = ZoomController.GetMagnification(os);
-                    ReticleRenderer.Show(os, modeMag);
-
-                    // Animated FOV change for mode switch (uses configured duration)
-                    ApplyFov(true);
+                    ApplyCurrentSubScopeVisualState(force: true, reason: "mode switch", animateFov: true);
                 }
             }
 
@@ -383,19 +361,21 @@ namespace PiPDisabler
                 // FOV restore is handled by the PlayerLookPatch transpiler which
                 // intercepts Player.Look's SetFov(35) and substitutes our cached FOV.
                 // Re-hide lenses in case EFT restored them during freelook.
-                LensTransparency.EnsureHidden();
+                ApplyCurrentSubScopeVisualState(force: true, reason: "freelook exit", animateFov: false);
             }
 
-            // Keep lens hidden (re-kill if EFT restores geometry)
-            LensTransparency.EnsureHidden();
+            if (_activeSubScopeKind != ScopeSubScopeKind.IntegratedIrons)
+                LensTransparency.EnsureHidden();
 
             // Update reticle position/rotation/scale and effects
-            if (_activeOptic != null)
+            if (_activeOptic != null && _activeSubScopeKind != ScopeSubScopeKind.IntegratedIrons)
             {
                 float mag = ZoomController.GetMagnification(_activeOptic);
                 ReticleRenderer.UpdateTransform(mag);
                 ScopeEffectsRenderer.UpdateTransform();
             }
+
+            ApplyCurrentSubScopeVisualState(force: false, reason: "tick", animateFov: false);
 
             // PiP stays disabled via Harmony patches — no per-frame action needed.
 
@@ -416,6 +396,7 @@ namespace PiPDisabler
             if (_isScoped)
                 DoScopeExit();
             _modBypassedForCurrentScope = false;
+            _activeSubScopeKind = ScopeSubScopeKind.Unknown;
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
             _lastEnabledOptic = null;
@@ -800,6 +781,7 @@ namespace PiPDisabler
 
             _isScoped = true;
             _activeOptic = os;
+            _activeSubScopeKind = ScopeSubScopeKind.Unknown;
             PerScopeMeshSurgerySettings.SetActiveScope(ResolveWhitelistScopeKey(os));
 
             float minFov = ZoomController.GetMinFov(os);
@@ -820,41 +802,7 @@ namespace PiPDisabler
             // 2. Extract reticle texture BEFORE destroying lens mesh
             ReticleRenderer.ExtractReticle(os);
 
-            // 3. Hide ALL lens surfaces in the scope hierarchy (once)
-            LensTransparency.HideAllLensSurfaces(os);
-
-            // 2b. Collect housing + weapon renderers for reticle stencil mask (lens surfaces
-            //     are already empty-meshed above, so they won't end up in the list).
-            ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
-
-            // 3. Get magnification for reticle scaling and zoom
-            float mag = ZoomController.GetMagnification(os);
-
-            // 4. Show reticle overlay at the lens position, scaled for magnification
-            ReticleRenderer.Show(os, mag);
-
-            // 4b. Show lens vignette + scope shadow effects
-            ScopeEffectsRenderer.Show();
-
-            // 5. Mesh surgery (once)
-            if (PiPDisablerPlugin.EnableMeshSurgery.Value)
-                MeshSurgeryManager.ApplyForOptic(os);
-
-            // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
-            if (PiPDisablerPlugin.GetShowCutPlane()
-                && !PiPDisablerPlugin.EnableMeshSurgery.Value)
-            {
-                ShowPlaneOnly(os);
-            }
-
-            // 7. Swap main camera LOD/culling settings with scope camera settings
-            CameraSettingsManager.ApplyForOptic(os);
-
-            // 8. Capture weapon base scale/FOV BEFORE changing FOV (for weapon scaling compensation)
-            Patches.WeaponScalingPatch.CaptureBaseState();
-
-            // 9. Apply animated FOV zoom (uses FovAnimationDuration)
-            ApplyFov(true);
+            ApplyCurrentSubScopeVisualState(force: true, reason: "scope enter", animateFov: true);
 
             // 10. Read initial zeroing distance
             ZeroingController.ReadCurrentZeroing();
@@ -874,6 +822,7 @@ namespace PiPDisabler
 
             _isScoped = false;
             _activeOptic = null;
+            _activeSubScopeKind = ScopeSubScopeKind.Unknown;
             PerScopeMeshSurgerySettings.ClearActiveScope();
 
             // If this scope was bypassed, skip mod cleanup paths.
@@ -944,6 +893,87 @@ namespace PiPDisabler
                 housing.AddRange(LensTransparency.CollectWeaponRenderers(os, housing));
             }
             return housing;
+        }
+
+        internal static void OnAimModeChanged(string source, int beforeAimIndex)
+        {
+            int afterAimIndex = ScopeAimStateResolver.GetCurrentWeaponAimIndex();
+            PiPDisablerPlugin.LogVerbose(
+                $"[ScopeLifecycle] AimIndex change via {source}: before={beforeAimIndex} after={afterAimIndex}");
+
+            CheckAndUpdate(source);
+
+            if (_isScoped && !_modBypassedForCurrentScope && !FreelookTracker.IsFreelooking)
+                ApplyCurrentSubScopeVisualState(force: false, reason: source, animateFov: false);
+        }
+
+        private static void ApplyCurrentSubScopeVisualState(bool force, string reason, bool animateFov)
+        {
+            if (!_isScoped || _modBypassedForCurrentScope) return;
+            if (_activeOptic == null) return;
+
+            var snapshot = ScopeAimStateResolver.Resolve(_activeOptic);
+            if (snapshot == null) return;
+
+            PiPDisablerPlugin.LogVerbose(
+                $"[ScopeLifecycle] Sub-scope check ({reason}): " +
+                $"activeOptic='{_activeOptic.name}' aimIndex={snapshot.GlobalAimIndex} " +
+                $"sightComponent={(snapshot.SightComponent != null ? snapshot.SightComponent.GetType().Name : "null")} " +
+                $"scopes={snapshot.ScopesCount} selected={snapshot.SelectedScopeIndex} " +
+                $"activeAim='{(snapshot.ActiveAimTransform != null ? snapshot.ActiveAimTransform.name : "null")}' " +
+                $"path='{snapshot.ActiveAimPath}' kind={snapshot.Kind} reason='{snapshot.ClassificationReason}' " +
+                $"{snapshot.GlobalMappingSummary}");
+
+            if (!force && snapshot.Kind == _activeSubScopeKind)
+                return;
+
+            if (snapshot.Kind == ScopeSubScopeKind.IntegratedIrons)
+            {
+                PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] restoring original scope mesh");
+                if (PiPDisablerPlugin.GetRestoreOnUnscope())
+                    MeshSurgeryManager.RestoreForScope(_activeOptic.transform);
+
+                PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] forcing lens opaque black");
+                LensTransparency.RestoreAll(forceBlackLens: true);
+                LensTransparency.ForceBlackLensMaterials(_activeOptic);
+
+                PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] hiding reticle due to integrated-irons sub-scope");
+                ReticleRenderer.Hide();
+                ScopeEffectsRenderer.Hide();
+                CameraSettingsManager.Restore();
+                RestoreFov();
+                Patches.WeaponScalingPatch.RestoreScale();
+                PlaneVisualizer.Hide();
+            }
+            else
+            {
+                PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] re-applying optic mesh state");
+                LensTransparency.RestoreBlackLensMaterials();
+                LensTransparency.HideAllLensSurfaces(_activeOptic);
+                ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(_activeOptic));
+
+                if (PiPDisablerPlugin.EnableMeshSurgery.Value)
+                {
+                    MeshSurgeryManager.RestoreForScope(_activeOptic.transform);
+                    MeshSurgeryManager.ApplyForOptic(_activeOptic);
+                }
+                else if (PiPDisablerPlugin.GetShowCutPlane())
+                {
+                    ShowPlaneOnly(_activeOptic);
+                }
+
+                PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] restoring optic lens state");
+                float mag = ZoomController.GetMagnification(_activeOptic);
+                ReticleRenderer.Show(_activeOptic, mag);
+                ScopeEffectsRenderer.Show();
+                CameraSettingsManager.ApplyForOptic(_activeOptic);
+                Patches.WeaponScalingPatch.CaptureBaseState();
+
+                PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] showing reticle due to optic sub-scope");
+                ApplyFov(animateFov);
+            }
+
+            _activeSubScopeKind = snapshot.Kind;
         }
 
         /// <summary>
