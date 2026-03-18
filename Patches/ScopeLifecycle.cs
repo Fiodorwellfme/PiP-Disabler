@@ -844,6 +844,12 @@ namespace PiPDisabler
 
             // 3. Restore lens
             LensTransparency.RestoreAll();
+            if (PiPDisablerPlugin.BlackLensWhenUnscoped != null
+                && PiPDisablerPlugin.BlackLensWhenUnscoped.Value
+                && prevOptic != null)
+            {
+                LensTransparency.ForceBlackLensMaterials(prevOptic);
+            }
 
             // 4. Restore camera LOD/culling settings
             CameraSettingsManager.Restore();
