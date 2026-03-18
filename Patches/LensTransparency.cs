@@ -48,6 +48,7 @@ namespace PiPDisabler
         // Shader property IDs (cached for perf)
         private static readonly int _propColor = Shader.PropertyToID("_Color");
         private static readonly int _propSwitchToSight = Shader.PropertyToID("_SwitchToSight");
+        private const float HiddenLensSwitchValue = 0.97f;
 
         // Truly original materials per renderer, stored once on first KillMesh call.
         // Prevents the black material we apply on RestoreAll from being mistaken for
@@ -227,6 +228,30 @@ namespace PiPDisabler
                 var lensRenderer = os.LensRenderer;
                 if (lensRenderer != null)
                     ApplyBlackMaterial(lensRenderer);
+            }
+            catch { }
+        }
+
+        public static void ForceOpaqueLensFade(OpticSight os)
+        {
+            if (os == null) return;
+
+            Transform searchRoot = FindScopeSearchRoot(os.transform);
+            var allRenderers = searchRoot.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < allRenderers.Length; i++)
+            {
+                var renderer = allRenderers[i];
+                if (renderer == null) continue;
+                if (!renderer.gameObject.activeInHierarchy) continue;
+                if (!IsLensSurface(renderer) || ShouldSkipForCollimator(renderer)) continue;
+                ForceSwitchToSight(renderer);
+            }
+
+            try
+            {
+                var lensRenderer = os.LensRenderer;
+                if (lensRenderer != null)
+                    ForceSwitchToSight(lensRenderer);
             }
             catch { }
         }
@@ -514,6 +539,24 @@ namespace PiPDisabler
                 }
                 if (changed)
                     r.materials = mats;
+            }
+            catch { }
+        }
+
+        private static void ForceSwitchToSight(Renderer r)
+        {
+            if (r == null) return;
+            try
+            {
+                var mats = r.sharedMaterials;
+                if (mats == null) return;
+
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    var m = mats[i];
+                    if (m == null || !m.HasProperty(_propSwitchToSight)) continue;
+                    m.SetFloat(_propSwitchToSight, HiddenLensSwitchValue);
+                }
             }
             catch { }
         }
