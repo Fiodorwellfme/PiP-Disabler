@@ -417,9 +417,7 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (ShouldAllowVanillaPiP()) return true;
 
-                // In No-PiP mode, block LensFade to avoid material state issues.
-                // Lens hiding is handled by SSAA signal only — do NOT call
-                // LensTransparency here (fires per-frame, causes thrashing).
+                LensTransparency.ForceOpaqueLensState(__instance);
                 return false;
             }
         }

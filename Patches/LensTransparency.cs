@@ -47,6 +47,7 @@ namespace PiPDisabler
         // Shader property IDs (cached for perf)
         private static readonly int _propColor = Shader.PropertyToID("_Color");
         private static readonly int _propSwitchToSight = Shader.PropertyToID("_SwitchToSight");
+        private const float HiddenLensSwitchToSight = 0.97f;
 
         // Truly original materials per renderer, stored once on first KillMesh call.
         // Prevents the black material we apply on RestoreAll from being mistaken for
@@ -154,6 +155,31 @@ namespace PiPDisabler
                 var lensRenderer = os.LensRenderer;
                 if (lensRenderer != null)
                     ApplyBlackMaterial(lensRenderer);
+            }
+            catch { }
+        }
+
+        public static void ForceOpaqueLensState(OpticSight os)
+        {
+            if (os == null) return;
+
+            Transform searchRoot = FindScopeSearchRoot(os.transform);
+            if (searchRoot == null) return;
+
+            var allRenderers = searchRoot.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < allRenderers.Length; i++)
+            {
+                var renderer = allRenderers[i];
+                if (renderer == null) continue;
+                if (!IsLensSurface(renderer) || ShouldSkipForCollimator(renderer)) continue;
+                ForceOpaqueLensState(renderer);
+            }
+
+            try
+            {
+                var lensRenderer = os.LensRenderer;
+                if (lensRenderer != null)
+                    ForceOpaqueLensState(lensRenderer);
             }
             catch { }
         }
@@ -438,6 +464,53 @@ namespace PiPDisabler
                 if (changed)
                     r.materials = mats;
             }
+            catch { }
+        }
+
+        private static void ForceOpaqueLensState(Renderer r)
+        {
+            if (r == null) return;
+
+            ForceOpaqueLensMaterials(r.sharedMaterials, assign: mats => r.sharedMaterials = mats);
+
+            try
+            {
+                ForceOpaqueLensMaterials(r.materials, assign: mats => r.materials = mats);
+            }
+            catch { }
+        }
+
+        private static void ForceOpaqueLensMaterials(Material[] mats, Action<Material[]> assign)
+        {
+            if (mats == null || mats.Length == 0) return;
+
+            bool changed = false;
+            for (int i = 0; i < mats.Length; i++)
+            {
+                var material = mats[i];
+                if (material == null) continue;
+
+                if (material.HasProperty(_propSwitchToSight))
+                {
+                    material.SetFloat(_propSwitchToSight, HiddenLensSwitchToSight);
+                    changed = true;
+                }
+
+                if (material.HasProperty(_propColor))
+                {
+                    var color = material.GetColor(_propColor);
+                    if (color.a < 0.999f)
+                    {
+                        color.a = 1f;
+                        material.SetColor(_propColor, color);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (!changed) return;
+
+            try { assign(mats); }
             catch { }
         }
 
