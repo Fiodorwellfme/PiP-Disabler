@@ -38,6 +38,7 @@ namespace PiPDisabler.Patches
                 $"frame={Time.frameCount}");
 
             if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            if (PiPDisabler.ShouldIgnoreOnDisable(__instance)) return;
             ScopeLifecycle.OnOpticDisabled(__instance);
         }
     }

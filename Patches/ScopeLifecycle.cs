@@ -214,6 +214,7 @@ namespace PiPDisabler
                 // Re-extract reticle from the NEW mode's linza
                 ReticleRenderer.Cleanup();
                 ReticleRenderer.ExtractReticle(os);
+                PiPDisabler.SetOpticSightEnabled(os, false);
 
                 // Re-hide lenses (the new mode's lens might not be hidden yet)
                 LensTransparency.HideAllLensSurfaces(os);
@@ -773,6 +774,7 @@ namespace PiPDisabler
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
             LensTransparency.RestoreAll();
+            PiPDisabler.RestoreAllOpticSightStates();
             CameraSettingsManager.Restore();
             PiPDisabler.RestoreAllCameras();
 
@@ -822,6 +824,7 @@ namespace PiPDisabler
 
             // 2. Extract reticle texture BEFORE destroying lens mesh
             ReticleRenderer.ExtractReticle(os);
+            PiPDisabler.SetOpticSightEnabled(os, false);
 
             // 3. Hide ALL lens surfaces in the scope hierarchy (once)
             LensTransparency.HideAllLensSurfaces(os);
@@ -903,6 +906,7 @@ namespace PiPDisabler
 
             // 4. Restore lens
             LensTransparency.RestoreAll();
+            PiPDisabler.RestoreAllOpticSightStates();
 
             // 5. Restore camera LOD/culling settings
             CameraSettingsManager.Restore();

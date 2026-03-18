@@ -86,59 +86,72 @@ internal static void TickBaseOpticCamera()
             }
         }
 
-
-internal static void SetOpticSightEnabled(OpticSight os, bool enabled)
-{
-    if (os == null) return;
-
-    try
-    {
-        if (!enabled)
+        internal static void SetOpticSightEnabled(OpticSight os, bool enabled)
         {
-            // Store baseline once, then force-disable.
-            if (!_opticOrigEnabled.ContainsKey(os))
-                _opticOrigEnabled[os] = os.enabled;
+            if (os == null) return;
 
-            _ignoreOnDisableFrame[os] = Time.frameCount;
-            if (os.enabled) os.enabled = false;
-        }
-        else
-        {
-            if (_opticOrigEnabled.TryGetValue(os, out var wasEnabled))
+            try
             {
-                // Restore to baseline (do not force-enable if baseline was disabled).
-                if (wasEnabled && !os.enabled)
-                    os.enabled = true;
+                if (!enabled)
+                {
+                    if (!_opticOrigEnabled.ContainsKey(os))
+                        _opticOrigEnabled[os] = os.enabled;
 
-                _opticOrigEnabled.Remove(os);
+                    _ignoreOnDisableFrame[os] = Time.frameCount;
+                    if (os.enabled) os.enabled = false;
+                }
+                else
+                {
+                    if (_opticOrigEnabled.TryGetValue(os, out var wasEnabled))
+                    {
+                        if (wasEnabled && !os.enabled)
+                            os.enabled = true;
+
+                        _opticOrigEnabled.Remove(os);
+                    }
+
+                    _ignoreOnDisableFrame.Remove(os);
+                }
+            }
+            catch { }
+        }
+
+        internal static bool ShouldIgnoreOnDisable(OpticSight os)
+        {
+            if (os == null) return false;
+
+            if (_ignoreOnDisableFrame.TryGetValue(os, out var f))
+            {
+                if (f == Time.frameCount)
+                {
+                    _ignoreOnDisableFrame.Remove(os);
+                    return true;
+                }
+
+                if (Time.frameCount - f > 10)
+                    _ignoreOnDisableFrame.Remove(os);
             }
 
-            _ignoreOnDisableFrame.Remove(os);
+            return false;
         }
-    }
-    catch { /* ignore */ }
-}
 
-internal static bool ShouldIgnoreOnDisable(OpticSight os)
-{
-    if (os == null) return false;
-
-    if (_ignoreOnDisableFrame.TryGetValue(os, out var f))
-    {
-        if (f == Time.frameCount)
+        internal static void RestoreAllOpticSightStates()
         {
-            // One-shot suppression (only for the OnDisable we just triggered).
-            _ignoreOnDisableFrame.Remove(os);
-            return true;
+            try
+            {
+                foreach (var kv in _opticOrigEnabled)
+                {
+                    var os = kv.Key;
+                    if (os == null) continue;
+                    if (kv.Value && !os.enabled)
+                        os.enabled = true;
+                }
+            }
+            catch { }
+
+            _opticOrigEnabled.Clear();
+            _ignoreOnDisableFrame.Clear();
         }
-
-        // Stale entry (e.g. scene change) -> clear.
-        if (Time.frameCount - f > 10)
-            _ignoreOnDisableFrame.Remove(os);
-    }
-
-    return false;
-}
 
         private static void TryFindBaseOpticCameras()
         {
@@ -259,21 +272,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 catch { /* ignore */ }
             }
 
-// Restore OpticSight.enabled states we changed.
-try
-{
-    foreach (var kv in _opticOrigEnabled)
-    {
-        var os = kv.Key;
-        if (os == null) continue;
-        if (kv.Value && !os.enabled)
-            os.enabled = true;
-    }
-}
-catch { /* ignore */ }
-
-_opticOrigEnabled.Clear();
-_ignoreOnDisableFrame.Clear();
+            RestoreAllOpticSightStates();
 
             _cams.Clear();
 
