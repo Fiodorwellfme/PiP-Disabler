@@ -255,7 +255,7 @@ namespace PiPDisabler
                 var hitTransform = hit.collider != null ? hit.collider.transform : null;
                 if (hitTransform == null) continue;
                 if (weaponRoot != null && hitTransform.IsChildOf(weaponRoot)) continue;
-                if (localPlayer != null && hitTransform.IsChildOf(localPlayer.transform)) continue;
+                if (localPlayer != null && hitTransform.IsChildOf(localPlayer.Transform)) continue;
                 if (hit.distance <= 0.001f) continue;
 
                 hitDistance = hit.distance;
