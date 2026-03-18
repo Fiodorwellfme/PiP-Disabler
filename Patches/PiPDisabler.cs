@@ -58,6 +58,8 @@ namespace PiPDisabler
         // Used to suppress our own OpticSight.OnDisable postfix (same-frame).
         private static readonly Dictionary<OpticSight, int> _ignoreOnDisableFrame =
             new Dictionary<OpticSight, int>(32);
+        private static readonly Dictionary<OpticSight, int> _allowLensFadeFrame =
+            new Dictionary<OpticSight, int>(32);
 
 internal static void TickBaseOpticCamera()
         {
@@ -139,6 +141,73 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
     return false;
 }
+
+        internal static void CleanupVanillaOpticState(OpticSight opticSight)
+        {
+            try
+            {
+                if (!CameraClass.Exist) return;
+
+                var cameraClass = CameraClass.Instance;
+                if (cameraClass == null) return;
+
+                var manager = AccessTools.Property(cameraClass.GetType(), "OpticCameraManager")?.GetValue(cameraClass, null);
+                if (manager == null) return;
+
+                AccessTools.Property(manager.GetType(), "CurrentOpticSight")?.SetValue(manager, null, null);
+
+                var opticRetrice = GetMemberValue(manager, "OpticRetrice");
+                if (opticRetrice != null)
+                {
+                    AccessTools.Method(opticRetrice.GetType(), "SetOpticSight", new[] { typeof(OpticSight) })
+                        ?.Invoke(opticRetrice, new object[] { null });
+                    AccessTools.Method(opticRetrice.GetType(), "Clear")
+                        ?.Invoke(opticRetrice, null);
+                }
+
+                if (opticSight != null)
+                {
+                    _allowLensFadeFrame[opticSight] = Time.frameCount;
+                    opticSight.LensFade(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.LogVerbose($"[PiPDisabler] Optic cleanup failed: {ex.Message}");
+            }
+        }
+
+        internal static bool ShouldAllowLensFade(OpticSight os)
+        {
+            if (os == null) return false;
+
+            if (_allowLensFadeFrame.TryGetValue(os, out var frame))
+            {
+                if (frame == Time.frameCount)
+                {
+                    _allowLensFadeFrame.Remove(os);
+                    return true;
+                }
+
+                if (Time.frameCount - frame > 10)
+                    _allowLensFadeFrame.Remove(os);
+            }
+
+            return false;
+        }
+
+        private static object GetMemberValue(object instance, string memberName)
+        {
+            if (instance == null || string.IsNullOrEmpty(memberName)) return null;
+
+            var type = instance.GetType();
+            var property = AccessTools.Property(type, memberName);
+            if (property != null)
+                return property.GetValue(instance, null);
+
+            var field = AccessTools.Field(type, memberName);
+            return field != null ? field.GetValue(instance) : null;
+        }
 
         private static void TryFindBaseOpticCameras()
         {
@@ -274,6 +343,7 @@ catch { /* ignore */ }
 
 _opticOrigEnabled.Clear();
 _ignoreOnDisableFrame.Clear();
+_allowLensFadeFrame.Clear();
 
             _cams.Clear();
 
@@ -416,6 +486,7 @@ _ignoreOnDisableFrame.Clear();
             private static bool Prefix(OpticSight __instance)
             {
                 if (ShouldAllowVanillaPiP()) return true;
+                if (ShouldAllowLensFade(__instance)) return true;
 
                 // In No-PiP mode, block LensFade to avoid material state issues.
                 // Lens hiding is handled by SSAA signal only — do NOT call
