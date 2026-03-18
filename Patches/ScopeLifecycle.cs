@@ -833,8 +833,8 @@ namespace PiPDisabler
             // 1. Restore FOV with ADS-matched animation timing
             RestoreFov();
 
-            // 1b. Keep weapon scaling synced with the unscope FOV animation.
-            Patches.WeaponScalingPatch.BeginRestore(PiPDisablerPlugin.FovAnimationDuration.Value);
+            // 1b. Keep weapon scaling synced until the camera reaches baseline FOV.
+            Patches.WeaponScalingPatch.BeginRestore();
 
             // 2. Hide reticle overlay + scope effects
             PiPDisabler.CleanupVanillaOpticState(prevOptic);
