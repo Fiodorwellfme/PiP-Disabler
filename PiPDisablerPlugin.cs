@@ -206,7 +206,6 @@ namespace PiPDisabler
         internal static ConfigEntry<bool> EnableWeaponScaling;
         internal static ConfigEntry<float> BaselineWeaponScale;
         internal static ConfigEntry<float> WeaponScaleStrength;
-        internal static ConfigEntry<float> WeaponScaleSmoothingDuration;
         // --- Zoom / FOV ---
         internal static ConfigEntry<bool> EnableZoom;
         internal static ConfigEntry<float> DefaultZoom;
@@ -326,12 +325,6 @@ namespace PiPDisabler
                     "Blends between no compensation and full inverse-FOV compensation.\n" +
                     "0.00 = no compensation, 1.00 = full compensation, values outside [0,1] over/under-compensate.",
                     new AcceptableValueRange<float>(-2.00f, 2.00f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            WeaponScaleSmoothingDuration = Config.Bind("General", "WeaponScaleSmoothingDuration", 0.08f,
-                new ConfigDescription(
-                    "Seconds used to smooth weapon scale changes while scoped.\n" +
-                    "0.00 = instant snap, higher values ease magnification and mode-switch transitions.",
-                    new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- Zoom ---

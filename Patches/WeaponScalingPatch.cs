@@ -34,7 +34,7 @@ namespace PiPDisabler.Patches
     /// the visual fields:
     ///
     ///   RibcageScaleCurrentTarget = ourScale
-    ///   RibcageScaleCurrent       = ourScale   (smoothed locally, EFT lerp bypassed)
+    ///   RibcageScaleCurrent       = ourScale   (matched to live camera FOV)
     ///
     /// This makes the weapon model shrink without moving the reticle/aim point.
     ///
@@ -44,9 +44,6 @@ namespace PiPDisabler.Patches
     internal sealed class WeaponScalingPatch : ModulePatch
     {
         private static bool _isActive;
-        private static bool _hasSmoothedScale;
-        private static float _smoothedScale;
-        private static float _smoothedScaleVelocity;
 
         // Zoom formula baseline (must match FovController.ZoomBaselineFov)
         private const float ZoomBaseline = 50f;
@@ -66,29 +63,18 @@ namespace PiPDisabler.Patches
             if (os == null)
             {
                 _isActive = false;
-                _hasSmoothedScale = false;
-                _smoothedScaleVelocity = 0f;
                 return;
             }
 
             var player = GetMainPlayer();
-            if (player != null)
-            {
-                _smoothedScale = player.RibcageScaleCurrent;
-                _hasSmoothedScale = true;
-            }
-            else
-            {
-                _hasSmoothedScale = false;
-            }
-
-            _smoothedScaleVelocity = 0f;
             _isActive = true;
+
+            if (player == null || !CameraClass.Exist) return;
+            ApplyScale(player, CameraClass.Instance.Fov);
         }
 
         /// <summary>
         /// Per-frame update: override visual ribcage scale with our computed value.
-        /// Smoothing is applied locally to match the FOV transition more closely.
         /// Called from ScopeLifecycle.Tick().
         /// </summary>
         public static void UpdateScale()
@@ -102,13 +88,7 @@ namespace PiPDisabler.Patches
                 if (player == null) return;
                 if (!CameraClass.Exist) return;
 
-                float currentFov = CameraClass.Instance.Fov;
-                float targetScale = ComputeCompensatedScale(currentFov);
-                float scale = SmoothScale(player, targetScale);
-
-                // Override ONLY visual fields — aim math (_compensatoryScale etc.) untouched
-                player.RibcageScaleCurrentTarget = scale;
-                player.RibcageScaleCurrent = scale;
+                ApplyScale(player, CameraClass.Instance.Fov);
             }
             catch { }
         }
@@ -120,8 +100,6 @@ namespace PiPDisabler.Patches
         public static void RestoreScale()
         {
             _isActive = false;
-            _hasSmoothedScale = false;
-            _smoothedScaleVelocity = 0f;
 
             try
             {
@@ -188,49 +166,16 @@ namespace PiPDisabler.Patches
                 if (!_isActive) return;
                 if (!CameraClass.Exist) return;
 
-                float currentFov = CameraClass.Instance.Fov;
-                float targetScale = ComputeCompensatedScale(currentFov);
-                float scale = SmoothScale(__instance, targetScale);
-
-                // Override visual scale AFTER EFT has finished all aim math
-                __instance.RibcageScaleCurrentTarget = scale;
-                __instance.RibcageScaleCurrent = scale;
+                ApplyScale(__instance, CameraClass.Instance.Fov);
             }
             catch { }
         }
 
-        private static float SmoothScale(Player player, float targetScale)
+        private static void ApplyScale(Player player, float currentFov)
         {
-            float duration = PiPDisablerPlugin.WeaponScaleSmoothingDuration.Value;
-            if (duration <= 0f)
-            {
-                _smoothedScale = targetScale;
-                _smoothedScaleVelocity = 0f;
-                _hasSmoothedScale = true;
-                return targetScale;
-            }
-
-            if (!_hasSmoothedScale)
-            {
-                _smoothedScale = player != null ? player.RibcageScaleCurrent : targetScale;
-                _hasSmoothedScale = true;
-            }
-
-            float deltaTime = Time.deltaTime;
-            if (deltaTime <= 0f)
-                deltaTime = Time.unscaledDeltaTime;
-            if (deltaTime <= 0f)
-                return _smoothedScale;
-
-            _smoothedScale = Mathf.SmoothDamp(
-                _smoothedScale,
-                targetScale,
-                ref _smoothedScaleVelocity,
-                duration,
-                Mathf.Infinity,
-                deltaTime);
-
-            return _smoothedScale;
+            float scale = ComputeCompensatedScale(currentFov);
+            player.RibcageScaleCurrentTarget = scale;
+            player.RibcageScaleCurrent = scale;
         }
 
         private static Player GetMainPlayer()
