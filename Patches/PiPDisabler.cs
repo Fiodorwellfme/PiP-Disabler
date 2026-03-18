@@ -18,6 +18,7 @@ namespace PiPDisabler
             public bool Enabled;
             public int CullingMask;
             public RenderTexture TargetTexture;
+            public CameraClearFlags ClearFlags;
         }
 
         private static readonly List<CameraState> _cams = new List<CameraState>(16);
@@ -31,9 +32,7 @@ namespace PiPDisabler
         // BaseOpticCamera is the global PiP camera. Disabling per-scope OpticComponentUpdater cameras
         // alone can still leave BaseOpticCamera rendering and costing performance.
         //
-        // IMPORTANT: we disable Camera components (enabled=false, cullingMask=0, targetTexture=null)
-        // but keep the GameObject active so our OpticComponentUpdater LateUpdate prefix can still run
-        // and keep scope lifecycle working.
+        // Keep the optic camera object alive, but pause world rendering work.
         private static readonly List<Camera> _baseOpticCams =
             new List<Camera>(4);
 
@@ -77,12 +76,12 @@ internal static void TickBaseOpticCamera()
                 _nextBaseScanFrame = Time.frameCount + 60; // ~1s @ 60fps
             }
 
-            // Re-apply disable every frame for the cached cameras (cheap).
+            // Re-apply paused scene rendering every frame for the cached cameras.
             for (int i = 0; i < _baseOpticCams.Count; i++)
             {
                 var cam = _baseOpticCams[i];
                 if (cam == null) continue;
-                ForceDisable(cam);
+                PauseSceneRendering(cam);
             }
         }
 
@@ -255,6 +254,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                     st.Cam.enabled = st.Enabled;
                     st.Cam.cullingMask = st.CullingMask;
                     st.Cam.targetTexture = st.TargetTexture;
+                    st.Cam.clearFlags = st.ClearFlags;
                 }
                 catch { /* ignore */ }
             }
@@ -286,7 +286,7 @@ _ignoreOnDisableFrame.Clear();
             Debug_LastOpticCameraSetFrame = 0;
         }
 
-        private static void ForceDisable(Camera cam)
+        private static void PauseSceneRendering(Camera cam)
         {
             if (cam == null) return;
 
@@ -299,20 +299,14 @@ _ignoreOnDisableFrame.Clear();
                 Cam = cam,
                 Enabled = cam.enabled,
                 CullingMask = cam.cullingMask,
-                TargetTexture = cam.targetTexture as RenderTexture
+                TargetTexture = cam.targetTexture as RenderTexture,
+                ClearFlags = cam.clearFlags
             };
             _cams.Add(st);
 
             try { cam.enabled = false; } catch { }
-
-            try
-            {
-                if (cam.targetTexture != null)
-                    cam.targetTexture = null;
-            }
-            catch { /* ignore */ }
-
             try { cam.cullingMask = 0; } catch { }
+            try { cam.clearFlags = CameraClearFlags.Nothing; } catch { }
         }
 
 
@@ -344,7 +338,7 @@ _ignoreOnDisableFrame.Clear();
                 Debug_LastOpticCameraSetFrame = Time.frameCount;
 
                 var cam = __instance.GetComponent<Camera>();
-                ForceDisable(cam);
+                PauseSceneRendering(cam);
             }
         }
 
@@ -369,7 +363,7 @@ _ignoreOnDisableFrame.Clear();
                     if (!ShouldSuppressPiPDisableForCurrentOptic(__instance))
                     {
                         var cam = __instance.GetComponent<Camera>();
-                        ForceDisable(cam);
+                        PauseSceneRendering(cam);
                     }
                 }
 
@@ -399,11 +393,9 @@ _ignoreOnDisableFrame.Clear();
             private static void MaybeRender(Camera cam)
             {
                 if (cam == null) return;
-
-                if (ShouldAllowVanillaPiP())
-                {
-                    cam.Render();
-                }
+                // Keep the camera's render path alive so reticle/lens command buffers
+                // can run against the existing RT without re-drawing scene geometry.
+                cam.Render();
             }
         }
 
