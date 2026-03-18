@@ -127,7 +127,6 @@ namespace PiPDisabler
         internal static ConfigEntry<KeyCode> DisablePiPToggleKey;
         internal static ConfigEntry<bool> MakeLensesTransparent;
         internal static ConfigEntry<KeyCode> LensesTransparentToggleKey;
-        internal static ConfigEntry<bool> BlackLensWhenUnscoped;
 
         // --- Mesh Surgery ---
         internal static ConfigEntry<bool> EnableMeshSurgery;
@@ -295,13 +294,6 @@ namespace PiPDisabler
             LensesTransparentToggleKey = Config.Bind("General", "LensesTransparentToggleKey", KeyCode.None,
                 new ConfigDescription(
                     "Toggle key for lens transparency.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            BlackLensWhenUnscoped = Config.Bind("General", "BlackLensWhenUnscoped", true,
-                new ConfigDescription(
-                    "When unscoping, apply a solid black opaque material to the lens instead of restoring " +
-                "the original PiP/sight material. Eliminates the reticle flash during the unscope " +
-                "transition and gives the scope a realistic dark-glass appearance when not in use.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
 
@@ -893,7 +885,7 @@ namespace PiPDisabler
             if (!ModEnabled.Value)
             {
                 ScopeLifecycle.ForceExit();
-                LensTransparency.FullRestoreAll(); // restore any lingering black lens materials
+                LensTransparency.FullRestoreAll();
                 PiPDisabler.RestoreAllCameras();
             }
             else

@@ -795,11 +795,7 @@ namespace PiPDisabler
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] ENTER: '{os.name}'[{FovController.GetOpticTemplateId(os)}] frame={Time.frameCount}");
 
-            // 1. Restore any black lens materials so ExtractReticle can read OpticSight textures.
-            //    (RestoreAll on previous scope-exit may have left sharedMaterials as Unlit/Color.)
-            LensTransparency.RestoreBlackLensMaterials();
-
-            // 2. Extract reticle texture BEFORE destroying lens mesh
+            // 1. Extract reticle texture before destroying lens mesh.
             ReticleRenderer.ExtractReticle(os);
 
             ApplyCurrentSubScopeVisualState(force: true, reason: "scope enter", animateFov: true);
@@ -933,9 +929,8 @@ namespace PiPDisabler
                 if (PiPDisablerPlugin.GetRestoreOnUnscope())
                     MeshSurgeryManager.RestoreForScope(_activeOptic.transform);
 
-                PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] forcing lens opaque black");
-                LensTransparency.RestoreAll(forceBlackLens: true);
-                LensTransparency.ForceBlackLensMaterials(_activeOptic);
+                PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] restoring optic lens state");
+                LensTransparency.RestoreAll();
 
                 PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] hiding reticle due to integrated-irons sub-scope");
                 ReticleRenderer.Hide();
@@ -948,7 +943,6 @@ namespace PiPDisabler
             else
             {
                 PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] re-applying optic mesh state");
-                LensTransparency.RestoreBlackLensMaterials();
                 ReticleRenderer.CaptureRearLensMask(_activeOptic);
                 LensTransparency.HideAllLensSurfaces(_activeOptic);
                 ReticleRenderer.SetOccluderRenderers(CollectStencilRenderers(_activeOptic));
