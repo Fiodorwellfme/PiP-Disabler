@@ -90,15 +90,8 @@ namespace PiPDisabler
             try
             {
                 var blackMat = GetBlackLensMaterial();
-                int slotCount = 1;
-                try { slotCount = r.sharedMaterials.Length; } catch { }
-                if (slotCount < 1) slotCount = 1;
-
-                var blackArray = new Material[slotCount];
-                for (int i = 0; i < slotCount; i++)
-                    blackArray[i] = blackMat;
-
-                r.sharedMaterials = blackArray;
+                var blackArray = BuildFilledMaterialArray(GetMaterialSlotCount(r), blackMat);
+                ApplyRendererMaterials(r, blackArray, includeInstanced: true);
                 _blackenedRenderers.Add(r);
             }
             catch { }
@@ -120,7 +113,7 @@ namespace PiPDisabler
                 Material[] origMats;
                 if (_trulyOriginalMaterials.TryGetValue(rid, out origMats) && origMats != null)
                 {
-                    try { r.sharedMaterials = origMats; }
+                    try { ApplyRendererMaterials(r, origMats, includeInstanced: true); }
                     catch { }
                 }
             }
@@ -211,7 +204,7 @@ namespace PiPDisabler
 
                 if (e.Renderer != null)
                 {
-                    EnsureTransparentMaterial(e.Renderer);
+                    EnsureTransparentMaterial(e.Renderer, includeInstanced: false);
                 }
             }
         }
@@ -255,7 +248,7 @@ namespace PiPDisabler
                             // Restore original shared materials (legacy path).
                             if (e.OriginalMaterials != null)
                             {
-                                try { e.Renderer.sharedMaterials = e.OriginalMaterials; }
+                                try { ApplyRendererMaterials(e.Renderer, e.OriginalMaterials, includeInstanced: true); }
                                 catch { }
                             }
                             PiPDisablerPlugin.LogVerbose(
@@ -305,27 +298,43 @@ namespace PiPDisabler
             };
             _hidden.Add(entry);
 
-            EnsureTransparentMaterial(r);
+            EnsureTransparentMaterial(r, includeInstanced: true);
 
             PiPDisablerPlugin.LogInfo(
                 $"[LensTransparency] Transparent lens: '{r.gameObject.name}' mats={GetMaterialSlotCount(r)}");
         }
 
-        private static void EnsureTransparentMaterial(Renderer r)
+        private static void EnsureTransparentMaterial(Renderer r, bool includeInstanced)
         {
             if (r == null) return;
             try
             {
                 var transparentMat = GetTransparentLensMaterial();
-                int slotCount = GetMaterialSlotCount(r);
-                var transparentArray = new Material[slotCount];
-                for (int i = 0; i < slotCount; i++)
-                    transparentArray[i] = transparentMat;
-
+                var transparentArray = BuildFilledMaterialArray(GetMaterialSlotCount(r), transparentMat);
                 r.forceRenderingOff = false;
-                r.sharedMaterials = transparentArray;
+                ApplyRendererMaterials(r, transparentArray, includeInstanced);
             }
             catch { }
+        }
+
+        private static Material[] BuildFilledMaterialArray(int slotCount, Material material)
+        {
+            if (slotCount < 1) slotCount = 1;
+
+            var materials = new Material[slotCount];
+            for (int i = 0; i < slotCount; i++)
+                materials[i] = material;
+            return materials;
+        }
+
+        private static void ApplyRendererMaterials(Renderer renderer, Material[] materials, bool includeInstanced)
+        {
+            if (renderer == null || materials == null || materials.Length == 0) return;
+
+            renderer.SetPropertyBlock(null);
+            renderer.sharedMaterials = materials;
+            if (includeInstanced)
+                renderer.materials = materials;
         }
 
         private static int GetMaterialSlotCount(Renderer r)
