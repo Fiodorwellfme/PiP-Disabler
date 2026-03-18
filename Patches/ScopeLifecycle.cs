@@ -949,8 +949,9 @@ namespace PiPDisabler
             {
                 PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] re-applying optic mesh state");
                 LensTransparency.RestoreBlackLensMaterials();
+                ReticleRenderer.CaptureRearLensMask(_activeOptic);
                 LensTransparency.HideAllLensSurfaces(_activeOptic);
-                ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(_activeOptic));
+                ReticleRenderer.SetOccluderRenderers(CollectStencilRenderers(_activeOptic));
 
                 if (PiPDisablerPlugin.EnableMeshSurgery.Value)
                 {
