@@ -46,12 +46,14 @@ namespace PiPDisabler
         private static Texture      _savedMarkTex;
         private static Texture      _savedMaskTex;
 
-        // Stencil masking — housing occlusion
+        // Stencil masking — lens window + housing occlusion
         // UI/Default exposes _Stencil, _StencilComp, _StencilOp, _ColorMask which let us
         // write to the stencil buffer and test against it without a custom shader.
         private static Material            _stencilClearMat;   // full-screen quad: write 0 to stencil
-        private static Material            _housingStencilMat; // housing pass: write 1 to stencil, no colour
+        private static Material            _lensStencilMat;    // lens pass: write 1 to stencil, no colour
+        private static Material            _housingStencilMat; // housing pass: clear stencil inside visible housing
         private static Material            _stencilDebugMat;   // debug overlay: red tint where housing masks
+        private static readonly List<Renderer> _lensRenderers = new List<Renderer>();
         private static readonly List<Renderer> _housingRenderers = new List<Renderer>();
         private static bool                _hasStencilSupport; // true when UI/Default was found
 
@@ -205,6 +207,7 @@ namespace PiPDisabler
         public static void Cleanup()
         {
             Hide();
+            _lensRenderers.Clear();
             _housingRenderers.Clear();
             _debugFrameCount   = 0;
             _savedMarkTex      = null;
@@ -229,21 +232,21 @@ namespace PiPDisabler
         public static Transform OpticTransform => _opticTransform;
 
         /// <summary>
-        /// Provide the scope housing renderers that will be drawn into the stencil
-        /// buffer each frame so the reticle disappears wherever the housing covers it.
-        /// Call after LensTransparency.HideAllLensSurfaces() so lens renderers are
-        /// already empty-meshed and won't end up in the list.
-        /// Pass null or an empty list to disable housing masking.
+        /// Provide the lens-window and housing renderers that define where the reticle
+        /// may be visible.
         /// </summary>
-        public static void SetHousingRenderers(List<Renderer> renderers)
+        public static void SetMaskRenderers(List<Renderer> lensRenderers, List<Renderer> housingRenderers)
         {
+            _lensRenderers.Clear();
             _housingRenderers.Clear();
             _debugFrameCount = 0; // reset so first frames of new scope are logged
-            if (renderers != null)
-                _housingRenderers.AddRange(renderers);
+            if (lensRenderers != null)
+                _lensRenderers.AddRange(lensRenderers);
+            if (housingRenderers != null)
+                _housingRenderers.AddRange(housingRenderers);
 
             PiPDisablerPlugin.LogInfo(
-                $"[Reticle] Housing mask: {_housingRenderers.Count} renderer(s) registered" +
+                $"[Reticle] Mask renderers: lens={_lensRenderers.Count} housing={_housingRenderers.Count}" +
                 $" stencilSupport={_hasStencilSupport}");
         }
 
@@ -403,12 +406,13 @@ namespace PiPDisabler
         /// <summary>
         /// Rebuild the CommandBuffer.
         ///
-        /// When housing renderers are available and UI/Default was found (stencil-capable):
+        /// When lens and housing renderers are available and UI/Default was found:
         ///   1. Clear stencil to 0 with a full-screen clip-space quad.
-        ///   2. Draw housing meshes in world-space, writing 1 to stencil where the housing
-        ///      passes the depth test (i.e. is actually visible).
-        ///   3. Draw the reticle with stencil test NotEqual-1, so it is invisible wherever
-        ///      the housing was just written.
+        ///   2. Draw the lens meshes in world-space, writing 1 to stencil where the lens
+        ///      is visible.
+        ///   3. Draw housing meshes in world-space, writing 0 back to stencil where the
+        ///      housing covers the lens opening.
+        ///   4. Draw the reticle only where stencil == 1.
         ///
         /// Falls back to the original single-draw path when stencil is unavailable or no
         /// housing renderers have been registered.
@@ -436,23 +440,33 @@ namespace PiPDisabler
                 _cmdBuffer.SetViewport(GetSceneViewport(cam));
             }
 
-            bool useStencil = _hasStencilSupport && _housingRenderers.Count > 0
-                              && _stencilClearMat != null && _housingStencilMat != null;
+            bool useStencil = _hasStencilSupport
+                              && _lensRenderers.Count > 0
+                              && _stencilClearMat != null
+                              && _lensStencilMat != null
+                              && _housingStencilMat != null;
 
             // ── Per-frame debug logging (first N frames after scope enter) ────────────
             if (_debugFrameCount < DebugLogFrames)
             {
-                int activeCount = 0;
+                int activeLensCount = 0;
+                int activeHousingCount = 0;
+                for (int i = 0; i < _lensRenderers.Count; i++)
+                {
+                    var r = _lensRenderers[i];
+                    if (r != null && r.gameObject.activeInHierarchy) activeLensCount++;
+                }
                 for (int i = 0; i < _housingRenderers.Count; i++)
                 {
                     var r = _housingRenderers[i];
-                    if (r != null && r.gameObject.activeInHierarchy) activeCount++;
+                    if (r != null && r.gameObject.activeInHierarchy) activeHousingCount++;
                 }
 
                 PiPDisablerPlugin.LogInfo(
                     $"[Reticle] Frame {_debugFrameCount + 1}/{DebugLogFrames}: " +
-                    $"useStencil={useStencil} housingTotal={_housingRenderers.Count} " +
-                    $"housingActive={activeCount} stencilSupport={_hasStencilSupport}");
+                    $"useStencil={useStencil} lensTotal={_lensRenderers.Count} lensActive={activeLensCount} " +
+                    $"housingTotal={_housingRenderers.Count} housingActive={activeHousingCount} " +
+                    $"stencilSupport={_hasStencilSupport}");
                 _debugFrameCount++;
             }
 
@@ -466,7 +480,16 @@ namespace PiPDisabler
                 _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
                 _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilClearMat, 0, -1);
 
-                // ── Step 2: write housing to stencil (world-space) ──────────────────
+                // ── Step 2: write visible lens window to stencil (world-space) ──────
+                _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
+                for (int i = 0; i < _lensRenderers.Count; i++)
+                {
+                    var r = _lensRenderers[i];
+                    if (r == null || !r.gameObject.activeInHierarchy) continue;
+                    _cmdBuffer.DrawRenderer(r, _lensStencilMat);
+                }
+
+                // ── Step 3: clear stencil where housing occludes the lens ───────────
                 _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
                 for (int i = 0; i < _housingRenderers.Count; i++)
                 {
@@ -475,17 +498,16 @@ namespace PiPDisabler
                     _cmdBuffer.DrawRenderer(r, _housingStencilMat);
                 }
 
-                // ── Step 3: draw reticle with stencil test (clip-space) ─────────────
+                // ── Step 4: draw reticle with stencil test (clip-space) ─────────────
                 _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
                 _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
 
-                // ── Step 4: optional debug overlay — red tint where housing masked ───
-                // Renders anywhere stencil == 1, i.e. every pixel the housing suppressed.
+                // ── Step 5: optional debug overlay — red tint where reticle is clipped ─
                 // Enable via DebugShowHousingMask in BepInEx config.
                 if (PiPDisablerPlugin.GetDebugShowHousingMask()
                     && _stencilDebugMat != null)
                 {
-                    _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
+                    _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _stencilDebugMat, 0, -1);
                 }
             }
             else
@@ -595,12 +617,11 @@ namespace PiPDisabler
                 _reticleMat.SetInt("_ZTest",  (int)CompareFunction.Always);
                 _reticleMat.SetInt("_ZWrite", 0);
 
-                // ── Stencil test: only draw reticle where housing did NOT write ──────
-                // We use ref=1.  Housing writes 1 → reticle skips those pixels.
+                // ── Stencil test: only draw reticle inside the visible lens window. ───
                 if (_hasStencilSupport)
                 {
                     _reticleMat.SetFloat("_Stencil",          1f);
-                    _reticleMat.SetFloat("_StencilComp",      (float)CompareFunction.NotEqual); // pass ≠ 1
+                    _reticleMat.SetFloat("_StencilComp",      (float)CompareFunction.Equal);
                     _reticleMat.SetFloat("_StencilOp",        (float)StencilOp.Keep);
                     _reticleMat.SetFloat("_StencilReadMask",  255f);
                     _reticleMat.SetFloat("_StencilWriteMask", 0f);   // don't write
@@ -623,9 +644,19 @@ namespace PiPDisabler
                     _stencilClearMat.SetInt("_ZTest",  (int)CompareFunction.Always);
                     _stencilClearMat.SetInt("_ZWrite", 0);
 
-                    // Housing material: world-space pass, writes stencil=1 where depth passes.
+                    // Lens material: world-space pass, writes stencil=1 where depth passes.
+                    _lensStencilMat = new Material(stencilShader) { renderQueue = 4999 };
+                    _lensStencilMat.SetFloat("_Stencil",          1f);
+                    _lensStencilMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
+                    _lensStencilMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
+                    _lensStencilMat.SetFloat("_StencilWriteMask", 255f);
+                    _lensStencilMat.SetFloat("_ColorMask",        0f);
+                    _lensStencilMat.SetInt("_ZTest",  (int)CompareFunction.LessEqual);
+                    _lensStencilMat.SetInt("_ZWrite", 0);
+
+                    // Housing material: world-space pass, clears stencil where visible.
                     _housingStencilMat = new Material(stencilShader) { renderQueue = 4999 };
-                    _housingStencilMat.SetFloat("_Stencil",          1f);
+                    _housingStencilMat.SetFloat("_Stencil",          0f);
                     _housingStencilMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
                     _housingStencilMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
                     _housingStencilMat.SetFloat("_StencilWriteMask", 255f);
@@ -633,15 +664,14 @@ namespace PiPDisabler
                     _housingStencilMat.SetInt("_ZTest",  (int)CompareFunction.LessEqual); // only where visible
                     _housingStencilMat.SetInt("_ZWrite", 0);
 
-                    // Debug overlay: renders a semi-transparent red tint wherever stencil == 1.
-                    // Reveals which screen regions are being suppressed by the housing mask.
+                    // Debug overlay: renders a semi-transparent red tint wherever stencil == 0.
                     _stencilDebugMat = new Material(stencilShader)
                     {
                         color       = new Color(1f, 0.1f, 0.1f, 0.55f),
                         renderQueue = 5000
                     };
-                    _stencilDebugMat.SetFloat("_Stencil",         1f);
-                    _stencilDebugMat.SetFloat("_StencilComp",     (float)CompareFunction.Equal); // only where housing is
+                    _stencilDebugMat.SetFloat("_Stencil",         0f);
+                    _stencilDebugMat.SetFloat("_StencilComp",     (float)CompareFunction.Equal);
                     _stencilDebugMat.SetFloat("_StencilOp",       (float)StencilOp.Keep);
                     _stencilDebugMat.SetFloat("_StencilReadMask", 255f);
                     _stencilDebugMat.SetInt("_ZTest",  (int)CompareFunction.Always);

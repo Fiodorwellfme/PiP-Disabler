@@ -1192,6 +1192,7 @@ namespace PiPDisabler
             foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
             {
                 if (!mf || !mf.sharedMesh) continue;
+                if (LensTransparency.IsLensMeshFilter(mf)) continue;
                 inspected++;
 
                 string relSearchPath = null;
