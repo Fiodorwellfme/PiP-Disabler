@@ -5,6 +5,7 @@ using EFT.Animations;
 using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
+using UnityEngine;
 
 namespace PiPDisabler.Patches
 {
@@ -71,13 +72,21 @@ namespace PiPDisabler.Patches
                 if (isOptic)
                 {
                     float zoomBaseFov = FovController.ZoomBaselineFov;
-                    float zoomedFov = FovController.ComputeZoomedFov();
+                    float desiredFov = FovController.ComputeZoomedFov();
 
-                    if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
+                    if (desiredFov >= 0.5f)
                     {
-                        targetFov = zoomedFov;
-                        FreelookTracker.CacheAppliedFov(zoomedFov);
-                        // Keep the game's original duration so ADS/unADS speed is unaffected
+                        if (desiredFov > zoomBaseFov)
+                            desiredFov = zoomBaseFov;
+
+                        if (Mathf.Abs(targetFov - desiredFov) > 0.01f)
+                        {
+                            PiPDisablerPlugin.LogInfo(
+                                $"[PWAMethod23Patch] Overriding method_23 FOV {targetFov:F1}° → {desiredFov:F1}°");
+                        }
+
+                        targetFov = desiredFov;
+                        FreelookTracker.CacheAppliedFov(desiredFov);
                         force = false;
                     }
                 }
