@@ -10,8 +10,8 @@ namespace PiPDisabler
     /// Swaps main camera LOD bias and culling settings with scope-appropriate values during ADS.
     ///
     /// When zoomed in, distant objects fill more screen pixels and should render at higher detail.
-    /// This manager uses template-derived magnification for LOD/culling and only reads
-    /// ScopeCameraData for the far clip override.
+    /// This manager reads the scope's ScopeCameraData (FieldOfView, FarClipPlane, etc.) and
+    /// increases the LOD bias proportionally to the magnification.
     ///
     /// From Elcan ScopeCameraData:
     ///   FieldOfView = 5.75 (4x mode) / 23 (1x mode)
@@ -36,7 +36,11 @@ namespace PiPDisabler
 
         // Reflection cache for ScopeCameraData fields
         private static Type _scdType;
+        private static FieldInfo _scdFovField;
         private static FieldInfo _scdFarClipField;
+        private static FieldInfo _scdNearClipField;
+        private static FieldInfo _scdCullingMaskField;
+        private static FieldInfo _scdCullingScaleField;
         private static bool _scdSearched;
 
         /// <summary>
@@ -67,18 +71,19 @@ namespace PiPDisabler
             }
 
             // Read scope's ScopeCameraData for its settings
+            float scopeFov = 0f;
             float scopeFarClip = 0f;
 
-            if (TryGetScopeCameraData(os, out scopeFarClip))
+            if (TryGetScopeCameraData(os, out scopeFov, out scopeFarClip))
             {
                 PiPDisablerPlugin.LogVerbose(
-                    $"[CameraSettings] ScopeCameraData: FarClip={scopeFarClip:F0}");
+                    $"[CameraSettings] ScopeCameraData: FOV={scopeFov:F2} FarClip={scopeFarClip:F0}");
             }
 
-            // Calculate magnification from template zoom (matches HUD).
+            // Calculate magnification — prefer template zoom (matches HUD)
             float magnification = FovController.GetEffectiveMagnification();
             if (magnification < 0.1f)
-                magnification = 1f;
+                magnification = scopeFov > 0.1f ? 35f / scopeFov : 1f;
 
             // === Apply LOD bias ===
             // Increase LOD bias proportionally to magnification.
@@ -135,8 +140,7 @@ namespace PiPDisabler
             QualitySettings.lodBias = _savedLodBias;
             QualitySettings.maximumLODLevel = _savedMaxLodLevel;
 
-            var cam = PiPDisablerPlugin.GetMainCamera();
-            if (cam != null)
+            var cam = PiPDisablerPlugin.GetMainCamera();            if (cam != null)
             {
                 cam.farClipPlane = _savedFarClip;
                 if (_savedCullDistances != null)
@@ -151,10 +155,28 @@ namespace PiPDisabler
         }
 
         /// <summary>
+        /// Per-frame LOD bias update driven by DistanceLodBiasController.
+        /// Only writes QualitySettings.lodBias — all other camera settings
+        /// (far clip, cull distances, max LOD level) remain as set by ApplyForOptic.
+        /// </summary>
+        public static void UpdateDistanceLodBias()
+        {
+            if (!_applied) return;
+            if (PiPDisablerPlugin.EnableDistanceLodBias == null ||
+                !PiPDisablerPlugin.EnableDistanceLodBias.Value)
+                return;
+
+            float bias = DistanceLodBiasController.CurrentLodBias;
+            if (bias > 0f)
+                QualitySettings.lodBias = bias;
+        }
+
+        /// <summary>
         /// Try to read ScopeCameraData from the scope hierarchy via reflection.
         /// </summary>
-        private static bool TryGetScopeCameraData(OpticSight os, out float farClip)
+        private static bool TryGetScopeCameraData(OpticSight os, out float fov, out float farClip)
         {
+            fov = 0f;
             farClip = 0f;
 
             DiscoverType();
@@ -193,10 +215,12 @@ namespace PiPDisabler
 
                 if (scd == null) return false;
 
+                if (_scdFovField != null)
+                    fov = (float)_scdFovField.GetValue(scd);
                 if (_scdFarClipField != null)
                     farClip = (float)_scdFarClipField.GetValue(scd);
 
-                return farClip > 0.1f;
+                return fov > 0.1f;
             }
             catch { return false; }
         }
@@ -219,13 +243,13 @@ namespace PiPDisabler
                     if (t != null && typeof(MonoBehaviour).IsAssignableFrom(t))
                     {
                         CacheFields(t);
-                        if (_scdFarClipField != null) return;
+                        if (_scdFovField != null) return;
                     }
                 }
                 catch { }
             }
 
-            // Assembly scan: MonoBehaviour with FarClipPlane and the rest of the ScopeCameraData shape.
+            // Assembly scan: MonoBehaviour with FieldOfView + NearClipPlane + FarClipPlane
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
                 try
@@ -237,7 +261,7 @@ namespace PiPDisabler
                         var f2 = type.GetField("NearClipPlane", BindingFlags.Public | BindingFlags.Instance);
                         var f3 = type.GetField("FarClipPlane", BindingFlags.Public | BindingFlags.Instance);
                         if (f1 == null || f2 == null || f3 == null) continue;
-                        if (f1.FieldType != typeof(float) || f3.FieldType != typeof(float)) continue;
+                        if (f1.FieldType != typeof(float)) continue;
 
                         CacheFields(type);
                         PiPDisablerPlugin.LogInfo(
@@ -252,7 +276,11 @@ namespace PiPDisabler
         private static void CacheFields(Type t)
         {
             _scdType = t;
+            _scdFovField = t.GetField("FieldOfView", BindingFlags.Public | BindingFlags.Instance);
             _scdFarClipField = t.GetField("FarClipPlane", BindingFlags.Public | BindingFlags.Instance);
+            _scdNearClipField = t.GetField("NearClipPlane", BindingFlags.Public | BindingFlags.Instance);
+            _scdCullingMaskField = t.GetField("OpticCullingMask", BindingFlags.Public | BindingFlags.Instance);
+            _scdCullingScaleField = t.GetField("OpticCullingMaskScale", BindingFlags.Public | BindingFlags.Instance);
         }
     }
 }
