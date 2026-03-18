@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using EFT.CameraControl;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace PiPDisabler
 {
@@ -74,15 +75,82 @@ namespace PiPDisabler
         private static Material GetBlackLensMaterial()
         {
             if (_blackLensMaterial != null) return _blackLensMaterial;
-            // Unlit/Color: solid color, no lighting, no texture — guaranteed opaque black.
-            // Falls back to Standard if Unlit/Color isn't in the build's shader set.
             var shader = Shader.Find("Unlit/Color") ?? Shader.Find("Standard");
             _blackLensMaterial = new Material(shader)
             {
                 name  = "PiPDisabler_BlackLens",
                 color = Color.black,
             };
+            ConfigureOpaqueBlackMaterial(_blackLensMaterial);
             return _blackLensMaterial;
+        }
+
+        private static void ConfigureOpaqueBlackMaterial(Material material)
+        {
+            if (material == null) return;
+
+            material.renderQueue = (int)RenderQueue.Geometry;
+            material.SetOverrideTag("RenderType", "Opaque");
+
+            if (material.HasProperty(_propColor))
+                material.SetColor(_propColor, new Color(0f, 0f, 0f, 1f));
+
+            int baseColorProp = Shader.PropertyToID("_BaseColor");
+            if (material.HasProperty(baseColorProp))
+                material.SetColor(baseColorProp, new Color(0f, 0f, 0f, 1f));
+
+            int mainTexProp = Shader.PropertyToID("_MainTex");
+            if (material.HasProperty(mainTexProp))
+                material.SetTexture(mainTexProp, null);
+
+            int baseMapProp = Shader.PropertyToID("_BaseMap");
+            if (material.HasProperty(baseMapProp))
+                material.SetTexture(baseMapProp, null);
+
+            int modeProp = Shader.PropertyToID("_Mode");
+            if (material.HasProperty(modeProp))
+                material.SetFloat(modeProp, 0f);
+
+            int surfaceProp = Shader.PropertyToID("_Surface");
+            if (material.HasProperty(surfaceProp))
+                material.SetFloat(surfaceProp, 0f);
+
+            int srcBlendProp = Shader.PropertyToID("_SrcBlend");
+            if (material.HasProperty(srcBlendProp))
+                material.SetFloat(srcBlendProp, (float)BlendMode.One);
+
+            int dstBlendProp = Shader.PropertyToID("_DstBlend");
+            if (material.HasProperty(dstBlendProp))
+                material.SetFloat(dstBlendProp, (float)BlendMode.Zero);
+
+            int zWriteProp = Shader.PropertyToID("_ZWrite");
+            if (material.HasProperty(zWriteProp))
+                material.SetFloat(zWriteProp, 1f);
+
+            int alphaClipProp = Shader.PropertyToID("_AlphaClip");
+            if (material.HasProperty(alphaClipProp))
+                material.SetFloat(alphaClipProp, 0f);
+
+            int cutoffProp = Shader.PropertyToID("_Cutoff");
+            if (material.HasProperty(cutoffProp))
+                material.SetFloat(cutoffProp, 0f);
+
+            int metallicProp = Shader.PropertyToID("_Metallic");
+            if (material.HasProperty(metallicProp))
+                material.SetFloat(metallicProp, 0f);
+
+            int glossinessProp = Shader.PropertyToID("_Glossiness");
+            if (material.HasProperty(glossinessProp))
+                material.SetFloat(glossinessProp, 0f);
+
+            int smoothnessProp = Shader.PropertyToID("_Smoothness");
+            if (material.HasProperty(smoothnessProp))
+                material.SetFloat(smoothnessProp, 0f);
+
+            material.DisableKeyword("_ALPHATEST_ON");
+            material.DisableKeyword("_ALPHABLEND_ON");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            material.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
         }
 
         /// <summary>
