@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using EFT;
 using EFT.CameraControl;
 using HarmonyLib;
 using UnityEngine;
@@ -9,9 +10,8 @@ namespace PiPDisabler
     /// <summary>
     /// Swaps main camera LOD bias and culling settings with scope-appropriate values during ADS.
     ///
-    /// When zoomed in, distant objects fill more screen pixels and should render at higher detail.
     /// This manager reads the scope's ScopeCameraData (FieldOfView, FarClipPlane, etc.) and
-    /// increases the LOD bias proportionally to the magnification.
+    /// applies a scoped LOD bias curve driven by the first valid world hit in front of the weapon.
     ///
     /// From Elcan ScopeCameraData:
     ///   FieldOfView = 5.75 (4x mode) / 23 (1x mode)
@@ -21,7 +21,7 @@ namespace PiPDisabler
     ///   OpticCullingMaskScale = 1
     ///
     /// Settings modified:
-    ///   QualitySettings.lodBias          — multiplied by magnification factor
+    ///   QualitySettings.lodBias          — set from the scoped distance curve
     ///   Camera.main.farClipPlane         — set to scope's FarClipPlane if greater
     ///   Camera.layerCullDistances        — adjusted for scope's culling scale
     /// </summary>
@@ -42,6 +42,9 @@ namespace PiPDisabler
         private static FieldInfo _scdCullingMaskField;
         private static FieldInfo _scdCullingScaleField;
         private static bool _scdSearched;
+        private const float RaycastMaxDistance = 2000f;
+        private const float RaycastStartOffset = 0.05f;
+        private const float AutoCurveMaxDistance = 400f;
 
         /// <summary>
         /// Apply scope-optimized camera settings for the active optic.
@@ -86,12 +89,9 @@ namespace PiPDisabler
                 magnification = scopeFov > 0.1f ? 35f / scopeFov : 1f;
 
             // === Apply LOD bias ===
-            // Increase LOD bias proportionally to magnification.
-            // At 4x zoom, objects at distance appear 4x larger → use 4x finer LODs.
-            float manualLodBias = PiPDisablerPlugin.GetManualLodBiasForCurrentMap();
-            float newLodBias = manualLodBias > 0f
-                ? manualLodBias
-                : _savedLodBias * Mathf.Max(magnification, 1f);
+            float hitDistance;
+            bool hasHitDistance;
+            float newLodBias = CalculateScopedLodBias(os, out hitDistance, out hasHitDistance);
             QualitySettings.lodBias = newLodBias;
 
             // Force highest LOD by default unless overridden by manual max LOD level.
@@ -127,7 +127,19 @@ namespace PiPDisabler
 
             PiPDisablerPlugin.LogInfo(
                 $"[CameraSettings] Applied: lodBias {_savedLodBias:F2}→{newLodBias:F2} " +
-                $"(mag={magnification:F1}x) farClip={cam.farClipPlane:F0} maxLOD={appliedMaxLod}");
+                $"(mag={magnification:F1}x, hit={(hasHitDistance ? $"{hitDistance:F1}m" : $">{AutoCurveMaxDistance:F0}m")}) " +
+                $"farClip={cam.farClipPlane:F0} maxLOD={appliedMaxLod}");
+        }
+
+        /// <summary>
+        /// Update the scoped LOD bias while staying ADS.
+        /// </summary>
+        public static void UpdateForOptic(OpticSight os)
+        {
+            if (!_applied || os == null) return;
+
+            float hitDistance;
+            QualitySettings.lodBias = CalculateScopedLodBias(os, out hitDistance, out _);
         }
 
         /// <summary>
@@ -210,6 +222,115 @@ namespace PiPDisabler
 
         private static bool IsOnSameMode(Transform a, Transform b)
             => PiPDisablerPlugin.IsOnSameMode(a, b);
+
+        private static float CalculateScopedLodBias(OpticSight os, out float hitDistance, out bool hasHitDistance)
+        {
+            float manualLodBias = PiPDisablerPlugin.GetManualLodBiasForCurrentMap();
+            if (manualLodBias > 0f)
+            {
+                hitDistance = 0f;
+                hasHitDistance = false;
+                return manualLodBias;
+            }
+
+            hasHitDistance = TryGetWorldHitDistance(os, out hitDistance);
+            float distanceForCurve = hasHitDistance ? hitDistance : AutoCurveMaxDistance;
+            return PiPDisablerPlugin.EvaluateAutoLodBiasForDistance(distanceForCurve);
+        }
+
+        private static bool TryGetWorldHitDistance(OpticSight os, out float hitDistance)
+        {
+            hitDistance = 0f;
+            if (os == null) return false;
+            if (!TryGetWeaponRay(os, out var weaponRoot, out var origin, out var direction)) return false;
+
+            var hits = Physics.RaycastAll(origin, direction, RaycastMaxDistance, ~0, QueryTriggerInteraction.Ignore);
+            if (hits == null || hits.Length == 0) return false;
+
+            Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+            var localPlayer = PiPDisablerPlugin.GetLocalPlayer();
+            foreach (var hit in hits)
+            {
+                var hitTransform = hit.collider != null ? hit.collider.transform : null;
+                if (hitTransform == null) continue;
+                if (weaponRoot != null && hitTransform.IsChildOf(weaponRoot)) continue;
+                if (localPlayer != null && hitTransform.IsChildOf(localPlayer.transform)) continue;
+                if (hit.distance <= 0.001f) continue;
+
+                hitDistance = hit.distance;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetWeaponRay(OpticSight os, out Transform weaponRoot, out Vector3 origin, out Vector3 direction)
+        {
+            weaponRoot = FindWeaponRoot(os.transform);
+            direction = os.transform.forward;
+            origin = Vector3.zero;
+
+            if (weaponRoot == null) return false;
+
+            Transform best = null;
+            float bestScore = float.MinValue;
+
+            foreach (var candidate in weaponRoot.GetComponentsInChildren<Transform>(true))
+            {
+                if (candidate == null) continue;
+
+                float score = ScoreWeaponRayCandidate(candidate.name);
+                if (score < 0f) continue;
+
+                Vector3 delta = candidate.position - weaponRoot.position;
+                float forward = Vector3.Dot(direction, delta);
+                if (forward < -0.05f) continue;
+
+                score += forward;
+                if (score <= bestScore) continue;
+
+                best = candidate;
+                bestScore = score;
+            }
+
+            if (best == null) return false;
+
+            origin = best.position + direction * RaycastStartOffset;
+            return true;
+        }
+
+        private static Transform FindWeaponRoot(Transform from)
+        {
+            if (from == null) return null;
+
+            for (Transform cur = from; cur != null; cur = cur.parent)
+            {
+                string name = cur.name ?? string.Empty;
+                if (string.Equals(name, "weapon", StringComparison.OrdinalIgnoreCase))
+                    return cur;
+                if (name.IndexOf("player", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.IndexOf("hands", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.IndexOf("camera", StringComparison.OrdinalIgnoreCase) >= 0)
+                    break;
+            }
+
+            return null;
+        }
+
+        private static float ScoreWeaponRayCandidate(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return -1f;
+
+            string lower = name.ToLowerInvariant();
+            if (lower.Contains("fireport")) return 100f;
+            if (lower.Contains("muzzle")) return 90f;
+            if (lower.Contains("mod_muzzle")) return 85f;
+            if (lower.Contains("barrel")) return 75f;
+            if (lower.Contains("weapon_ln")) return 70f;
+            if (lower.Contains("front")) return 50f;
+            return -1f;
+        }
 
         private static void DiscoverType()
         {

@@ -389,6 +389,9 @@ namespace PiPDisabler
             // Keep lens hidden (re-kill if EFT restores geometry)
             LensTransparency.EnsureHidden();
 
+            if (_activeOptic != null)
+                CameraSettingsManager.UpdateForOptic(_activeOptic);
+
             // Update reticle position/rotation/scale and effects
             if (_activeOptic != null)
             {

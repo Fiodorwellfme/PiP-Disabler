@@ -214,6 +214,11 @@ namespace PiPDisabler
         internal static ConfigEntry<float> FovAnimationDuration;
         internal static ConfigEntry<KeyCode> ZoomToggleKey;
         internal static ConfigEntry<float> ManualLodBias;
+        internal static ConfigEntry<float> AutoLodBiasAt50m;
+        internal static ConfigEntry<float> AutoLodBiasAt100m;
+        internal static ConfigEntry<float> AutoLodBiasAt200m;
+        internal static ConfigEntry<float> AutoLodBiasAt300m;
+        internal static ConfigEntry<float> AutoLodBiasAt400m;
         internal static ConfigEntry<int> ManualMaximumLodLevel;
         internal static ConfigEntry<float> ManualCullingMultiplier;
         internal static Dictionary<string, ConfigEntry<float>> MapManualLodBias;
@@ -359,8 +364,33 @@ namespace PiPDisabler
             ManualLodBias = Config.Bind("Optimization", "ManualLodBias", 4.0f,
                 new ConfigDescription(
                     "Manual LOD bias while scoped.\n" +
-                    "0 = auto (baseLodBias * magnification).\n" +
+                    "0 = auto (range curve).\n" +
                     ">0 = force this exact value (e.g. 4.0).",
+                    new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            AutoLodBiasAt50m = Config.Bind("Optimization", "AutoLodBiasAt50m", 2.0f,
+                new ConfigDescription(
+                    "Auto scoped LOD bias at 50 meters.",
+                    new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            AutoLodBiasAt100m = Config.Bind("Optimization", "AutoLodBiasAt100m", 2.75f,
+                new ConfigDescription(
+                    "Auto scoped LOD bias at 100 meters.",
+                    new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            AutoLodBiasAt200m = Config.Bind("Optimization", "AutoLodBiasAt200m", 3.5f,
+                new ConfigDescription(
+                    "Auto scoped LOD bias at 200 meters.",
+                    new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            AutoLodBiasAt300m = Config.Bind("Optimization", "AutoLodBiasAt300m", 4.25f,
+                new ConfigDescription(
+                    "Auto scoped LOD bias at 300 meters.",
+                    new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            AutoLodBiasAt400m = Config.Bind("Optimization", "AutoLodBiasAt400m", 5.0f,
+                new ConfigDescription(
+                    "Auto scoped LOD bias at 400 meters and beyond.",
                     new AcceptableValueRange<float>(0f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             ManualMaximumLodLevel = Config.Bind("Optimization", "ManualMaximumLodLevel", -1,
@@ -1055,16 +1085,36 @@ namespace PiPDisabler
 
         internal static float GetManualLodBiasForCurrentMap()
         {
-            float fallback = ManualLodBias != null ? ManualLodBias.Value : 0f;
+            float globalOverride = ManualLodBias != null ? ManualLodBias.Value : 0f;
+            if (globalOverride > 0f)
+                return globalOverride;
+
             string locationId = GetCurrentLocationId();
             if (string.IsNullOrEmpty(locationId) || MapManualLodBias == null)
-                return fallback;
+                return 0f;
 
             ConfigEntry<float> entry;
             if (MapManualLodBias.TryGetValue(locationId, out entry) && entry != null)
                 return entry.Value;
 
-            return fallback;
+            return 0f;
+        }
+
+        internal static float EvaluateAutoLodBiasForDistance(float distanceMeters)
+        {
+            float d = Mathf.Max(0f, distanceMeters);
+            float v50 = AutoLodBiasAt50m.Value;
+            float v100 = AutoLodBiasAt100m.Value;
+            float v200 = AutoLodBiasAt200m.Value;
+            float v300 = AutoLodBiasAt300m.Value;
+            float v400 = AutoLodBiasAt400m.Value;
+
+            if (d <= 50f) return v50;
+            if (d <= 100f) return Mathf.Lerp(v50, v100, Mathf.InverseLerp(50f, 100f, d));
+            if (d <= 200f) return Mathf.Lerp(v100, v200, Mathf.InverseLerp(100f, 200f, d));
+            if (d <= 300f) return Mathf.Lerp(v200, v300, Mathf.InverseLerp(200f, 300f, d));
+            if (d <= 400f) return Mathf.Lerp(v300, v400, Mathf.InverseLerp(300f, 400f, d));
+            return v400;
         }
 
         private void BindPerMapLodBias(string configKeySuffix, string mapDisplayName, params string[] locationIds)
