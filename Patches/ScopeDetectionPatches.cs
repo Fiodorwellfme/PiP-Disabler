@@ -1,3 +1,4 @@
+using System;
 using System.Reflection;
 using EFT;
 using EFT.CameraControl;
@@ -45,16 +46,69 @@ namespace PiPDisabler.Patches
     internal sealed class ChangeAimingModePatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(Player.FirearmController), "ChangeAimingMode");
+            => AccessTools.Method(typeof(Player.FirearmController), "ChangeAimingMode", Type.EmptyTypes);
+
+        [PatchPrefix]
+        private static void Prefix(ref int __state)
+        {
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            __state = ScopeAimStateResolver.GetCurrentWeaponAimIndex();
+        }
 
         [PatchPostfix]
-        private static void Postfix()
+        private static void Postfix(int __state)
         {
             if (!PiPDisablerPlugin.ModEnabled.Value) return;
 
             PiPDisablerPlugin.LogInfo(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
-            ScopeLifecycle.CheckAndUpdate("ChangeAimingMode");
+            ScopeLifecycle.OnAimModeChanged("ChangeAimingMode()", __state);
+        }
+    }
+
+    internal sealed class ChangeAimingModeIndexedPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(Player.FirearmController), "ChangeAimingMode", new[] { typeof(int) });
+
+        [PatchPrefix]
+        private static void Prefix(ref int __state)
+        {
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            __state = ScopeAimStateResolver.GetCurrentWeaponAimIndex();
+        }
+
+        [PatchPostfix]
+        private static void Postfix(int modeIndex, int __state)
+        {
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+
+            PiPDisablerPlugin.LogInfo(
+                $"[Patch] ChangeAimingMode({modeIndex}) frame={Time.frameCount}");
+            ScopeLifecycle.OnAimModeChanged($"ChangeAimingMode({modeIndex})", __state);
+        }
+    }
+
+    internal sealed class SetAimPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(Player.FirearmController), "SetAim", new[] { typeof(int) });
+
+        [PatchPrefix]
+        private static void Prefix(ref int __state)
+        {
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            __state = ScopeAimStateResolver.GetCurrentWeaponAimIndex();
+        }
+
+        [PatchPostfix]
+        private static void Postfix(int scopeIndex, int __state)
+        {
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+
+            PiPDisablerPlugin.LogInfo(
+                $"[Patch] SetAim({scopeIndex}) frame={Time.frameCount}");
+            ScopeLifecycle.OnAimModeChanged($"SetAim({scopeIndex})", __state);
         }
     }
 }

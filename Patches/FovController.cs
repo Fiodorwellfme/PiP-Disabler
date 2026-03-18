@@ -389,6 +389,11 @@ namespace PiPDisabler
         ///     └── mode_0 / mode_1
         ///          └── OpticSight  ← we start here
         /// </summary>
+        internal static object GetSightComponentForOptic(OpticSight os)
+        {
+            return FindSightComponent(os);
+        }
+
         private static object FindSightComponent(OpticSight os)
         {
             // Per-scope cache: SightComponent doesn't change during a scope session

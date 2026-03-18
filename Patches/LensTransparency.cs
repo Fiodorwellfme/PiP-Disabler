@@ -134,6 +134,30 @@ namespace PiPDisabler
                 "[LensTransparency] Restored original materials before scope entry");
         }
 
+        public static void ForceBlackLensMaterials(OpticSight os)
+        {
+            if (os == null) return;
+
+            Transform searchRoot = FindScopeSearchRoot(os.transform);
+            var allRenderers = searchRoot.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < allRenderers.Length; i++)
+            {
+                var renderer = allRenderers[i];
+                if (renderer == null) continue;
+                if (!renderer.gameObject.activeInHierarchy) continue;
+                if (!IsLensSurface(renderer) || ShouldSkipForCollimator(renderer)) continue;
+                ApplyBlackMaterial(renderer);
+            }
+
+            try
+            {
+                var lensRenderer = os.LensRenderer;
+                if (lensRenderer != null)
+                    ApplyBlackMaterial(lensRenderer);
+            }
+            catch { }
+        }
+
         /// <summary>
         /// Full cleanup: restores original materials and clears all internal caches.
         /// Call when the mod is disabled or the plugin is destroyed so EFT's native
@@ -251,12 +275,13 @@ namespace PiPDisabler
         /// _trulyOriginalMaterials so the next scope-enter always saves the correct
         /// originals rather than the black placeholder.
         /// </summary>
-        public static void RestoreAll()
+        public static void RestoreAll(bool forceBlackLens = false)
         {
             if (_hidden.Count == 0) return;
 
-            bool blackLens = PiPDisablerPlugin.BlackLensWhenUnscoped != null
-                             && PiPDisablerPlugin.BlackLensWhenUnscoped.Value;
+            bool blackLens = forceBlackLens ||
+                             (PiPDisablerPlugin.BlackLensWhenUnscoped != null &&
+                              PiPDisablerPlugin.BlackLensWhenUnscoped.Value);
 
             for (int i = 0; i < _hidden.Count; i++)
             {
