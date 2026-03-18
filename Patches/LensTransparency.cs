@@ -171,14 +171,15 @@ namespace PiPDisabler
                 for (int i = 0; i < slotCount; i++)
                     blackArray[i] = blackMat;
 
-                r.sharedMaterials = blackArray;
+                r.SetPropertyBlock(null);
+                r.materials = blackArray;
                 _blackenedRenderers.Add(r);
             }
             catch { }
         }
 
         /// <summary>
-        /// Restores the original sharedMaterials on any lens renderers that currently have
+        /// Restores the original materials on any lens renderers that currently have
         /// the black material applied.  Call this at scope ENTRY, before
         /// ReticleRenderer.ExtractReticle(), so the texture read sees the real OpticSight
         /// material rather than our Unlit/Color placeholder.
@@ -193,7 +194,11 @@ namespace PiPDisabler
                 Material[] origMats;
                 if (_trulyOriginalMaterials.TryGetValue(rid, out origMats) && origMats != null)
                 {
-                    try { r.sharedMaterials = origMats; }
+                    try
+                    {
+                        r.SetPropertyBlock(null);
+                        r.materials = origMats;
+                    }
                     catch { }
                 }
             }
@@ -384,10 +389,14 @@ namespace PiPDisabler
                         }
                         else
                         {
-                            // Restore original shared materials (legacy path).
+                            // Restore original materials.
                             if (e.OriginalMaterials != null)
                             {
-                                try { e.Renderer.sharedMaterials = e.OriginalMaterials; }
+                                try
+                                {
+                                    e.Renderer.SetPropertyBlock(null);
+                                    e.Renderer.materials = e.OriginalMaterials;
+                                }
                                 catch { }
                             }
                             PiPDisablerPlugin.LogVerbose(
