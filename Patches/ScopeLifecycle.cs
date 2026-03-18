@@ -747,6 +747,7 @@ namespace PiPDisabler
             // immediately on enter, but still restore when switching from a modded mode.
             if (restoreFov)
                 RestoreFov();
+            PiPDisabler.CleanupVanillaOpticState(os);
             Patches.WeaponScalingPatch.RestoreScale();
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
@@ -839,6 +840,7 @@ namespace PiPDisabler
             Patches.WeaponScalingPatch.RestoreScale();
 
             // 2. Hide reticle overlay + scope effects
+            PiPDisabler.CleanupVanillaOpticState(prevOptic);
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
 
@@ -938,6 +940,7 @@ namespace PiPDisabler
                 LensTransparency.ForceBlackLensMaterials(_activeOptic);
 
                 PiPDisablerPlugin.LogVerbose("[ScopeLifecycle] hiding reticle due to integrated-irons sub-scope");
+                PiPDisabler.CleanupVanillaOpticState(_activeOptic);
                 ReticleRenderer.Hide();
                 ScopeEffectsRenderer.Hide();
                 CameraSettingsManager.Restore();
