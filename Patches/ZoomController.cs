@@ -1,4 +1,3 @@
-using System;
 using EFT.CameraControl;
 using UnityEngine;
 
@@ -10,11 +9,6 @@ namespace PiPDisabler
     /// </summary>
     internal static class ZoomController
     {
-        // Range info (discovered from template or FOV fallback)
-        private static float _nativeMinMag;        // minimum magnification (widest view)
-        private static float _nativeMaxMag;        // maximum magnification (tightest view)
-        private static bool  _rangeDiscovered;
-
         /// <summary>
         /// Returns the current effective magnification.
         /// Delegates to FovController.GetEffectiveMagnification().
@@ -22,14 +16,6 @@ namespace PiPDisabler
         public static float GetMagnification(OpticSight os)
         {
             if (os == null) return PiPDisablerPlugin.DefaultZoom.Value;
-
-            // Ensure range is discovered
-            if (!_rangeDiscovered)
-            {
-                DiscoverZoomRange(os);
-                _rangeDiscovered = true;
-            }
-
             return FovController.GetEffectiveMagnification();
         }
 
@@ -49,7 +35,7 @@ namespace PiPDisabler
                 return FovController.MagnificationToFov(maxZoom, FovController.ZoomBaselineFov);
             }
 
-            // Fallback: read from ScopeZoomHandler directly
+            // Read from ScopeZoomHandler directly when the template range is unavailable.
             try
             {
                 var szh = os.GetComponentInParent<ScopeZoomHandler>();
@@ -98,107 +84,5 @@ namespace PiPDisabler
             return FovController.MagnificationToFov(currentMag, FovController.ZoomBaselineFov);
         }
 
-        /// <summary>Resets zoom state on scope-out.</summary>
-        public static void Restore()
-        {
-            _rangeDiscovered = false;
-        }
-
-        /// <summary>
-        /// Discover the scope's zoom range.
-        /// Primary: template min/max zoom from FovController.
-        /// Fallback: ScopeZoomHandler FOV range → converted to magnification.
-        /// </summary>
-        private static void DiscoverZoomRange(OpticSight os)
-        {
-
-            // Set defaults from current magnification
-            float currentMag = FovController.GetEffectiveMagnification();
-            _nativeMinMag = currentMag;
-            _nativeMaxMag = currentMag;
-
-            // Strategy 1: Template zoom range
-            var (minZoom, maxZoom) = FovController.GetTemplateZoomRange();
-            if (minZoom > 0.1f && maxZoom > 0.1f && maxZoom > minZoom)
-            {
-                _nativeMinMag = minZoom;
-                _nativeMaxMag = maxZoom;
-                PiPDisablerPlugin.LogInfo(
-                    $"[ZoomController] Discovered template zoom range: {minZoom:F2}x - {maxZoom:F2}x (variable)");
-                return;
-            }
-
-            // Strategy 2: ScopeZoomHandler FOV range → magnification
-            try
-            {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>();
-                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
-                if (szh == null)
-                {
-                    PiPDisablerPlugin.LogVerbose(
-                        "[ZoomController] No ScopeZoomHandler — fixed scope");
-                    return;
-                }
-
-                var szhType = szh.GetType();
-                float maxFov = 0f, minFov = 0f;
-
-                var s0Prop = szhType.GetProperty("Single_0",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                var s1Prop = szhType.GetProperty("Single_1",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
-                if (s0Prop != null && s1Prop != null &&
-                    s0Prop.PropertyType == typeof(float) && s1Prop.PropertyType == typeof(float))
-                {
-                    maxFov = (float)s0Prop.GetValue(szh);
-                    minFov = (float)s1Prop.GetValue(szh);
-                }
-
-                if (maxFov < 0.1f || minFov < 0.1f)
-                {
-                    foreach (var field in szhType.GetFields(
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
-                    {
-                        if (field.FieldType.Name.Contains("IAdjustableOpticData") ||
-                            field.FieldType.Name.Contains("AdjustableOptic") ||
-                            field.Name.Contains("iadjustableOpticData"))
-                        {
-                            var opticData = field.GetValue(szh);
-                            if (opticData == null) continue;
-
-                            var mmfProp = opticData.GetType().GetProperty("MinMaxFov");
-                            if (mmfProp != null && mmfProp.PropertyType == typeof(Vector3))
-                            {
-                                var mmf = (Vector3)mmfProp.GetValue(opticData);
-                                maxFov = mmf.x;
-                                minFov = mmf.y;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (maxFov > 0.1f && minFov > 0.1f && maxFov > minFov)
-                {
-                    // Convert FOV range to magnification range (35° optic camera baseline)
-                    _nativeMinMag = 35f / maxFov; // max FOV → min magnification
-                    _nativeMaxMag = 35f / minFov; // min FOV → max magnification
-                        PiPDisablerPlugin.LogInfo(
-                        $"[ZoomController] Discovered FOV-based zoom range: " +
-                        $"{_nativeMinMag:F2}x - {_nativeMaxMag:F2}x (from FOV {minFov:F2}°-{maxFov:F2}°)");
-                }
-                else
-                {
-                    PiPDisablerPlugin.LogVerbose(
-                        $"[ZoomController] Could not discover zoom range — fixed scope at {currentMag:F2}x");
-                }
-            }
-            catch (Exception ex)
-            {
-                PiPDisablerPlugin.LogVerbose(
-                    $"[ZoomController] DiscoverZoomRange exception: {ex.Message}");
-            }
-        }
     }
 }

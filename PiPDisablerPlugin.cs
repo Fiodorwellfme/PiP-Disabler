@@ -1010,8 +1010,6 @@ namespace PiPDisabler
             {
                 EnableZoom.Value = !EnableZoom.Value;
                 LogInfo($"Zoom toggled: {EnableZoom.Value}");
-                if (!EnableZoom.Value)
-                    ZoomController.Restore();
             }
 
             // --- Diagnostics dump ---
