@@ -89,7 +89,7 @@ namespace PiPDisabler
         {
             if (material == null) return;
 
-            material.renderQueue = (int)RenderQueue.Geometry;
+            material.renderQueue = 2000;
             material.SetOverrideTag("RenderType", "Opaque");
 
             if (material.HasProperty(_propColor))
