@@ -165,6 +165,8 @@ namespace PiPDisabler
         /// </summary>
         public static void OnOpticEnabled(OpticSight os)
         {
+            bool currentlyAimingThroughOptic = IsCurrentlyAimingThroughOptic();
+
             if (os != null)
                 _lastEnabledOptic = os;
 
@@ -192,61 +194,70 @@ namespace PiPDisabler
             // would falsely trigger a restore+recut cycle and cause a 1-2 frame mesh flash.
             if (_isScoped && os != null && os != _activeOptic)
             {
-                PiPDisablerPlugin.LogInfo(
-                    $"[ScopeLifecycle] Mode switch while scoped: " +
-                    $"'{(_activeOptic != null ? _activeOptic.name : "?")}'[{FovController.GetOpticTemplateId(_activeOptic)}] → " +
-                    $"'{os.name}'[{FovController.GetOpticTemplateId(os)}]");
-
-                // Update the active optic to the new mode
-                _activeOptic = os;
-
-                float minFov = ZoomController.GetMinFov(os);
-                bool bypassForMode = ShouldBypassForCurrentOptic(os, minFov);
-                if (bypassForMode)
+                if (!currentlyAimingThroughOptic)
                 {
-                    _modBypassedForCurrentScope = true;
-                    ApplyBypassState(os, minFov, reason: "mode switch", restoreFov: true);
-                    return;
+                    PiPDisablerPlugin.LogInfo(
+                        $"[ScopeLifecycle] Ignoring optic enable during non-optic transition: " +
+                        $"'{os.name}'[{FovController.GetOpticTemplateId(os)}]");
                 }
-
-                _modBypassedForCurrentScope = false;
-
-                // Re-extract reticle from the NEW mode's linza
-                ReticleRenderer.Cleanup();
-                ReticleRenderer.ExtractReticle(os);
-
-                // Re-hide lenses (the new mode's lens might not be hidden yet)
-                LensTransparency.HideAllLensSurfaces(os);
-
-                // Recollect housing + weapon renderers for the new mode's geometry.
-                ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
-
-                // Notify FOV controller the mode changed so it re-reads ScopeCameraData
-                FovController.OnModeSwitch();
-
-                // RESTORE all meshes first, then re-cut with new mode's plane position.
-                if (PiPDisablerPlugin.EnableMeshSurgery.Value)
+                else
                 {
-                    MeshSurgeryManager.RestoreForScope(os.transform);
-                    MeshSurgeryManager.ApplyForOptic(os);
-                }
+                    PiPDisablerPlugin.LogInfo(
+                        $"[ScopeLifecycle] Mode switch while scoped: " +
+                        $"'{(_activeOptic != null ? _activeOptic.name : "?")}'[{FovController.GetOpticTemplateId(_activeOptic)}] → " +
+                        $"'{os.name}'[{FovController.GetOpticTemplateId(os)}]");
 
-                // Re-apply camera settings for the new mode's FOV
-                CameraSettingsManager.ApplyForOptic(os);
+                    // Update the active optic to the new mode
+                    _activeOptic = os;
 
-                // Capture weapon base scale/FOV before FOV changes
-                Patches.WeaponScalingPatch.CaptureBaseState();
+                    float minFov = ZoomController.GetMinFov(os);
+                    bool bypassForMode = ShouldBypassForCurrentOptic(os, minFov);
+                    if (bypassForMode)
+                    {
+                        _modBypassedForCurrentScope = true;
+                        ApplyBypassState(os, minFov, reason: "mode switch", restoreFov: true);
+                        return;
+                    }
 
-                // If freelooking, defer reticle/effects/FOV — they'll be restored
-                // when freelook ends via FreelookTracker.OnFreelookExit().
-                if (!FreelookTracker.IsFreelooking)
-                {
-                    // Show reticle for the new mode (with magnification scaling)
-                    float modeMag = ZoomController.GetMagnification(os);
-                    ReticleRenderer.Show(os, modeMag);
+                    _modBypassedForCurrentScope = false;
 
-                    // Animated FOV change for mode switch (uses configured duration)
-                    ApplyFov(true);
+                    // Re-extract reticle from the NEW mode's linza
+                    ReticleRenderer.Cleanup();
+                    ReticleRenderer.ExtractReticle(os);
+
+                    // Re-hide lenses (the new mode's lens might not be hidden yet)
+                    LensTransparency.HideAllLensSurfaces(os);
+
+                    // Recollect housing + weapon renderers for the new mode's geometry.
+                    ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
+
+                    // Notify FOV controller the mode changed so it re-reads ScopeCameraData
+                    FovController.OnModeSwitch();
+
+                    // RESTORE all meshes first, then re-cut with new mode's plane position.
+                    if (PiPDisablerPlugin.EnableMeshSurgery.Value)
+                    {
+                        MeshSurgeryManager.RestoreForScope(os.transform);
+                        MeshSurgeryManager.ApplyForOptic(os);
+                    }
+
+                    // Re-apply camera settings for the new mode's FOV
+                    CameraSettingsManager.ApplyForOptic(os);
+
+                    // Capture weapon base scale/FOV before FOV changes
+                    Patches.WeaponScalingPatch.CaptureBaseState();
+
+                    // If freelooking, defer reticle/effects/FOV — they'll be restored
+                    // when freelook ends via FreelookTracker.OnFreelookExit().
+                    if (!FreelookTracker.IsFreelooking)
+                    {
+                        // Show reticle for the new mode (with magnification scaling)
+                        float modeMag = ZoomController.GetMagnification(os);
+                        ReticleRenderer.Show(os, modeMag);
+
+                        // Animated FOV change for mode switch (uses configured duration)
+                        ApplyFov(true);
+                    }
                 }
             }
 
@@ -261,6 +272,28 @@ namespace PiPDisabler
             ReticleRenderer.Hide();
             ScopeEffectsRenderer.Hide();
             CheckAndUpdate("OnOpticDisabled");
+        }
+
+        private static bool IsCurrentlyAimingThroughOptic()
+        {
+            if (!_reflectionReady) return false;
+
+            try
+            {
+                var player = GetLocalPlayer();
+                var pwa = player?.ProceduralWeaponAnimation;
+                if (pwa == null) return false;
+                if (!_getIsAiming(pwa)) return false;
+
+                object currentScope = _getCurrentScope(pwa);
+                if (currentScope == null) return false;
+
+                return _getIsOptic(currentScope);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
