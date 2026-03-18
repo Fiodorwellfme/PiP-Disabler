@@ -42,25 +42,20 @@ namespace PiPDisabler
     internal static class ReticleRenderer
     {
         private static Material     _reticleMat;
+        private static Material     _savedReticleTemplate;
         private static Mesh         _reticleMesh;
         private static Texture      _savedMarkTex;
         private static Texture      _savedMaskTex;
 
-        private struct MaskMeshSource
-        {
-            public Renderer Renderer;
-            public Mesh Mesh;
-            public int SubMeshCount;
-        }
-
-        // Stencil masking — rear lens aperture + scene occluders
-        private static Material _stencilClearMat;     // full-screen quad: write 0 to stencil
-        private static Material _rearLensStencilMat;  // rear lens pass: write 1 to stencil, no colour
-        private static Material _occluderStencilMat;  // occluder pass: write 0 to stencil, no colour
-        private static Material _stencilDebugMat;     // debug overlay: tint where aperture mask is open
-        private static readonly List<MaskMeshSource> _rearLensMaskSources = new List<MaskMeshSource>();
-        private static readonly List<Renderer> _occluderRenderers = new List<Renderer>();
-        private static bool _hasStencilSupport; // true when UI/Default was found
+        // Stencil masking — housing occlusion
+        // UI/Default exposes _Stencil, _StencilComp, _StencilOp, _ColorMask which let us
+        // write to the stencil buffer and test against it without a custom shader.
+        private static Material            _stencilClearMat;   // full-screen quad: write 0 to stencil
+        private static Material            _housingStencilMat; // housing pass: write 1 to stencil, no colour
+        private static Material            _stencilDebugMat;   // debug overlay: red tint where housing masks
+        private static readonly List<Renderer> _housingRenderers = new List<Renderer>();
+        private static bool                _hasStencilSupport; // true when UI/Default was found
+        private static bool                _reticleStencilSupport;
 
         // Debug frame counter — logs stencil state for first N frames after scope enter
         private static int  _debugFrameCount;
@@ -101,6 +96,7 @@ namespace PiPDisabler
 
             _savedMarkTex = null;
             _savedMaskTex = null;
+            _savedReticleTemplate = null;
 
             try
             {
@@ -120,6 +116,7 @@ namespace PiPDisabler
                     _savedMarkTex = mat.GetTexture("_MarkTex");
                 if (mat.HasProperty("_MaskTex"))
                     _savedMaskTex = mat.GetTexture("_MaskTex");
+                _savedReticleTemplate = new Material(mat);
 
                 if (_savedMarkTex != null)
                 {
@@ -153,8 +150,8 @@ namespace PiPDisabler
                 _opticTransform = os.transform;
 
                 EnsureMeshAndMaterial();
-
-                _reticleMat.mainTexture = _savedMarkTex;
+                if (!ConfigureReticleMaterial())
+                    return;
                 ApplyHorizontalFlip();
 
                 // Scale
@@ -212,11 +209,12 @@ namespace PiPDisabler
         public static void Cleanup()
         {
             Hide();
-            _rearLensMaskSources.Clear();
-            _occluderRenderers.Clear();
+            _housingRenderers.Clear();
             _debugFrameCount   = 0;
             _savedMarkTex      = null;
             _savedMaskTex      = null;
+            _savedReticleTemplate = null;
+            _reticleStencilSupport = false;
             _opticTransform    = null;
             _lastMag           = 1f;
             _baseScale         = 0f;
@@ -237,43 +235,21 @@ namespace PiPDisabler
         public static Transform OpticTransform => _opticTransform;
 
         /// <summary>
-        /// Capture rear-lens geometry before LensTransparency empties the meshes.
+        /// Provide the scope housing renderers that will be drawn into the stencil
+        /// buffer each frame so the reticle disappears wherever the housing covers it.
+        /// Call after LensTransparency.HideAllLensSurfaces() so lens renderers are
+        /// already empty-meshed and won't end up in the list.
+        /// Pass null or an empty list to disable housing masking.
         /// </summary>
-        public static void CaptureRearLensMask(OpticSight os)
+        public static void SetHousingRenderers(List<Renderer> renderers)
         {
-            _rearLensMaskSources.Clear();
-            if (os == null) return;
-
-            AddRearLensMaskSource(os.LensRenderer);
-
-            Transform scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
-            Transform activeMode = ScopeHierarchy.FindBestMode(scopeRoot) ?? scopeRoot;
-            Transform backLens = ScopeHierarchy.FindDeepChild(activeMode, "backLens");
-            if (backLens != null)
-            {
-                var renderers = backLens.GetComponentsInChildren<Renderer>(true);
-                for (int i = 0; i < renderers.Length; i++)
-                    AddRearLensMaskSource(renderers[i]);
-            }
-
-            PiPDisablerPlugin.LogInfo(
-                $"[Reticle] Rear lens mask: {_rearLensMaskSources.Count} renderer(s) captured" +
-                $" stencilSupport={_hasStencilSupport}");
-        }
-
-        /// <summary>
-        /// Provide opaque renderers that can close the rear-lens aperture in stencil.
-        /// Call after LensTransparency.HideAllLensSurfaces() so rear-lens surfaces are excluded.
-        /// </summary>
-        public static void SetOccluderRenderers(List<Renderer> renderers)
-        {
-            _occluderRenderers.Clear();
-            _debugFrameCount = 0;
+            _housingRenderers.Clear();
+            _debugFrameCount = 0; // reset so first frames of new scope are logged
             if (renderers != null)
-                _occluderRenderers.AddRange(renderers);
+                _housingRenderers.AddRange(renderers);
 
             PiPDisablerPlugin.LogInfo(
-                $"[Reticle] Occluder mask: {_occluderRenderers.Count} renderer(s) registered" +
+                $"[Reticle] Housing mask: {_housingRenderers.Count} renderer(s) registered" +
                 $" stencilSupport={_hasStencilSupport}");
         }
 
@@ -433,14 +409,15 @@ namespace PiPDisabler
         /// <summary>
         /// Rebuild the CommandBuffer.
         ///
-        /// When rear-lens sources are available and UI/Default was found (stencil-capable):
+        /// When housing renderers are available and UI/Default was found (stencil-capable):
         ///   1. Clear stencil to 0 with a full-screen clip-space quad.
-        ///   2. Draw rear-lens meshes in world-space, writing 1 where the aperture is visible.
-        ///   3. Draw opaque occluders in world-space, writing 0 wherever they cover that aperture.
-        ///   4. Draw the reticle with stencil test Equal-1, so it appears only inside the lens.
+        ///   2. Draw housing meshes in world-space, writing 1 to stencil where the housing
+        ///      passes the depth test (i.e. is actually visible).
+        ///   3. Draw the reticle with stencil test NotEqual-1, so it is invisible wherever
+        ///      the housing was just written.
         ///
         /// Falls back to the original single-draw path when stencil is unavailable or no
-        /// rear-lens geometry has been captured.
+        /// housing renderers have been registered.
         ///
         /// Note: when attached at AfterForwardAlpha we do NOT rebind the render target,
         /// because the active RT is already the scene colour buffer.  When attached at
@@ -465,24 +442,23 @@ namespace PiPDisabler
                 _cmdBuffer.SetViewport(GetSceneViewport(cam));
             }
 
-            bool useStencil = _hasStencilSupport && _rearLensMaskSources.Count > 0
-                              && _stencilClearMat != null && _rearLensStencilMat != null;
+            bool useStencil = _hasStencilSupport && _reticleStencilSupport && _housingRenderers.Count > 0
+                              && _stencilClearMat != null && _housingStencilMat != null;
 
             // ── Per-frame debug logging (first N frames after scope enter) ────────────
             if (_debugFrameCount < DebugLogFrames)
             {
                 int activeCount = 0;
-                for (int i = 0; i < _occluderRenderers.Count; i++)
+                for (int i = 0; i < _housingRenderers.Count; i++)
                 {
-                    var r = _occluderRenderers[i];
+                    var r = _housingRenderers[i];
                     if (r != null && r.gameObject.activeInHierarchy) activeCount++;
                 }
 
                 PiPDisablerPlugin.LogInfo(
                     $"[Reticle] Frame {_debugFrameCount + 1}/{DebugLogFrames}: " +
-                    $"useStencil={useStencil} rearLensTotal={_rearLensMaskSources.Count} " +
-                    $"occluderTotal={_occluderRenderers.Count} occluderActive={activeCount} " +
-                    $"stencilSupport={_hasStencilSupport}");
+                    $"useStencil={useStencil} housingTotal={_housingRenderers.Count} " +
+                    $"housingActive={activeCount} stencilSupport={_hasStencilSupport}");
                 _debugFrameCount++;
             }
 
@@ -496,34 +472,22 @@ namespace PiPDisabler
                 _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
                 _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilClearMat, 0, -1);
 
-                // ── Step 2: open the visible rear-lens aperture in stencil ───────────
+                // ── Step 2: write housing to stencil (world-space) ──────────────────
                 _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
-                for (int i = 0; i < _rearLensMaskSources.Count; i++)
+                for (int i = 0; i < _housingRenderers.Count; i++)
                 {
-                    var source = _rearLensMaskSources[i];
-                    if (source.Renderer == null || !source.Renderer.gameObject.activeInHierarchy) continue;
-
-                    Matrix4x4 localToWorld = source.Renderer.localToWorldMatrix;
-                    for (int subMeshIndex = 0; subMeshIndex < source.SubMeshCount; subMeshIndex++)
-                        _cmdBuffer.DrawMesh(source.Mesh, localToWorld, _rearLensStencilMat, subMeshIndex, -1);
+                    var r = _housingRenderers[i];
+                    if (r == null || !r.gameObject.activeInHierarchy) continue;
+                    _cmdBuffer.DrawRenderer(r, _housingStencilMat);
                 }
 
-                // ── Step 3: close the aperture where solid geometry is in front ──────
-                if (_occluderStencilMat != null)
-                {
-                    for (int i = 0; i < _occluderRenderers.Count; i++)
-                    {
-                        var r = _occluderRenderers[i];
-                        if (r == null || !r.gameObject.activeInHierarchy) continue;
-                        _cmdBuffer.DrawRenderer(r, _occluderStencilMat);
-                    }
-                }
-
-                // ── Step 4: draw reticle inside the aperture only ────────────────────
+                // ── Step 3: draw reticle with stencil test (clip-space) ─────────────
                 _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
                 _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
 
-                // ── Step 5: optional debug overlay — tint the final aperture mask ────
+                // ── Step 4: optional debug overlay — red tint where housing masked ───
+                // Renders anywhere stencil == 1, i.e. every pixel the housing suppressed.
+                // Enable via DebugShowHousingMask in BepInEx config.
                 if (PiPDisablerPlugin.GetDebugShowHousingMask()
                     && _stencilDebugMat != null)
                 {
@@ -582,7 +546,7 @@ namespace PiPDisabler
 
         private static void EnsureMeshAndMaterial()
         {
-            if (_reticleMesh != null && _reticleMat != null) return;
+            if (_reticleMesh != null && (_stencilClearMat != null || !_hasStencilSupport)) return;
 
             if (_reticleMesh == null)
             {
@@ -605,131 +569,96 @@ namespace PiPDisabler
                 _reticleMesh.RecalculateBounds();
             }
 
-            if (_reticleMat == null)
+            Shader stencilShader = Shader.Find("UI/Default");
+            _hasStencilSupport   = stencilShader != null;
+
+            if (!_hasStencilSupport || _stencilClearMat != null)
             {
-                // UI/Default exposes _Stencil* and _ColorMask, so it must be found first
-                // for stencil-based housing masking.  Sprites/Default does not have these.
-                Shader stencilShader = Shader.Find("UI/Default");
-                _hasStencilSupport   = stencilShader != null;
-
-                Shader alphaShader =
-                    stencilShader                           ??
-                    Shader.Find("Sprites/Default")          ??
-                    Shader.Find("Unlit/Transparent")        ??
-                    Shader.Find("Particles/Alpha Blended")  ??
-                    Shader.Find("Legacy Shaders/Transparent/Diffuse");
-
-                if (alphaShader == null)
-                {
-                    alphaShader =
-                        Shader.Find("Particles/Additive") ??
-                        Shader.Find("Legacy Shaders/Particles/Additive");
-
-                    PiPDisablerPlugin.LogWarn(
-                        "[Reticle] No alpha-blend shader found; falling back to Particles/Additive.");
-                }
-
-                _reticleMat = new Material(alphaShader)
-                {
-                    color       = Color.white,
-                    renderQueue = 3100
-                };
-                _reticleMat.SetInt("_ZTest",  (int)CompareFunction.Always);
-                _reticleMat.SetInt("_ZWrite", 0);
-
-                // ── Stencil test: only draw reticle where rear-lens aperture is open ─
-                if (_hasStencilSupport)
-                {
-                    _reticleMat.SetFloat("_Stencil",          1f);
-                    _reticleMat.SetFloat("_StencilComp",      (float)CompareFunction.Equal);
-                    _reticleMat.SetFloat("_StencilOp",        (float)StencilOp.Keep);
-                    _reticleMat.SetFloat("_StencilReadMask",  255f);
-                    _reticleMat.SetFloat("_StencilWriteMask", 0f);   // don't write
-                }
-
-                PiPDisablerPlugin.LogInfo(
-                    $"[Reticle] Created material (shader='{(alphaShader != null ? alphaShader.name : "null")}'" +
-                    $" stencilSupport={_hasStencilSupport})");
-
-                // ── Stencil helper materials (both need UI/Default) ──────────────────
-                if (_hasStencilSupport)
-                {
-                    // Clear material: full-screen pass, writes stencil=0, no colour output.
-                    _stencilClearMat = new Material(stencilShader) { renderQueue = 4998 };
-                    _stencilClearMat.SetFloat("_Stencil",          0f);
-                    _stencilClearMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
-                    _stencilClearMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
-                    _stencilClearMat.SetFloat("_StencilWriteMask", 255f);
-                    _stencilClearMat.SetFloat("_ColorMask",        0f); // write no colour
-                    _stencilClearMat.SetInt("_ZTest",  (int)CompareFunction.Always);
-                    _stencilClearMat.SetInt("_ZWrite", 0);
-
-                    // Rear-lens material: world-space pass, writes stencil=1 where the
-                    // aperture is actually visible in the current depth buffer.
-                    _rearLensStencilMat = new Material(stencilShader) { renderQueue = 4999 };
-                    _rearLensStencilMat.SetFloat("_Stencil",          1f);
-                    _rearLensStencilMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
-                    _rearLensStencilMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
-                    _rearLensStencilMat.SetFloat("_StencilWriteMask", 255f);
-                    _rearLensStencilMat.SetFloat("_ColorMask",        0f);
-                    _rearLensStencilMat.SetInt("_ZTest",  (int)CompareFunction.LessEqual);
-                    _rearLensStencilMat.SetInt("_ZWrite", 0);
-
-                    // Occluder material: writes stencil=0 where visible, trimming the
-                    // aperture back down to what the player can actually see through.
-                    _occluderStencilMat = new Material(stencilShader) { renderQueue = 5000 };
-                    _occluderStencilMat.SetFloat("_Stencil",          0f);
-                    _occluderStencilMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
-                    _occluderStencilMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
-                    _occluderStencilMat.SetFloat("_StencilWriteMask", 255f);
-                    _occluderStencilMat.SetFloat("_ColorMask",        0f);
-                    _occluderStencilMat.SetInt("_ZTest",  (int)CompareFunction.LessEqual);
-                    _occluderStencilMat.SetInt("_ZWrite", 0);
-
-                    // Debug overlay: reveals the final rear-lens aperture mask.
-                    _stencilDebugMat = new Material(stencilShader)
-                    {
-                        color       = new Color(1f, 0.1f, 0.1f, 0.55f),
-                        renderQueue = 5001
-                    };
-                    _stencilDebugMat.SetFloat("_Stencil",         1f);
-                    _stencilDebugMat.SetFloat("_StencilComp",     (float)CompareFunction.Equal);
-                    _stencilDebugMat.SetFloat("_StencilOp",       (float)StencilOp.Keep);
-                    _stencilDebugMat.SetFloat("_StencilReadMask", 255f);
-                    _stencilDebugMat.SetInt("_ZTest",  (int)CompareFunction.Always);
-                    _stencilDebugMat.SetInt("_ZWrite", 0);
-                }
+                ApplyHorizontalFlip();
+                return;
             }
+
+            // ── Stencil helper materials (both need UI/Default) ──────────────────
+            // Clear material: full-screen pass, writes stencil=0, no colour output.
+            _stencilClearMat = new Material(stencilShader) { renderQueue = 4998 };
+            _stencilClearMat.SetFloat("_Stencil",          0f);
+            _stencilClearMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
+            _stencilClearMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
+            _stencilClearMat.SetFloat("_StencilWriteMask", 255f);
+            _stencilClearMat.SetFloat("_ColorMask",        0f); // write no colour
+            _stencilClearMat.SetInt("_ZTest",  (int)CompareFunction.Always);
+            _stencilClearMat.SetInt("_ZWrite", 0);
+
+            // Housing material: world-space pass, writes stencil=1 where depth passes.
+            _housingStencilMat = new Material(stencilShader) { renderQueue = 4999 };
+            _housingStencilMat.SetFloat("_Stencil",          1f);
+            _housingStencilMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
+            _housingStencilMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
+            _housingStencilMat.SetFloat("_StencilWriteMask", 255f);
+            _housingStencilMat.SetFloat("_ColorMask",        0f); // write no colour
+            _housingStencilMat.SetInt("_ZTest",  (int)CompareFunction.LessEqual); // only where visible
+            _housingStencilMat.SetInt("_ZWrite", 0);
+
+            // Debug overlay: renders a semi-transparent red tint wherever stencil == 1.
+            // Reveals which screen regions are being suppressed by the housing mask.
+            _stencilDebugMat = new Material(stencilShader)
+            {
+                color       = new Color(1f, 0.1f, 0.1f, 0.55f),
+                renderQueue = 5000
+            };
+            _stencilDebugMat.SetFloat("_Stencil",         1f);
+            _stencilDebugMat.SetFloat("_StencilComp",     (float)CompareFunction.Equal); // only where housing is
+            _stencilDebugMat.SetFloat("_StencilOp",       (float)StencilOp.Keep);
+            _stencilDebugMat.SetFloat("_StencilReadMask", 255f);
+            _stencilDebugMat.SetInt("_ZTest",  (int)CompareFunction.Always);
+            _stencilDebugMat.SetInt("_ZWrite", 0);
 
             ApplyHorizontalFlip();
         }
 
-        private static void AddRearLensMaskSource(Renderer renderer)
+        private static bool ConfigureReticleMaterial()
         {
-            if (renderer == null || !renderer.gameObject.activeInHierarchy) return;
+            if (_savedReticleTemplate == null)
+                return false;
 
-            for (int i = 0; i < _rearLensMaskSources.Count; i++)
+            if (_reticleMat == null || _reticleMat.shader != _savedReticleTemplate.shader)
+                _reticleMat = new Material(_savedReticleTemplate);
+            else
+                _reticleMat.CopyPropertiesFromMaterial(_savedReticleTemplate);
+
+            if (_reticleMat.HasProperty("_MainTex"))
+                _reticleMat.mainTexture = _savedMarkTex;
+            if (_reticleMat.HasProperty("_MarkTex"))
+                _reticleMat.SetTexture("_MarkTex", _savedMarkTex);
+            if (_reticleMat.HasProperty("_MaskTex"))
+                _reticleMat.SetTexture("_MaskTex", _savedMaskTex);
+            if (_reticleMat.HasProperty("_Color"))
+                _reticleMat.SetColor("_Color", Color.white);
+            if (_reticleMat.HasProperty("_ZTest"))
+                _reticleMat.SetInt("_ZTest", (int)CompareFunction.Always);
+            if (_reticleMat.HasProperty("_ZWrite"))
+                _reticleMat.SetInt("_ZWrite", 0);
+
+            _reticleMat.renderQueue = 3100;
+            _reticleStencilSupport = _reticleMat.HasProperty("_Stencil")
+                && _reticleMat.HasProperty("_StencilComp")
+                && _reticleMat.HasProperty("_StencilOp");
+
+            if (_reticleStencilSupport)
             {
-                if (_rearLensMaskSources[i].Renderer == renderer)
-                    return;
+                _reticleMat.SetFloat("_Stencil",          1f);
+                _reticleMat.SetFloat("_StencilComp",      (float)CompareFunction.NotEqual);
+                _reticleMat.SetFloat("_StencilOp",        (float)StencilOp.Keep);
+                _reticleMat.SetFloat("_StencilReadMask",  255f);
+                _reticleMat.SetFloat("_StencilWriteMask", 0f);
             }
 
-            Mesh mesh = null;
-            var meshFilter = renderer.GetComponent<MeshFilter>();
-            if (meshFilter != null)
-                mesh = meshFilter.sharedMesh;
+            PiPDisablerPlugin.LogInfo(
+                $"[Reticle] Using source lens material '{_reticleMat.shader.name}'" +
+                $" maskTex={(_savedMaskTex != null ? _savedMaskTex.name : "null")}" +
+                $" stencilSupport={_reticleStencilSupport}");
 
-            if (mesh == null && renderer is SkinnedMeshRenderer skinned)
-                mesh = skinned.sharedMesh;
-
-            if (mesh == null || mesh.vertexCount == 0) return;
-
-            _rearLensMaskSources.Add(new MaskMeshSource
-            {
-                Renderer = renderer,
-                Mesh = mesh,
-                SubMeshCount = Mathf.Max(1, mesh.subMeshCount)
-            });
+            return true;
         }
     }
 }
