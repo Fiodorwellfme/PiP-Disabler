@@ -155,6 +155,23 @@ namespace PiPDisabler
         }
 
         /// <summary>
+        /// Per-frame LOD bias update driven by DistanceLodBiasController.
+        /// Only writes QualitySettings.lodBias — all other camera settings
+        /// (far clip, cull distances, max LOD level) remain as set by ApplyForOptic.
+        /// </summary>
+        public static void UpdateDistanceLodBias()
+        {
+            if (!_applied) return;
+            if (PiPDisablerPlugin.EnableDistanceLodBias == null ||
+                !PiPDisablerPlugin.EnableDistanceLodBias.Value)
+                return;
+
+            float bias = DistanceLodBiasController.CurrentLodBias;
+            if (bias > 0f)
+                QualitySettings.lodBias = bias;
+        }
+
+        /// <summary>
         /// Try to read ScopeCameraData from the scope hierarchy via reflection.
         /// </summary>
         private static bool TryGetScopeCameraData(OpticSight os, out float fov, out float farClip)

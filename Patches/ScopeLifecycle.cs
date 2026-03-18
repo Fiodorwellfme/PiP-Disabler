@@ -402,6 +402,10 @@ namespace PiPDisabler
             // Per-frame weapon scale compensation (tracks animated FOV transitions)
             Patches.WeaponScalingPatch.UpdateScale();
 
+            // Distance-based LOD bias (raycast + QualitySettings update)
+            DistanceLodBiasController.Tick();
+            CameraSettingsManager.UpdateDistanceLodBias();
+
             // Zeroing input polling
             ZeroingController.Tick();
         }
@@ -771,6 +775,7 @@ namespace PiPDisabler
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
             LensTransparency.RestoreAll();
+            DistanceLodBiasController.Reset();
             CameraSettingsManager.Restore();
             PiPDisabler.RestoreAllCameras();
 
@@ -901,6 +906,7 @@ namespace PiPDisabler
             LensTransparency.RestoreAll();
 
             // 5. Restore camera LOD/culling settings
+            DistanceLodBiasController.Reset();
             CameraSettingsManager.Restore();
 
             // 6. Restore meshes
