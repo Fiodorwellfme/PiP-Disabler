@@ -218,15 +218,6 @@ namespace PiPDisabler
         internal static ConfigEntry<float> ManualCullingMultiplier;
         internal static Dictionary<string, ConfigEntry<float>> MapManualLodBias;
 
-        // --- Distance-based LOD bias ---
-        internal static ConfigEntry<bool> EnableDistanceLodBias;
-        internal static ConfigEntry<float> DistanceLodBias_50m;
-        internal static ConfigEntry<float> DistanceLodBias_100m;
-        internal static ConfigEntry<float> DistanceLodBias_200m;
-        internal static ConfigEntry<float> DistanceLodBias_300m;
-        internal static ConfigEntry<float> DistanceLodBias_400m;
-        internal static ConfigEntry<int> DistanceLodBiasRaycastMask;
-
         // --- 4. Zeroing ---
         internal static ConfigEntry<bool> EnableZeroing;
         internal static ConfigEntry<KeyCode> ZeroingUpKey;
@@ -386,50 +377,6 @@ namespace PiPDisabler
                     ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
                     new AcceptableValueRange<float>(0f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-
-            // --- Distance-based LOD bias ---
-            EnableDistanceLodBias = Config.Bind("Optimization", "EnableDistanceLodBias", false,
-                new ConfigDescription(
-                    "Enable distance-based LOD bias adjustment.\n" +
-                    "Raycasts from the camera each frame while scoped and interpolates LOD bias\n" +
-                    "based on the distance to the aimed-at surface.\n" +
-                    "When enabled, overrides ManualLodBias / per-map LOD bias.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false }));
-            DistanceLodBias_50m = Config.Bind("Optimization", "DistanceLodBias_50m", 6.0f,
-                new ConfigDescription(
-                    "LOD bias at 50 m or closer.",
-                    new AcceptableValueRange<float>(0.1f, 30f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false }));
-            DistanceLodBias_100m = Config.Bind("Optimization", "DistanceLodBias_100m", 5.0f,
-                new ConfigDescription(
-                    "LOD bias at 100 m.",
-                    new AcceptableValueRange<float>(0.1f, 30f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false }));
-            DistanceLodBias_200m = Config.Bind("Optimization", "DistanceLodBias_200m", 4.0f,
-                new ConfigDescription(
-                    "LOD bias at 200 m.",
-                    new AcceptableValueRange<float>(0.1f, 30f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false }));
-            DistanceLodBias_300m = Config.Bind("Optimization", "DistanceLodBias_300m", 3.0f,
-                new ConfigDescription(
-                    "LOD bias at 300 m.",
-                    new AcceptableValueRange<float>(0.1f, 30f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false }));
-            DistanceLodBias_400m = Config.Bind("Optimization", "DistanceLodBias_400m", 2.0f,
-                new ConfigDescription(
-                    "LOD bias at 400 m (and beyond).",
-                    new AcceptableValueRange<float>(0.1f, 30f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false }));
-            DistanceLodBiasRaycastMask = Config.Bind("Optimization", "DistanceLodBiasRaycastMask", -5,
-                new ConfigDescription(
-                    "Physics layer mask for the distance raycast.\n" +
-                    "Negative values are treated as ~(abs(value)), i.e. 'everything except these layers'.\n" +
-                    "-5 = everything except layer 2 (IgnoreRaycast) and layer 0 bit pattern quirk.\n" +
-                    "0 = default (all layers).",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-
             MapManualLodBias = new Dictionary<string, ConfigEntry<float>>(StringComparer.OrdinalIgnoreCase);
 
             BindPerMapLodBias("Woods", "Woods", "Woods");
@@ -1063,8 +1010,6 @@ namespace PiPDisabler
             {
                 EnableZoom.Value = !EnableZoom.Value;
                 LogInfo($"Zoom toggled: {EnableZoom.Value}");
-                if (!EnableZoom.Value)
-                    ZoomController.Restore();
             }
 
             // --- Diagnostics dump ---
