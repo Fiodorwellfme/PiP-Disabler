@@ -379,9 +379,6 @@ namespace PiPDisabler
 
             // PiP stays disabled via Harmony patches — no per-frame action needed.
 
-            // Per-frame weapon scale compensation (tracks animated FOV transitions)
-            Patches.WeaponScalingPatch.UpdateScale();
-
             // Zeroing input polling
             ZeroingController.Tick();
         }
@@ -836,8 +833,8 @@ namespace PiPDisabler
             // 1. Restore FOV with ADS-matched animation timing
             RestoreFov();
 
-            // 1b. Restore normal weapon model scaling (after FOV is back to normal)
-            Patches.WeaponScalingPatch.RestoreScale();
+            // 1b. Keep weapon scaling synced with the unscope FOV animation.
+            Patches.WeaponScalingPatch.BeginRestore(PiPDisablerPlugin.FovAnimationDuration.Value);
 
             // 2. Hide reticle overlay + scope effects
             PiPDisabler.CleanupVanillaOpticState(prevOptic);

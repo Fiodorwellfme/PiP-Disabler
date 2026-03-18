@@ -44,6 +44,7 @@ namespace PiPDisabler.Patches
     internal sealed class WeaponScalingPatch : ModulePatch
     {
         private static bool _isActive;
+        private static float _restoreDeadline = -1f;
 
         // Zoom formula baseline (must match FovController.ZoomBaselineFov)
         private const float ZoomBaseline = 50f;
@@ -62,6 +63,7 @@ namespace PiPDisabler.Patches
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) { _isActive = false; return; }
             _isActive = true;
+            _restoreDeadline = -1f;
         }
 
         /// <summary>
@@ -71,11 +73,12 @@ namespace PiPDisabler.Patches
         /// </summary>
         public static void UpdateScale()
         {
-            if (!_isActive) return;
             if (!PiPDisablerPlugin.EnableWeaponScaling.Value) return;
 
             try
             {
+                if (!_isActive) return;
+
                 var player = GetMainPlayer();
                 if (player == null) return;
                 if (!CameraClass.Exist) return;
@@ -86,17 +89,35 @@ namespace PiPDisabler.Patches
                 // Override ONLY visual fields — aim math (_compensatoryScale etc.) untouched
                 player.RibcageScaleCurrentTarget = scale;
                 player.RibcageScaleCurrent = scale; // instant snap
+
+                if (_restoreDeadline >= 0f && Time.unscaledTime >= _restoreDeadline)
+                    RestoreScale();
             }
             catch { }
         }
 
         /// <summary>
+        /// Keep matching the animated camera FOV until the unscope transition ends.
+        /// Called from ScopeLifecycle.DoScopeExit after RestoreFov starts.
+        /// </summary>
+        public static void BeginRestore(float duration)
+        {
+            if (!_isActive)
+            {
+                RestoreScale();
+                return;
+            }
+
+            _restoreDeadline = Time.unscaledTime + Mathf.Max(0f, duration);
+        }
+
+        /// <summary>
         /// Restore normal EFT ribcage scaling.
-        /// Called from ScopeLifecycle.DoScopeExit.
         /// </summary>
         public static void RestoreScale()
         {
             _isActive = false;
+            _restoreDeadline = -1f;
 
             try
             {

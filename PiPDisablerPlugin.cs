@@ -1024,6 +1024,9 @@ namespace PiPDisabler
 
             // Per-frame maintenance (ensure lens hidden, update variable zoom, etc.)
             ScopeLifecycle.Tick();
+
+            // Keep weapon scale synced during scope enter/exit FOV animations.
+            Patches.WeaponScalingPatch.UpdateScale();
         }
         private static bool IsInRaid()
         {
