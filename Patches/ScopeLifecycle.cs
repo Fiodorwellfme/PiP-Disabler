@@ -236,8 +236,12 @@ namespace PiPDisabler
         /// </summary>
         public static void OnOpticDisabled(OpticSight os)
         {
-            ReticleRenderer.Hide();
-            ScopeEffectsRenderer.Hide();
+            if (os == _activeOptic)
+            {
+                ReticleRenderer.Hide();
+                ScopeEffectsRenderer.Hide();
+            }
+
             CheckAndUpdate("OnOpticDisabled");
         }
 
