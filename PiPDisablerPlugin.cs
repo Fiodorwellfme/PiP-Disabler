@@ -340,14 +340,13 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             AutoFovFromScope = Config.Bind("General", "AutoFovFromScope", true,
                 new ConfigDescription(
-                    "Auto-detect magnification from the scope's zoom data (ScopeZoomHandler). " +
-                "Works for variable-zoom scopes. Falls back to DefaultZoom for fixed scopes.",
+                    "Auto-detect magnification from the optic template zoom data. " +
+                    "Uses DefaultZoom when template zoom data is unavailable.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             ScopedFov = Config.Bind("General", "ScopedFov", 15f,
                 new ConfigDescription(
-                    "FOV (degrees) for FOV zoom fallback mode. Lower = more zoom. " +
-                    "Used for FOV zoom.",
+                    "Manual FOV (degrees) used when AutoFovFromScope is disabled. Lower = more zoom.",
                     new AcceptableValueRange<float>(5f, 75f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             FovAnimationDuration = Config.Bind("General", "FovAnimationDuration", 0.25f,

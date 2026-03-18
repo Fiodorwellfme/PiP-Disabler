@@ -12,7 +12,7 @@ namespace PiPDisabler
     ///
     /// Output covers:
     ///   - Active scope hierarchy (name, root, mode)
-    ///   - Current magnification and ScopeZoomHandler data
+    ///   - Current magnification and template zoom range
     ///   - All active cut-plane config values
     ///   - BackLens position and resolved plane normal
     ///   - Target mesh names that WOULD be cut
@@ -94,21 +94,14 @@ namespace PiPDisabler
             sb.AppendLine($"[Diagnostics] Scope root       : {rootName}");
 
             // ── Magnification ─────────────────────────────────────────────────
-            float mag = 1f;
             try
             {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>()
-                       ?? os.GetComponentInChildren<ScopeZoomHandler>();
-                if (szh != null)
-                {
-                    float fov = szh.FiledOfView; // EFT typo "Filed"
-                    mag = 35f / fov;
-                    sb.AppendLine($"[Diagnostics] Magnification   : {mag:F2}x  (ScopeZoomHandler.FiledOfView = {fov:F3})");
-                }
+                float mag = FovController.GetEffectiveMagnification();
+                var (minZoom, maxZoom) = FovController.GetTemplateZoomRange();
+                if (maxZoom > 0.1f)
+                    sb.AppendLine($"[Diagnostics] Magnification   : {mag:F2}x  (Template range {minZoom:F2}x-{maxZoom:F2}x)");
                 else
-                {
-                    sb.AppendLine($"[Diagnostics] Magnification   : no ScopeZoomHandler — using DefaultZoom ({PiPDisablerPlugin.DefaultZoom.Value:F1}x)");
-                }
+                    sb.AppendLine($"[Diagnostics] Magnification   : {mag:F2}x  (DefaultZoom fallback)");
             }
             catch (System.Exception ex)
             {

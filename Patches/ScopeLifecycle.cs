@@ -241,9 +241,8 @@ namespace PiPDisabler
                 // when freelook ends via FreelookTracker.OnFreelookExit().
                 if (!FreelookTracker.IsFreelooking)
                 {
-                    // Show reticle for the new mode (with magnification scaling)
-                    float modeMag = ZoomController.GetMagnification(os);
-                    ReticleRenderer.Show(os, modeMag);
+                    // Show reticle for the new mode.
+                    ReticleRenderer.Show(os);
 
                     // Animated FOV change for mode switch (uses configured duration)
                     ApplyFov(true);
@@ -389,11 +388,10 @@ namespace PiPDisabler
             // Keep lens hidden (re-kill if EFT restores geometry)
             LensTransparency.EnsureHidden();
 
-            // Update reticle position/rotation/scale and effects
+            // Update reticle/effect attachment state.
             if (_activeOptic != null)
             {
-                float mag = ZoomController.GetMagnification(_activeOptic);
-                ReticleRenderer.UpdateTransform(mag);
+                ReticleRenderer.UpdateTransform();
                 ScopeEffectsRenderer.UpdateTransform();
             }
 
@@ -827,13 +825,10 @@ namespace PiPDisabler
             //     are already empty-meshed above, so they won't end up in the list).
             ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
 
-            // 3. Get magnification for reticle scaling and zoom
-            float mag = ZoomController.GetMagnification(os);
+            // 3. Show reticle overlay at the lens position
+            ReticleRenderer.Show(os);
 
-            // 4. Show reticle overlay at the lens position, scaled for magnification
-            ReticleRenderer.Show(os, mag);
-
-            // 4b. Show lens vignette + scope shadow effects
+            // 4. Show lens vignette + scope shadow effects
             ScopeEffectsRenderer.Show();
 
             // 5. Mesh surgery (once)

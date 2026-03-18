@@ -59,10 +59,6 @@ namespace PiPDisabler
         private static int  _debugFrameCount;
         private const  int  DebugLogFrames = 10;
 
-        // Scale tracking
-        private static float _baseScale;
-        private static float _lastMag = 1f;
-
         // Cached transforms
         private static Transform _opticTransform;   // OpticSight   — for forward (downrange)
 
@@ -74,12 +70,6 @@ namespace PiPDisabler
 
         // World-space TRS for the reticle quad (rebuilt in onPreCull)
         private static Matrix4x4 _reticleMatrix = Matrix4x4.identity;
-
-        // Rendering state
-        private static bool _settled;
-
-        // Camera alignment state
-        private static bool _alignmentActive;
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -133,10 +123,10 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Show the reticle.  Creates the mesh/material, attaches the CommandBuffer
+        /// Show the reticle. Creates the mesh/material, attaches the CommandBuffer
         /// to the main camera, and registers the onPreCull hook.
         /// </summary>
-        public static void Show(OpticSight os, float magnification = 1f)
+        public static void Show(OpticSight os)
         {
             if (!PiPDisablerPlugin.GetShowReticle()) return;
             if (_savedMarkTex == null || os == null) return;
@@ -150,25 +140,10 @@ namespace PiPDisabler
                 _reticleMat.mainTexture = _savedMarkTex;
                 ApplyHorizontalFlip();
 
-                // Scale
-                float configBase = PiPDisablerPlugin.GetReticleBaseSize();
-                _baseScale = (configBase > 0f)
-                    ? configBase
-                    : PiPDisablerPlugin.GetCylinderRadius() * 2f;
-                if (_baseScale < 0.001f) _baseScale = 0.030f;
-
-                if (magnification < 1f) magnification = 1f;
-                _lastMag = magnification;
-
-                // Attach CommandBuffer + onPreCull
                 AttachToCamera();
 
-                _settled = true;
-                _alignmentActive = true;
-
                 PiPDisablerPlugin.LogInfo(
-                    $"[Reticle] Showing: base={_baseScale:F4} mag={magnification:F1}x " +
-                    $"(camera-aligned centered rendering)");
+                    $"[Reticle] Showing: size={GetReticleSize():F4} (camera-aligned centered rendering)");
             }
             catch (System.Exception e)
             {
@@ -177,18 +152,13 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Per-frame update from ScopeLifecycle.Tick():
-        /// handles scale changes and ensures the CommandBuffer is attached.
+        /// Per-frame update from ScopeLifecycle.Tick().
         /// </summary>
-        public static void UpdateTransform(float magnification)
+        public static void UpdateTransform()
         {
             if (_cmdBuffer == null) return;
 
             EnsureCorrectCameraEvent();
-
-            if (magnification < 1f) magnification = 1f;
-            if (Mathf.Abs(magnification - _lastMag) >= 0.01f)
-                _lastMag = magnification;
 
             var mainCam = PiPDisablerPlugin.GetMainCamera();
             if (mainCam != null && mainCam != _attachedCamera)
@@ -197,8 +167,6 @@ namespace PiPDisabler
 
         public static void Hide()
         {
-            _alignmentActive = false;
-            _settled = false;
             DetachFromCamera();
         }
 
@@ -210,23 +178,7 @@ namespace PiPDisabler
             _savedMarkTex      = null;
             _savedMaskTex      = null;
             _opticTransform    = null;
-            _lastMag           = 1f;
-            _baseScale         = 0f;
-            _settled           = false;
         }
-
-        /// <summary>
-        /// Returns true if camera alignment is currently active while scoped.
-        /// Used by ScopeEffectsRenderer to know that vignette/shadow can also
-        /// render centered rather than tracking lens position.
-        /// </summary>
-        public static bool IsAlignmentActive => _alignmentActive && _settled;
-
-        /// <summary>
-        /// Returns the current optic transform (for ScopeEffectsRenderer to
-        /// share camera alignment).
-        /// </summary>
-        public static Transform OpticTransform => _opticTransform;
 
         /// <summary>
         /// Provide the scope housing renderers that will be drawn into the stencil
@@ -338,7 +290,7 @@ namespace PiPDisabler
         private static void OnPreCullCallback(Camera cam)
         {
             if (cam != _attachedCamera) return;
-            if (_cmdBuffer == null || _reticleMat == null || !_settled) return;
+            if (_cmdBuffer == null || _reticleMat == null || _opticTransform == null) return;
 
             // ── Camera alignment ─────────────────────────────────────────
             // Override the camera's rotation to look exactly where the scope
@@ -346,24 +298,12 @@ namespace PiPDisabler
             // (PWA, animation, IK) and OpticComponentUpdater.LateUpdate()
             // have updated transforms, but before Unity starts rendering.
             //
-            // We use the optic camera's transform cached by PiPDisabler.
-            // OpticComponentUpdater.LateUpdate() syncs this transform to the
-            // scope's look direction every frame.  We let LateUpdate run
-            // (v4.5.2 fix), so the transform is always up to date even though
-            // the optic camera itself can't render.
-            if (_alignmentActive && !FreelookTracker.IsFreelooking)
+            // We use the live optic transform after EFT has updated sway/aim.
+            if (!FreelookTracker.IsFreelooking)
             {
-                // Primary source: optic camera transform kept in sync by EFT updater.
-                // Fallback: optic transform itself, so sway-follow remains active even
-                // if optic camera cache is temporarily unavailable.
-                //
                 // Skipped during freelook: the player is looking around independently
                 // of the scope direction, so the camera must NOT be locked to the optic.
-                Transform swaySource = PiPDisabler.OpticCameraTransform ?? _opticTransform;
-                if (swaySource != null)
-                {
-                    cam.transform.rotation = swaySource.rotation;
-                }
+                cam.transform.rotation = _opticTransform.rotation;
             }
 
             RebuildMatrix(cam);
@@ -390,7 +330,7 @@ namespace PiPDisabler
             const float referenceLensDistance = 0.075f;
             float referenceTanHalfFov = Mathf.Max(0.01f, Mathf.Tan(referenceFovDeg * Mathf.Deg2Rad * 0.5f));
 
-            float angularSize = _baseScale / referenceLensDistance;
+            float angularSize = GetReticleSize() / referenceLensDistance;
             float ndcSize = angularSize / referenceTanHalfFov;
             ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
@@ -398,6 +338,12 @@ namespace PiPDisabler
             float aspect = GetActiveAspect(cam);
             Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
             _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
+        }
+
+        private static float GetReticleSize()
+        {
+            float configBase = PiPDisablerPlugin.GetReticleBaseSize();
+            return configBase > 0.001f ? configBase : 0.030f;
         }
 
         /// <summary>

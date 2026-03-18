@@ -148,8 +148,7 @@ namespace PiPDisabler
             var os = ScopeLifecycle.ActiveOptic;
             if (os != null)
             {
-                float mag = ZoomController.GetMagnification(os);
-                ReticleRenderer.Show(os, mag);
+                ReticleRenderer.Show(os);
                 ScopeEffectsRenderer.Show();
             }
         }
