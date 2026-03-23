@@ -53,7 +53,7 @@ namespace PiPDisabler
         private static Material            _lensStencilMat;  // lens pass: write 1 to stencil, no colour
         private static Material            _stencilDebugMat; // debug overlay: red tint where lens writes
         private static readonly List<LensTransparency.LensMaskEntry> _lensMaskEntries = new List<LensTransparency.LensMaskEntry>();
-        private static readonly Dictionary<Mesh, CachedMeshData> _coverageMeshCache = new Dictionary<Mesh, CachedMeshData>();
+        private static readonly Dictionary<Mesh, Vector3[]> _coverageMeshCache = new Dictionary<Mesh, Vector3[]>();
         private static bool                _hasStencilSupport; // true when UI/Default was found
 
         // Debug frame counter — logs stencil state for first N frames after scope enter
@@ -86,12 +86,6 @@ namespace PiPDisabler
         private static bool _alignmentActive;
 
         private const int CoverageSamplesPerAxis = 9;
-
-        private sealed class CachedMeshData
-        {
-            public Vector3[] Vertices;
-            public int[][] SubMeshTriangles;
-        }
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -599,60 +593,65 @@ namespace PiPDisabler
                 if (entry.Renderer == null || entry.Mesh == null) continue;
                 if (!entry.Renderer.gameObject.activeInHierarchy) continue;
 
-                if (IsClipPointInsideMesh(entry, viewProjection, samplePoint))
+                if (IsClipPointInsideProjectedLens(entry, viewProjection, samplePoint))
                     return true;
             }
 
             return false;
         }
 
-        private static bool IsClipPointInsideMesh(LensTransparency.LensMaskEntry entry,
-                                                  Matrix4x4 viewProjection,
-                                                  Vector2 samplePoint)
+        private static bool IsClipPointInsideProjectedLens(LensTransparency.LensMaskEntry entry,
+                                                           Matrix4x4 viewProjection,
+                                                           Vector2 samplePoint)
         {
-            CachedMeshData meshData = GetCachedMeshData(entry.Mesh);
-            if (meshData == null || meshData.Vertices == null || meshData.Vertices.Length == 0) return false;
+            Vector3[] vertices = GetCachedMeshVertices(entry.Mesh);
+            if (vertices == null || vertices.Length == 0) return false;
 
             Matrix4x4 localToWorld = entry.Renderer.localToWorldMatrix;
-            int subMeshCount = meshData.SubMeshTriangles != null ? meshData.SubMeshTriangles.Length : 0;
+            bool hasProjectedPoint = false;
+            float minX = 0f;
+            float maxX = 0f;
+            float minY = 0f;
+            float maxY = 0f;
 
-            for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
+            for (int i = 0; i < vertices.Length; i++)
             {
-                int[] indices = meshData.SubMeshTriangles[subMesh];
-                if (indices == null || indices.Length < 3) continue;
+                if (!TryProjectToClip(vertices, i, localToWorld, viewProjection, out Vector2 clipPoint))
+                    continue;
 
-                for (int i = 0; i <= indices.Length - 3; i += 3)
+                if (!hasProjectedPoint)
                 {
-                    if (!TryProjectToClip(meshData.Vertices, indices[i], localToWorld, viewProjection, out Vector2 a) ||
-                        !TryProjectToClip(meshData.Vertices, indices[i + 1], localToWorld, viewProjection, out Vector2 b) ||
-                        !TryProjectToClip(meshData.Vertices, indices[i + 2], localToWorld, viewProjection, out Vector2 c))
-                        continue;
-
-                    if (IsPointInTriangle(samplePoint, a, b, c))
-                        return true;
+                    minX = maxX = clipPoint.x;
+                    minY = maxY = clipPoint.y;
+                    hasProjectedPoint = true;
+                    continue;
                 }
+
+                if (clipPoint.x < minX) minX = clipPoint.x;
+                if (clipPoint.x > maxX) maxX = clipPoint.x;
+                if (clipPoint.y < minY) minY = clipPoint.y;
+                if (clipPoint.y > maxY) maxY = clipPoint.y;
             }
 
-            return false;
+            if (!hasProjectedPoint) return false;
+
+            Vector2 center = new Vector2((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
+            float radiusX = Mathf.Max(0.0001f, (maxX - minX) * 0.5f);
+            float radiusY = Mathf.Max(0.0001f, (maxY - minY) * 0.5f);
+
+            float dx = (samplePoint.x - center.x) / radiusX;
+            float dy = (samplePoint.y - center.y) / radiusY;
+            return (dx * dx) + (dy * dy) <= 1f;
         }
 
-        private static CachedMeshData GetCachedMeshData(Mesh mesh)
+        private static Vector3[] GetCachedMeshVertices(Mesh mesh)
         {
             if (mesh == null) return null;
 
-            if (_coverageMeshCache.TryGetValue(mesh, out CachedMeshData cached))
+            if (_coverageMeshCache.TryGetValue(mesh, out Vector3[] cached))
                 return cached;
 
-            int subMeshCount = Mathf.Max(1, mesh.subMeshCount);
-            cached = new CachedMeshData
-            {
-                Vertices = mesh.vertices,
-                SubMeshTriangles = new int[subMeshCount][]
-            };
-
-            for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
-                cached.SubMeshTriangles[subMesh] = mesh.GetTriangles(subMesh);
-
+            cached = mesh.vertices;
             _coverageMeshCache[mesh] = cached;
             return cached;
         }
@@ -673,22 +672,6 @@ namespace PiPDisabler
             float invW = 1f / clip.w;
             clipPoint = new Vector2(clip.x * invW, clip.y * invW);
             return true;
-        }
-
-        private static bool IsPointInTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
-        {
-            float d1 = SignedArea(p, a, b);
-            float d2 = SignedArea(p, b, c);
-            float d3 = SignedArea(p, c, a);
-
-            bool hasNeg = d1 < 0f || d2 < 0f || d3 < 0f;
-            bool hasPos = d1 > 0f || d2 > 0f || d3 > 0f;
-            return !(hasNeg && hasPos);
-        }
-
-        private static float SignedArea(Vector2 p1, Vector2 p2, Vector2 p3)
-        {
-            return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
         }
 
         // ── Private helpers ─────────────────────────────────────────────────
