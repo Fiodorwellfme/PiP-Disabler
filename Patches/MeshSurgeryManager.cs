@@ -1198,6 +1198,17 @@ namespace PiPDisabler
                 if (logCandidates)
                     relSearchPath = GetRelativePath(mf.transform, searchRoot);
 
+                var renderer = mf.GetComponent<Renderer>();
+                if (renderer != null && LensTransparency.IsLensSurfaceRenderer(renderer))
+                {
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip lens path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
+
                 result.Add(mf);
 
                 if (logCandidates)

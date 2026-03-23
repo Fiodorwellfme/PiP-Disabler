@@ -218,8 +218,8 @@ namespace PiPDisabler
                 // Re-hide lenses (the new mode's lens might not be hidden yet)
                 LensTransparency.HideAllLensSurfaces(os);
 
-                // Recollect housing + weapon renderers for the new mode's geometry.
-                ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
+                // Recollect lens renderers for the new mode's geometry.
+                ReticleRenderer.SetLensMaskEntries(CollectStencilEntries(os));
 
                 // Notify FOV controller the mode changed so it re-reads ScopeCameraData
                 FovController.OnModeSwitch();
@@ -386,7 +386,7 @@ namespace PiPDisabler
                 LensTransparency.EnsureHidden();
             }
 
-            // Keep lens hidden (re-kill if EFT restores geometry)
+            // Keep lens transparent if EFT restores the original materials
             LensTransparency.EnsureHidden();
 
             // Update reticle position/rotation/scale and effects
@@ -821,9 +821,8 @@ namespace PiPDisabler
             // 2. Hide ALL lens surfaces in the scope hierarchy (once)
             LensTransparency.HideAllLensSurfaces(os);
 
-            // 2b. Collect housing + weapon renderers for reticle stencil mask (lens surfaces
-            //     are already empty-meshed above, so they won't end up in the list).
-            ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
+            // 2b. Collect lens renderers for the reticle stencil mask.
+            ReticleRenderer.SetLensMaskEntries(CollectStencilEntries(os));
 
             // 3. Get magnification for reticle scaling and zoom
             float mag = ZoomController.GetMagnification(os);
@@ -934,18 +933,12 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Collects stencil-mask renderers: scope housing + (optionally) weapon body.
-        /// Weapon renderers are only added when StencilIncludeWeaponMeshes is enabled.
+        /// Collects stencil-mask renderers from the scope lens only.
+        /// The housing and weapon body are intentionally excluded.
         /// </summary>
-        private static List<Renderer> CollectStencilRenderers(OpticSight os)
+        private static List<LensTransparency.LensMaskEntry> CollectStencilEntries(OpticSight os)
         {
-            var housing = LensTransparency.CollectHousingRenderers(os);
-            if (PiPDisablerPlugin.StencilIncludeWeaponMeshes != null
-                && PiPDisablerPlugin.StencilIncludeWeaponMeshes.Value)
-            {
-                housing.AddRange(LensTransparency.CollectWeaponRenderers(os, housing));
-            }
-            return housing;
+            return LensTransparency.CollectLensMaskEntries(os);
         }
 
         /// <summary>

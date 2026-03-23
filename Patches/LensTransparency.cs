@@ -6,8 +6,7 @@ using UnityEngine;
 namespace PiPDisabler
 {
     /// <summary>
-    /// Makes scope lens surfaces invisible by REPLACING THEIR MESH with an empty mesh
-    /// AND forcing material properties to transparent as belt-and-suspenders.
+    /// Makes scope lens surfaces invisible by replacing their live mesh with an empty mesh.
     ///
     /// Why previous approaches failed:
     ///   - renderer.enabled = false:      EFT re-enables it, or CommandBuffer ignores it
@@ -21,32 +20,27 @@ namespace PiPDisabler
     ///   CommandBuffer, Graphics.DrawMesh, DrawRenderer ALL need geometry.
     ///   Zero geometry = zero rendering. Period.
     ///
-    /// v4.7 additions:
-    ///   - Broader IsLensSurface detection (glass, frontlens, material name matching)
-    ///   - Material property forcing (_Color alpha=0, _SwitchToSight=0) as fallback
-    ///   - Expanded search root (climbs through mod_scope/mount parents like MeshSurgeryManager)
-    ///   - EnsureHidden now accepts an exclusion renderer so it always runs even when
-    ///     while scoped.
+    /// Cached original lens meshes are reused by the reticle stencil pass while ADS.
     /// </summary>
     internal static class LensTransparency
     {
+        internal struct LensMaskEntry
+        {
+            public Renderer Renderer;
+            public Mesh Mesh;
+        }
+
         private struct HiddenEntry
         {
             public MeshFilter Filter;
             public SkinnedMeshRenderer Skinned;
             public Mesh OriginalMesh;
             public Renderer Renderer;
-            public bool WasEnabled;
             public bool WasForceOff;
-            public Material[] OriginalMaterials; // saved for property restore
         }
 
         private static readonly List<HiddenEntry> _hidden = new List<HiddenEntry>(16);
         private static Mesh _emptyMesh;
-
-        // Shader property IDs (cached for perf)
-        private static readonly int _propColor = Shader.PropertyToID("_Color");
-        private static readonly int _propSwitchToSight = Shader.PropertyToID("_SwitchToSight");
 
         private static Mesh GetEmptyMesh()
         {
@@ -66,9 +60,8 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Called on scope enter. Finds and removes geometry from ALL lens surfaces.
-        /// Now searches from an expanded root (same logic as MeshSurgeryManager) to
-        /// catch glass/lens meshes that live above scopeRoot in the hierarchy.
+        /// Called on scope enter. Finds and empties ALL lens surfaces.
+        /// Searches from an expanded root to catch glass/lens meshes above scopeRoot.
         /// </summary>
         public static void HideAllLensSurfaces(OpticSight os)
         {
@@ -90,7 +83,7 @@ namespace PiPDisabler
             {
                 if (r == null) continue;
                 if (!r.gameObject.activeInHierarchy) continue;
-                if (IsLensSurface(r) && !ShouldSkipForCollimator(r))
+                if (IsLensSurfaceRenderer(r) && !ShouldSkipForCollimator(r))
                 {
                     KillMesh(r);
                     killed++;
@@ -114,17 +107,8 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Per-frame: re-apply empty mesh if EFT somehow restores geometry.
-        /// Also keep renderer disabled as secondary measure.
-        ///
-        /// Accepts an optional exclusion renderer (the ZoomController's managed lens)
-        /// so this can safely run every frame while scoped.
-        ///
-        /// NOTE: ForceMaterialTransparent is intentionally NOT called here per-frame.
-        /// r.materials allocates new material instances every call → massive GC pressure.
-        /// The mesh is already empty (zero geometry = nothing to draw) and
-        /// forceRenderingOff = true is set, so material forcing is unnecessary.
-        /// Materials are forced once during KillMesh().
+        /// Per-frame: re-apply the empty mesh if EFT restores geometry.
+        /// Accepts an optional exclusion renderer so this can safely run every frame while scoped.
         /// </summary>
         public static void EnsureHidden(Renderer excludeRenderer = null)
         {
@@ -132,8 +116,6 @@ namespace PiPDisabler
             for (int i = 0; i < _hidden.Count; i++)
             {
                 var e = _hidden[i];
-
-                // No special per-lens exclusions are needed here
                 if (excludeRenderer != null && e.Renderer == excludeRenderer)
                     continue;
 
@@ -187,11 +169,6 @@ namespace PiPDisabler
                     if (e.Renderer != null)
                     {
                         e.Renderer.forceRenderingOff = e.WasForceOff;
-                        if (e.OriginalMaterials != null)
-                        {
-                            try { e.Renderer.sharedMaterials = e.OriginalMaterials; }
-                            catch { }
-                        }
                         PiPDisablerPlugin.LogVerbose(
                             $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' forceOff={e.WasForceOff}");
                     }
@@ -228,18 +205,13 @@ namespace PiPDisabler
                 mf.sharedMesh = GetEmptyMesh();
             }
 
-            Material[] origMats = null;
-            try { origMats = r.sharedMaterials; } catch { }
-
             var entry = new HiddenEntry
             {
                 Filter = mf,
                 Skinned = smr,
                 OriginalMesh = origMesh,
                 Renderer = r,
-                WasEnabled = r.enabled,
                 WasForceOff = r.forceRenderingOff,
-                OriginalMaterials = origMats,
             };
             _hidden.Add(entry);
 
@@ -247,53 +219,10 @@ namespace PiPDisabler
             // dynamically between optic/collimator modes.
             r.forceRenderingOff = true;
 
-            // Force material properties to transparent as tertiary kill switch.
-            // This catches cases where EFT uses Graphics.DrawMesh with the material
-            // reference — even with empty mesh, the material state gets cleaned up.
-            ForceMaterialTransparent(r);
-
             PiPDisablerPlugin.LogInfo(
                 $"[LensTransparency] MESH DESTROYED: '{r.gameObject.name}' " +
                 $"(had {(origMesh != null ? origMesh.vertexCount.ToString() : "?")} verts → 0) " +
                 $"MeshFilter={(mf != null ? "yes" : "NO")}, Skinned={(smr != null ? "yes" : "NO")}");
-        }
-
-        /// <summary>
-        /// Force all materials on a renderer to be fully transparent.
-        /// Belt-and-suspenders: even if EFT's CommandBuffer re-enables the mesh,
-        /// the material will render nothing visible.
-        /// </summary>
-        private static void ForceMaterialTransparent(Renderer r)
-        {
-            if (r == null) return;
-            try
-            {
-                var mats = r.materials; // creates instances (safe to modify)
-                bool changed = false;
-                for (int i = 0; i < mats.Length; i++)
-                {
-                    var m = mats[i];
-                    if (m == null) continue;
-
-                    if (m.HasProperty(_propColor))
-                    {
-                        m.SetColor(_propColor, new Color(0, 0, 0, 0));
-                        changed = true;
-                    }
-
-                    if (m.HasProperty(_propSwitchToSight))
-                    {
-                        m.SetFloat(_propSwitchToSight, 0f);
-                        changed = true;
-                    }
-
-                    // Force transparent render queue so it can't occlude anything
-                    m.renderQueue = 4000;
-                }
-                if (changed)
-                    r.materials = mats;
-            }
-            catch { }
         }
 
         /// <summary>
@@ -307,7 +236,7 @@ namespace PiPDisabler
         ///
         /// Uses OrdinalIgnoreCase to avoid ToLowerInvariant() string allocations.
         /// </summary>
-        private static bool IsLensSurface(Renderer r)
+        internal static bool IsLensSurfaceRenderer(Renderer r)
         {
             // --- Layer 1: GameObject name ---
             var goName = r.gameObject.name;
@@ -455,6 +384,41 @@ namespace PiPDisabler
         }
 
         /// <summary>
+        /// Returns cached lens meshes for the stencil pass while the live lens renderers
+        /// stay empty-meshed during ADS.
+        /// </summary>
+        public static List<LensMaskEntry> CollectLensMaskEntries(OpticSight os)
+        {
+            var result = new List<LensMaskEntry>();
+            if (os == null) return result;
+
+            Transform searchRoot = FindScopeSearchRoot(os.transform);
+            for (int i = 0; i < _hidden.Count; i++)
+            {
+                var entry = _hidden[i];
+                if (entry.Renderer == null || entry.OriginalMesh == null) continue;
+                if (!entry.Renderer.gameObject.activeInHierarchy) continue;
+                if (entry.Renderer.transform != searchRoot && !entry.Renderer.transform.IsChildOf(searchRoot)) continue;
+
+                result.Add(new LensMaskEntry
+                {
+                    Renderer = entry.Renderer,
+                    Mesh = entry.OriginalMesh,
+                });
+
+                PiPDisablerPlugin.LogInfo(
+                    $"[LensTransparency] LensMask +mesh: go='{entry.Renderer.gameObject.name}'" +
+                    $" mesh='{entry.OriginalMesh.name}' verts={entry.OriginalMesh.vertexCount}");
+            }
+
+            PiPDisablerPlugin.LogInfo(
+                $"[LensTransparency] CollectLensMaskEntries: {result.Count} entry(s)" +
+                $" (searchRoot='{searchRoot?.name ?? "null"}' from '{os.name}')");
+
+            return result;
+        }
+
+        /// <summary>
         /// Returns all active, non-lens renderers in the scope hierarchy.
         /// These are the scope housing/body meshes that should act as a stencil
         /// mask so the reticle is hidden wherever the housing covers screen-centre.
@@ -471,7 +435,7 @@ namespace PiPDisabler
             {
                 if (r == null) continue;
                 if (!r.gameObject.activeInHierarchy) continue;
-                if (IsLensSurface(r)) continue;
+                if (IsLensSurfaceRenderer(r)) continue;
                 if (ShouldSkipForCollimator(r)) continue;
 
                 // Must have real geometry (lens renderers are already empty-meshed, but
@@ -565,7 +529,7 @@ namespace PiPDisabler
                 if (r == null) continue;
                 if (!r.gameObject.activeInHierarchy) continue;
                 if (excludeSet.Contains(r)) continue;
-                if (IsLensSurface(r)) continue;
+                if (IsLensSurfaceRenderer(r)) continue;
                 if (ShouldSkipForCollimator(r)) continue;
 
                 var mf  = r.GetComponent<MeshFilter>();
@@ -636,7 +600,7 @@ namespace PiPDisabler
                     meshName = mf.sharedMesh.name ?? "";
                 }
 
-                bool isLens = IsLensSurface(r);
+                bool isLens = IsLensSurfaceRenderer(r);
                 string path = GetRelativePath(r.transform, root);
 
                 PiPDisablerPlugin.LogInfo(
