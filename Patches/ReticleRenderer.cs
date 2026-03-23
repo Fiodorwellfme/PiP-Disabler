@@ -52,7 +52,7 @@ namespace PiPDisabler
         private static Material            _stencilClearMat; // full-screen quad: write 0 to stencil
         private static Material            _lensStencilMat;  // lens pass: write 1 to stencil, no colour
         private static Material            _stencilDebugMat; // debug overlay: red tint where lens writes
-        private static readonly List<Renderer> _lensMaskRenderers = new List<Renderer>();
+        private static readonly List<LensTransparency.LensMaskEntry> _lensMaskEntries = new List<LensTransparency.LensMaskEntry>();
         private static bool                _hasStencilSupport; // true when UI/Default was found
 
         // Debug frame counter — logs stencil state for first N frames after scope enter
@@ -205,7 +205,7 @@ namespace PiPDisabler
         public static void Cleanup()
         {
             Hide();
-            _lensMaskRenderers.Clear();
+            _lensMaskEntries.Clear();
             _debugFrameCount   = 0;
             _savedMarkTex      = null;
             _savedMaskTex      = null;
@@ -229,19 +229,18 @@ namespace PiPDisabler
         public static Transform OpticTransform => _opticTransform;
 
         /// <summary>
-        /// Provide the scope lens renderers that will be drawn into the stencil
-        /// buffer each frame so the reticle only appears where the lens is visible.
+        /// Provide cached lens mesh entries for the stencil pass.
         /// Pass null or an empty list to disable lens masking.
         /// </summary>
-        public static void SetLensMaskRenderers(List<Renderer> renderers)
+        public static void SetLensMaskEntries(List<LensTransparency.LensMaskEntry> entries)
         {
-            _lensMaskRenderers.Clear();
+            _lensMaskEntries.Clear();
             _debugFrameCount = 0;
-            if (renderers != null)
-                _lensMaskRenderers.AddRange(renderers);
+            if (entries != null)
+                _lensMaskEntries.AddRange(entries);
 
             PiPDisablerPlugin.LogInfo(
-                $"[Reticle] Lens mask: {_lensMaskRenderers.Count} renderer(s) registered" +
+                $"[Reticle] Lens mask: {_lensMaskEntries.Count} entry(s) registered" +
                 $" stencilSupport={_hasStencilSupport}");
         }
 
@@ -401,9 +400,9 @@ namespace PiPDisabler
         /// <summary>
         /// Rebuild the CommandBuffer.
         ///
-        /// When lens renderers are available and UI/Default was found (stencil-capable):
+        /// When cached lens meshes are available and UI/Default was found (stencil-capable):
         ///   1. Clear stencil to 0 with a full-screen clip-space quad.
-        ///   2. Draw the transparent lens meshes in world-space, writing 1 to stencil where
+        ///   2. Draw the cached lens meshes in world-space, writing 1 to stencil where
         ///      the lens passes the depth test.
         ///   3. Draw the reticle with stencil test Equal-1, so it only appears inside the
         ///      visible lens.
@@ -434,22 +433,22 @@ namespace PiPDisabler
                 _cmdBuffer.SetViewport(GetSceneViewport(cam));
             }
 
-            bool useStencil = _hasStencilSupport && _lensMaskRenderers.Count > 0
+            bool useStencil = _hasStencilSupport && _lensMaskEntries.Count > 0
                               && _stencilClearMat != null && _lensStencilMat != null;
 
             // ── Per-frame debug logging (first N frames after scope enter) ────────────
             if (_debugFrameCount < DebugLogFrames)
             {
                 int activeCount = 0;
-                for (int i = 0; i < _lensMaskRenderers.Count; i++)
+                for (int i = 0; i < _lensMaskEntries.Count; i++)
                 {
-                    var r = _lensMaskRenderers[i];
-                    if (r != null && r.gameObject.activeInHierarchy) activeCount++;
+                    var entry = _lensMaskEntries[i];
+                    if (entry.Renderer != null && entry.Renderer.gameObject.activeInHierarchy) activeCount++;
                 }
 
                 PiPDisablerPlugin.LogInfo(
                     $"[Reticle] Frame {_debugFrameCount + 1}/{DebugLogFrames}: " +
-                    $"useStencil={useStencil} lensTotal={_lensMaskRenderers.Count} " +
+                    $"useStencil={useStencil} lensTotal={_lensMaskEntries.Count} " +
                     $"lensActive={activeCount} stencilSupport={_hasStencilSupport}");
                 _debugFrameCount++;
             }
@@ -466,11 +465,10 @@ namespace PiPDisabler
 
                 // ── Step 2: write lens visibility to stencil (world-space) ──────────
                 _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
-                for (int i = 0; i < _lensMaskRenderers.Count; i++)
+                for (int i = 0; i < _lensMaskEntries.Count; i++)
                 {
-                    var r = _lensMaskRenderers[i];
-                    if (r == null || !r.gameObject.activeInHierarchy) continue;
-                    _cmdBuffer.DrawRenderer(r, _lensStencilMat);
+                    var entry = _lensMaskEntries[i];
+                    DrawLensMaskEntry(entry);
                 }
 
                 // ── Step 3: draw reticle only inside the visible lens (clip-space) ──
@@ -494,6 +492,17 @@ namespace PiPDisabler
             }
 
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
+        }
+
+        private static void DrawLensMaskEntry(LensTransparency.LensMaskEntry entry)
+        {
+            if (entry.Renderer == null || entry.Mesh == null) return;
+            if (!entry.Renderer.gameObject.activeInHierarchy) return;
+
+            int subMeshCount = Mathf.Max(1, entry.Mesh.subMeshCount);
+            Matrix4x4 matrix = entry.Renderer.localToWorldMatrix;
+            for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
+                _cmdBuffer.DrawMesh(entry.Mesh, matrix, _lensStencilMat, subMesh, -1);
         }
 
         // ── Private helpers ─────────────────────────────────────────────────

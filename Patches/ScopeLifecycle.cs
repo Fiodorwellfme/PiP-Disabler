@@ -219,7 +219,7 @@ namespace PiPDisabler
                 LensTransparency.HideAllLensSurfaces(os);
 
                 // Recollect lens renderers for the new mode's geometry.
-                ReticleRenderer.SetLensMaskRenderers(CollectStencilRenderers(os));
+                ReticleRenderer.SetLensMaskEntries(CollectStencilEntries(os));
 
                 // Notify FOV controller the mode changed so it re-reads ScopeCameraData
                 FovController.OnModeSwitch();
@@ -822,7 +822,7 @@ namespace PiPDisabler
             LensTransparency.HideAllLensSurfaces(os);
 
             // 2b. Collect lens renderers for the reticle stencil mask.
-            ReticleRenderer.SetLensMaskRenderers(CollectStencilRenderers(os));
+            ReticleRenderer.SetLensMaskEntries(CollectStencilEntries(os));
 
             // 3. Get magnification for reticle scaling and zoom
             float mag = ZoomController.GetMagnification(os);
@@ -936,9 +936,9 @@ namespace PiPDisabler
         /// Collects stencil-mask renderers from the scope lens only.
         /// The housing and weapon body are intentionally excluded.
         /// </summary>
-        private static List<Renderer> CollectStencilRenderers(OpticSight os)
+        private static List<LensTransparency.LensMaskEntry> CollectStencilEntries(OpticSight os)
         {
-            return LensTransparency.CollectLensMaskRenderers(os);
+            return LensTransparency.CollectLensMaskEntries(os);
         }
 
         /// <summary>
