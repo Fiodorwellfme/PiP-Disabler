@@ -59,6 +59,18 @@ namespace PiPDisabler
         private static readonly Dictionary<OpticSight, int> _ignoreOnDisableFrame =
             new Dictionary<OpticSight, int>(32);
 
+        private static PropertyInfo _opticCameraManagerProperty;
+        private static bool _opticCameraManagerSearched;
+        private static MemberInfo _currentOpticSightMember;
+        private static bool _currentOpticSightSearched;
+        private static MemberInfo _opticRetriceMember;
+        private static bool _opticRetriceSearched;
+        private static MethodInfo _opticRetriceSetOpticSightMethod;
+        private static bool _opticRetriceSetOpticSightSearched;
+        private static MethodInfo _opticRetriceClearMethod;
+        private static bool _opticRetriceClearSearched;
+        private static bool _allowForcedLensFade;
+
 internal static void TickBaseOpticCamera()
         {
             if (!PiPDisablerPlugin.DisablePiP.Value) return;
@@ -139,6 +151,143 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
     return false;
 }
+
+        internal static void CleanupVanillaOpticState(OpticSight opticSight)
+        {
+            try
+            {
+                var manager = GetOpticCameraManager();
+                if (manager != null)
+                {
+                    SetCurrentOpticSight(manager, null);
+
+                    var opticRetrice = GetOpticRetrice(manager);
+                    if (opticRetrice != null)
+                    {
+                        SetOpticRetriceSight(opticRetrice, null);
+                        ClearOpticRetrice(opticRetrice);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.LogVerbose(
+                    $"[PiPDisabler] Vanilla optic cleanup failed: {ex.Message}");
+            }
+
+            if (opticSight != null)
+            {
+                try
+                {
+                    _allowForcedLensFade = true;
+                    opticSight.LensFade(true);
+                }
+                catch { }
+                finally { _allowForcedLensFade = false; }
+            }
+        }
+
+        internal static bool ShouldAllowForcedLensFade()
+            => _allowForcedLensFade;
+
+        private static object GetOpticCameraManager()
+        {
+            if (!CameraClass.Exist) return null;
+
+            var cameraClass = CameraClass.Instance;
+            if (cameraClass == null) return null;
+
+            if (!_opticCameraManagerSearched)
+            {
+                _opticCameraManagerSearched = true;
+                _opticCameraManagerProperty = cameraClass.GetType().GetProperty(
+                    "OpticCameraManager",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            }
+
+            return _opticCameraManagerProperty != null
+                ? _opticCameraManagerProperty.GetValue(cameraClass, null)
+                : null;
+        }
+
+        private static void SetCurrentOpticSight(object manager, object value)
+        {
+            if (manager == null) return;
+
+            if (!_currentOpticSightSearched)
+            {
+                _currentOpticSightSearched = true;
+                var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                var type = manager.GetType();
+                _currentOpticSightMember = (MemberInfo)type.GetProperty("CurrentOpticSight", flags)
+                    ?? type.GetField("CurrentOpticSight", flags);
+            }
+
+            if (_currentOpticSightMember is PropertyInfo property)
+            {
+                property.SetValue(manager, value, null);
+            }
+            else if (_currentOpticSightMember is FieldInfo field)
+            {
+                field.SetValue(manager, value);
+            }
+        }
+
+        private static object GetOpticRetrice(object manager)
+        {
+            if (manager == null) return null;
+
+            if (!_opticRetriceSearched)
+            {
+                _opticRetriceSearched = true;
+                var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                var type = manager.GetType();
+                _opticRetriceMember = (MemberInfo)type.GetProperty("OpticRetrice", flags)
+                    ?? type.GetField("OpticRetrice", flags);
+            }
+
+            if (_opticRetriceMember is PropertyInfo property)
+                return property.GetValue(manager, null);
+            if (_opticRetriceMember is FieldInfo field)
+                return field.GetValue(manager);
+            return null;
+        }
+
+        private static void SetOpticRetriceSight(object opticRetrice, OpticSight opticSight)
+        {
+            if (opticRetrice == null) return;
+
+            if (!_opticRetriceSetOpticSightSearched)
+            {
+                _opticRetriceSetOpticSightSearched = true;
+                _opticRetriceSetOpticSightMethod = opticRetrice.GetType().GetMethod(
+                    "SetOpticSight",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new[] { typeof(OpticSight) },
+                    null);
+            }
+
+            _opticRetriceSetOpticSightMethod?.Invoke(opticRetrice, new object[] { opticSight });
+        }
+
+        private static void ClearOpticRetrice(object opticRetrice)
+        {
+            if (opticRetrice == null) return;
+
+            if (!_opticRetriceClearSearched)
+            {
+                _opticRetriceClearSearched = true;
+                _opticRetriceClearMethod = opticRetrice.GetType().GetMethod(
+                    "Clear",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+            }
+
+            _opticRetriceClearMethod?.Invoke(opticRetrice, null);
+        }
 
         private static void TryFindBaseOpticCameras()
         {
@@ -415,7 +564,7 @@ _ignoreOnDisableFrame.Clear();
             [PatchPrefix]
             private static bool Prefix(OpticSight __instance)
             {
-                if (ShouldAllowVanillaPiP()) return true;
+                if (ShouldAllowVanillaPiP() || PiPDisabler.ShouldAllowForcedLensFade()) return true;
 
                 // In No-PiP mode, block LensFade to avoid material state issues.
                 // Lens hiding is handled by SSAA signal only — do NOT call

@@ -764,6 +764,7 @@ namespace PiPDisabler
             // On fresh scope enter, forcing RestoreFov() can stomp EFT's own optic zoom
             // for bypassed scopes until the next zoom/mode event. Let vanilla drive FOV
             // immediately on enter, but still restore when switching from a modded mode.
+            PiPDisabler.CleanupVanillaOpticState(os);
             if (restoreFov)
                 RestoreFov();
             Patches.WeaponScalingPatch.RestoreScale();
@@ -814,14 +815,10 @@ namespace PiPDisabler
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] ENTER: '{os.name}'[{FovController.GetOpticTemplateId(os)}] frame={Time.frameCount}");
 
-            // 1. Restore any black lens materials so ExtractReticle can read OpticSight textures.
-            //    (RestoreAll on previous scope-exit may have left sharedMaterials as Unlit/Color.)
-            LensTransparency.RestoreBlackLensMaterials();
-
-            // 2. Extract reticle texture BEFORE destroying lens mesh
+            // 1. Extract reticle texture BEFORE destroying lens mesh
             ReticleRenderer.ExtractReticle(os);
 
-            // 3. Hide ALL lens surfaces in the scope hierarchy (once)
+            // 2. Hide ALL lens surfaces in the scope hierarchy (once)
             LensTransparency.HideAllLensSurfaces(os);
 
             // 2b. Collect housing + weapon renderers for reticle stencil mask (lens surfaces
@@ -872,6 +869,7 @@ namespace PiPDisabler
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] EXIT: '{(prevOptic != null ? prevOptic.name : "null")}'" +
                 $"[{FovController.GetOpticTemplateId(prevOptic)}] frame={Time.frameCount}");
+            PiPDisabler.CleanupVanillaOpticState(prevOptic);
 
             _isScoped = false;
             _activeOptic = null;
