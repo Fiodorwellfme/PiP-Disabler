@@ -189,6 +189,8 @@ namespace PiPDisabler
             sb.AppendLine("[Diagnostics] --- Reticle ---");
             sb.AppendLine($"[Diagnostics]   ShowReticle      : {PiPDisablerPlugin.GetShowReticle()}");
             sb.AppendLine($"[Diagnostics]   ReticleBaseSize  : {PiPDisablerPlugin.GetReticleBaseSize():F4}");
+            sb.AppendLine($"[Diagnostics]   ReticleHideOutside% : {PiPDisablerPlugin.GetReticleHideWhenOutsidePercent():F1}");
+            sb.AppendLine($"[Diagnostics]   ReticleShowInside%  : {PiPDisablerPlugin.GetReticleShowWhenInsidePercent():F1}");
             sb.AppendLine("[Diagnostics] ==========================================");
 
             PiPDisablerPlugin.LogInfo(sb.ToString());

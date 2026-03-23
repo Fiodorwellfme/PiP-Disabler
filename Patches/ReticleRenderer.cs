@@ -53,6 +53,7 @@ namespace PiPDisabler
         private static Material            _lensStencilMat;  // lens pass: write 1 to stencil, no colour
         private static Material            _stencilDebugMat; // debug overlay: red tint where lens writes
         private static readonly List<LensTransparency.LensMaskEntry> _lensMaskEntries = new List<LensTransparency.LensMaskEntry>();
+        private static readonly Dictionary<Mesh, CachedMeshData> _coverageMeshCache = new Dictionary<Mesh, CachedMeshData>();
         private static bool                _hasStencilSupport; // true when UI/Default was found
 
         // Debug frame counter — logs stencil state for first N frames after scope enter
@@ -77,9 +78,20 @@ namespace PiPDisabler
 
         // Rendering state
         private static bool _settled;
+        private static bool _reticleHiddenByCoverage;
+        private static float _lastInsidePercent = 100f;
+        private static float _lastOutsidePercent;
 
         // Camera alignment state
         private static bool _alignmentActive;
+
+        private const int CoverageSamplesPerAxis = 9;
+
+        private sealed class CachedMeshData
+        {
+            public Vector3[] Vertices;
+            public int[][] SubMeshTriangles;
+        }
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -199,6 +211,9 @@ namespace PiPDisabler
         {
             _alignmentActive = false;
             _settled = false;
+            _reticleHiddenByCoverage = false;
+            _lastInsidePercent = 100f;
+            _lastOutsidePercent = 0f;
             DetachFromCamera();
         }
 
@@ -206,6 +221,7 @@ namespace PiPDisabler
         {
             Hide();
             _lensMaskEntries.Clear();
+            _coverageMeshCache.Clear();
             _debugFrameCount   = 0;
             _savedMarkTex      = null;
             _savedMaskTex      = null;
@@ -213,6 +229,9 @@ namespace PiPDisabler
             _lastMag           = 1f;
             _baseScale         = 0f;
             _settled           = false;
+            _reticleHiddenByCoverage = false;
+            _lastInsidePercent = 100f;
+            _lastOutsidePercent = 0f;
         }
 
         /// <summary>
@@ -435,6 +454,7 @@ namespace PiPDisabler
 
             bool useStencil = _hasStencilSupport && _lensMaskEntries.Count > 0
                               && _stencilClearMat != null && _lensStencilMat != null;
+            bool drawReticle = !useStencil || ShouldRenderReticle(cam);
 
             // ── Per-frame debug logging (first N frames after scope enter) ────────────
             if (_debugFrameCount < DebugLogFrames)
@@ -449,7 +469,9 @@ namespace PiPDisabler
                 PiPDisablerPlugin.LogInfo(
                     $"[Reticle] Frame {_debugFrameCount + 1}/{DebugLogFrames}: " +
                     $"useStencil={useStencil} lensTotal={_lensMaskEntries.Count} " +
-                    $"lensActive={activeCount} stencilSupport={_hasStencilSupport}");
+                    $"lensActive={activeCount} stencilSupport={_hasStencilSupport} " +
+                    $"inside={_lastInsidePercent:F1}% outside={_lastOutsidePercent:F1}% " +
+                    $"hiddenByCoverage={_reticleHiddenByCoverage}");
                 _debugFrameCount++;
             }
 
@@ -472,8 +494,11 @@ namespace PiPDisabler
                 }
 
                 // ── Step 3: draw reticle only inside the visible lens (clip-space) ──
-                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                if (drawReticle)
+                {
+                    _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                    _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                }
 
                 // ── Step 4: optional debug overlay — red tint where lens writes ─────
                 // Renders anywhere stencil == 1, i.e. every visible lens pixel.
@@ -503,6 +528,167 @@ namespace PiPDisabler
             Matrix4x4 matrix = entry.Renderer.localToWorldMatrix;
             for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
                 _cmdBuffer.DrawMesh(entry.Mesh, matrix, _lensStencilMat, subMesh, -1);
+        }
+
+        private static bool ShouldRenderReticle(Camera cam)
+        {
+            float insidePercent = EstimateReticleCoverageInsideLensMask(cam);
+            float outsidePercent = 100f - insidePercent;
+            _lastInsidePercent = insidePercent;
+            _lastOutsidePercent = outsidePercent;
+
+            float hideOutsidePercent = Mathf.Clamp(PiPDisablerPlugin.GetReticleHideWhenOutsidePercent(), 0f, 100f);
+            float showInsidePercent = Mathf.Clamp(PiPDisablerPlugin.GetReticleShowWhenInsidePercent(), 0f, 100f);
+
+            if (_reticleHiddenByCoverage)
+            {
+                if (insidePercent > showInsidePercent)
+                {
+                    _reticleHiddenByCoverage = false;
+                    PiPDisablerPlugin.LogInfo(
+                        $"[Reticle] Coverage restore: inside={insidePercent:F1}% threshold>{showInsidePercent:F1}%");
+                }
+            }
+            else if (outsidePercent > hideOutsidePercent)
+            {
+                _reticleHiddenByCoverage = true;
+                PiPDisablerPlugin.LogInfo(
+                    $"[Reticle] Coverage hide: outside={outsidePercent:F1}% threshold>{hideOutsidePercent:F1}%");
+            }
+
+            return !_reticleHiddenByCoverage;
+        }
+
+        private static float EstimateReticleCoverageInsideLensMask(Camera cam)
+        {
+            if (cam == null || _lensMaskEntries.Count == 0)
+                return 100f;
+
+            float halfWidth = Mathf.Abs(_reticleMatrix.m00) * 0.5f;
+            float halfHeight = Mathf.Abs(_reticleMatrix.m11) * 0.5f;
+            Vector2 reticleMin = new Vector2(_reticleMatrix.m03 - halfWidth, _reticleMatrix.m13 - halfHeight);
+            Vector2 reticleMax = new Vector2(_reticleMatrix.m03 + halfWidth, _reticleMatrix.m13 + halfHeight);
+
+            Matrix4x4 viewProjection = GL.GetGPUProjectionMatrix(cam.projectionMatrix, false) * cam.worldToCameraMatrix;
+            int insideSamples = 0;
+            int totalSamples = CoverageSamplesPerAxis * CoverageSamplesPerAxis;
+
+            for (int y = 0; y < CoverageSamplesPerAxis; y++)
+            {
+                float v = (y + 0.5f) / CoverageSamplesPerAxis;
+                float sampleY = Mathf.Lerp(reticleMin.y, reticleMax.y, v);
+
+                for (int x = 0; x < CoverageSamplesPerAxis; x++)
+                {
+                    float u = (x + 0.5f) / CoverageSamplesPerAxis;
+                    float sampleX = Mathf.Lerp(reticleMin.x, reticleMax.x, u);
+
+                    if (IsClipPointInsideLensMask(viewProjection, new Vector2(sampleX, sampleY)))
+                        insideSamples++;
+                }
+            }
+
+            return (insideSamples * 100f) / Mathf.Max(1, totalSamples);
+        }
+
+        private static bool IsClipPointInsideLensMask(Matrix4x4 viewProjection, Vector2 samplePoint)
+        {
+            for (int entryIndex = 0; entryIndex < _lensMaskEntries.Count; entryIndex++)
+            {
+                var entry = _lensMaskEntries[entryIndex];
+                if (entry.Renderer == null || entry.Mesh == null) continue;
+                if (!entry.Renderer.gameObject.activeInHierarchy) continue;
+
+                if (IsClipPointInsideMesh(entry, viewProjection, samplePoint))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsClipPointInsideMesh(LensTransparency.LensMaskEntry entry,
+                                                  Matrix4x4 viewProjection,
+                                                  Vector2 samplePoint)
+        {
+            CachedMeshData meshData = GetCachedMeshData(entry.Mesh);
+            if (meshData == null || meshData.Vertices == null || meshData.Vertices.Length == 0) return false;
+
+            Matrix4x4 localToWorld = entry.Renderer.localToWorldMatrix;
+            int subMeshCount = meshData.SubMeshTriangles != null ? meshData.SubMeshTriangles.Length : 0;
+
+            for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
+            {
+                int[] indices = meshData.SubMeshTriangles[subMesh];
+                if (indices == null || indices.Length < 3) continue;
+
+                for (int i = 0; i <= indices.Length - 3; i += 3)
+                {
+                    if (!TryProjectToClip(meshData.Vertices, indices[i], localToWorld, viewProjection, out Vector2 a) ||
+                        !TryProjectToClip(meshData.Vertices, indices[i + 1], localToWorld, viewProjection, out Vector2 b) ||
+                        !TryProjectToClip(meshData.Vertices, indices[i + 2], localToWorld, viewProjection, out Vector2 c))
+                        continue;
+
+                    if (IsPointInTriangle(samplePoint, a, b, c))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static CachedMeshData GetCachedMeshData(Mesh mesh)
+        {
+            if (mesh == null) return null;
+
+            if (_coverageMeshCache.TryGetValue(mesh, out CachedMeshData cached))
+                return cached;
+
+            int subMeshCount = Mathf.Max(1, mesh.subMeshCount);
+            cached = new CachedMeshData
+            {
+                Vertices = mesh.vertices,
+                SubMeshTriangles = new int[subMeshCount][]
+            };
+
+            for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
+                cached.SubMeshTriangles[subMesh] = mesh.GetTriangles(subMesh);
+
+            _coverageMeshCache[mesh] = cached;
+            return cached;
+        }
+
+        private static bool TryProjectToClip(Vector3[] vertices,
+                                             int index,
+                                             Matrix4x4 localToWorld,
+                                             Matrix4x4 viewProjection,
+                                             out Vector2 clipPoint)
+        {
+            clipPoint = default;
+            if (index < 0 || index >= vertices.Length) return false;
+
+            Vector3 world = localToWorld.MultiplyPoint3x4(vertices[index]);
+            Vector4 clip = viewProjection * new Vector4(world.x, world.y, world.z, 1f);
+            if (clip.w <= 1e-5f) return false;
+
+            float invW = 1f / clip.w;
+            clipPoint = new Vector2(clip.x * invW, clip.y * invW);
+            return true;
+        }
+
+        private static bool IsPointInTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+        {
+            float d1 = SignedArea(p, a, b);
+            float d2 = SignedArea(p, b, c);
+            float d3 = SignedArea(p, c, a);
+
+            bool hasNeg = d1 < 0f || d2 < 0f || d3 < 0f;
+            bool hasPos = d1 > 0f || d2 > 0f || d3 > 0f;
+            return !(hasNeg && hasPos);
+        }
+
+        private static float SignedArea(Vector2 p1, Vector2 p2, Vector2 p3)
+        {
+            return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
         }
 
         // ── Private helpers ─────────────────────────────────────────────────

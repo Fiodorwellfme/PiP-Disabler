@@ -155,6 +155,8 @@ namespace PiPDisabler
         internal static ConfigEntry<float> NearPreserveDepth;
         internal static ConfigEntry<bool> ShowReticle;
         internal static ConfigEntry<float> ReticleBaseSize;
+        internal static ConfigEntry<float> ReticleHideWhenOutsidePercent;
+        internal static ConfigEntry<float> ReticleShowWhenInsidePercent;
         internal static ConfigEntry<bool> ExpandSearchToWeaponRoot;
         internal static ConfigEntry<bool> DebugShowHousingMask;
         internal static ConfigEntry<bool> StencilIncludeWeaponMeshes;
@@ -185,6 +187,8 @@ namespace PiPDisabler
         internal static ConfigEntry<float> CustomNearPreserveDepth;
         internal static ConfigEntry<bool> CustomShowReticle;
         internal static ConfigEntry<float> CustomReticleBaseSize;
+        internal static ConfigEntry<float> CustomReticleHideWhenOutsidePercent;
+        internal static ConfigEntry<float> CustomReticleShowWhenInsidePercent;
         internal static ConfigEntry<bool> CustomRestoreOnUnscope;
         internal static ConfigEntry<bool> CustomExpandSearchToWeaponRoot;
 
@@ -565,6 +569,18 @@ namespace PiPDisabler
                     "Set to 0 to fall back to the legacy CylinderRadius x2 value.",
                     new AcceptableValueRange<float>(0f, 0.2f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
+            ReticleHideWhenOutsidePercent = Config.Bind("Global Mesh Surgery settings", "ReticleHideWhenOutsidePercent", 35f,
+                new ConfigDescription(
+                    "Hide the reticle once more than this percent of its quad falls outside the visible lens mask.\n" +
+                    "0 = hide as soon as any part exits. 100 = effectively disable this hide rule.",
+                    new AcceptableValueRange<float>(0f, 100f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            ReticleShowWhenInsidePercent = Config.Bind("Global Mesh Surgery settings", "ReticleShowWhenInsidePercent", 75f,
+                new ConfigDescription(
+                    "After the reticle is hidden by the lens mask, show it again only once more than this percent\n" +
+                    "of its quad is back inside the visible lens mask. Keep this above the hide threshold for hysteresis.",
+                    new AcceptableValueRange<float>(0f, 100f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             ExpandSearchToWeaponRoot = Config.Bind("Global Mesh Surgery settings", "ExpandSearchToWeaponRoot", true,
                 new ConfigDescription(
                     "Expand the mesh surgery search root all the way up to the Weapon_root node.\n" +
@@ -717,6 +733,16 @@ namespace PiPDisabler
                     "Custom per-scope reticle base diameter in meters.",
                     new AcceptableValueRange<float>(0f, 0.2f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
+            CustomReticleHideWhenOutsidePercent = Config.Bind("Per scope settings", "ReticleHideWhenOutsidePercent", 35f,
+                new ConfigDescription(
+                    "Custom per-scope outside-percent threshold that hides the reticle.",
+                    new AcceptableValueRange<float>(0f, 100f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            CustomReticleShowWhenInsidePercent = Config.Bind("Per scope settings", "ReticleShowWhenInsidePercent", 75f,
+                new ConfigDescription(
+                    "Custom per-scope inside-percent threshold that restores the reticle after it was hidden by the lens mask.",
+                    new AcceptableValueRange<float>(0f, 100f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             CustomRestoreOnUnscope = Config.Bind("Per scope settings", "RestoreOnUnscope", true,
                 new ConfigDescription(
                     "Custom per-scope restore behavior when leaving scope.",
@@ -856,6 +882,8 @@ namespace PiPDisabler
         internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : NearPreserveDepth.Value;
         internal static bool GetShowReticle() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowReticle : ShowReticle.Value;
         internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : ReticleBaseSize.Value;
+        internal static float GetReticleHideWhenOutsidePercent() => ActiveScopeOverride?.ReticleHideWhenOutsidePercent ?? ReticleHideWhenOutsidePercent.Value;
+        internal static float GetReticleShowWhenInsidePercent() => ActiveScopeOverride?.ReticleShowWhenInsidePercent ?? ReticleShowWhenInsidePercent.Value;
         internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : RestoreOnUnscope.Value;
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;

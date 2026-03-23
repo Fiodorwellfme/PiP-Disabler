@@ -32,6 +32,8 @@ namespace PiPDisabler
         public float NearPreserveDepth;
         public bool ShowReticle;
         public float ReticleBaseSize;
+        public float? ReticleHideWhenOutsidePercent;
+        public float? ReticleShowWhenInsidePercent;
         public bool RestoreOnUnscope;
         public bool ExpandSearchToWeaponRoot;
     }
@@ -93,6 +95,8 @@ namespace PiPDisabler
                 PiPDisablerPlugin.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
                 PiPDisablerPlugin.CustomShowReticle.Value = entry.ShowReticle;
                 PiPDisablerPlugin.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
+                PiPDisablerPlugin.CustomReticleHideWhenOutsidePercent.Value = entry.ReticleHideWhenOutsidePercent ?? PiPDisablerPlugin.ReticleHideWhenOutsidePercent.Value;
+                PiPDisablerPlugin.CustomReticleShowWhenInsidePercent.Value = entry.ReticleShowWhenInsidePercent ?? PiPDisablerPlugin.ReticleShowWhenInsidePercent.Value;
                 PiPDisablerPlugin.CustomRestoreOnUnscope.Value = entry.RestoreOnUnscope;
                 PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
                 PiPDisablerPlugin.LogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
@@ -175,6 +179,8 @@ namespace PiPDisabler
             target.NearPreserveDepth = PiPDisablerPlugin.CustomNearPreserveDepth.Value;
             target.ShowReticle = PiPDisablerPlugin.CustomShowReticle.Value;
             target.ReticleBaseSize = PiPDisablerPlugin.CustomReticleBaseSize.Value;
+            target.ReticleHideWhenOutsidePercent = PiPDisablerPlugin.CustomReticleHideWhenOutsidePercent.Value;
+            target.ReticleShowWhenInsidePercent = PiPDisablerPlugin.CustomReticleShowWhenInsidePercent.Value;
             target.RestoreOnUnscope = PiPDisablerPlugin.CustomRestoreOnUnscope.Value;
             target.ExpandSearchToWeaponRoot = PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value;
 
