@@ -63,8 +63,7 @@ namespace PiPDisabler.Patches
     /// <summary>
     /// Postfix on Player.FirearmController.SetScopeMode(FirearmScopeStateStruct[]).
     /// Fires after EFT applies the new scope/mode state to SightComponent, so
-    /// ScopeLifecycle can re-evaluate scope-mode bypass without waiting for
-    /// an un-scope / re-scope cycle.
+    /// ScopeLifecycle re-applies FOV change immediately.
     /// </summary>
     internal sealed class SetScopeModePatch : ModulePatch
     {
