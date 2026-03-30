@@ -2,61 +2,60 @@
   
 Runtime meshcutting combined with FOV zoom (incompatible with Fontaine's FOV fix) to reduce the FPS cost of ADSing with optic scopes.
 
-# How it works :  
+# How it works (In progress):  
 
-When ADS, identify if the current sight is an optic or not.  
-If it is not an optic, do nothing.  
-If it is an optic, don't run if: thermal / NV scopes or unsupported scope from bypass list or whitelist mismatch  
-Else run the mod  
+When ADS, identify if scope is optic or not.  
+If Optic then check if thermal or NVG or variable scope or part of blacklisted scopes. If any of those is true then bypass mod.  
+Extract reticle, flip the texture horizontally and display it center screen in a command buffer at AfterForwardAlpha to allow compatibility with shaders such as in Borkel's NVG mod.  
+  
+Set a 4 diameter cutting plane along the scope axis using the lens closest to the camera as the origin (this has to be configured manually for each scope).  
+The meshcutter cuts through all the meshes that are found between hands and the scope and the resulting meshes are then cached for reusal until end of raid or change of attachment on the weapon.  
+  
+Once the mesh has been cut, use it to create a mask that hides the reticle when it intersects with scope housing/Weapon mesh.  
 
-Reticle extraction is done from the optic lens material.  
-The reticle is screen-centered and the main camera gets aligned to weapon sway.  
-The reticle is rendered on the main FPS camera through a command buffer to prevent smearing due to upscalers.  
-To make it compatible with NVG shaders it renders at a different time if those are on:
-- NVG active: `AfterForwardAlpha`
-- NVG off: `AfterEverything`
+Set main camera rotation axis aligned with weapon axis to keep aiming consistent and reduce sway.  
 
-The rear lens mesh is reused as stencil input to drive reticle and vignette rendering.  
+Magnification is searched for in Template.Zooms to be consistent across scopes, sometimes it may not be the same as the PiP scopes because of BSG Jank.  
+Calculate FOV by dividing reference FOV (50°) by magnification and then set main cam FOV to that value.  
 
-Meshcutting still driven by per-scope settings (pls help).  
-If the initial cut fails and produces no entries, we retry for a few frames (might get ditched down the line).  
-Mesh data is cached in RAM for reuse.  
+Scaling is done using the ribcage scaling method with some dark magic multipliers and offsets.
 
-Magnification is derived from scope/template zoom data instead of using the FOVs returned by the OpticCamera component of the scope (variable across magnifications, BSG jank).  
-WIP keeps the fixed 50° zoom baseline for magnified modes, but now also has a 1x override path so 1x modes behave closer to the player settings FOV instead of feeling weirdly over-zoomed.
-
-Weapon scaling is ribcage-scale black magic, with auto-tuned baseline/strength according to the player settings FOV.  
-
+When exiting ADS, the lens is made solid black to prevent reticle from flashing.  
 
 <h1>Current features:</h1>    
   
-Reliable magnification through template zoom / scope data fallback.  
-1x FOV override instead of forcing everything through the same zoom path.  
-Freelook FOV restore.  
-Fika ping / healthbar / nameplate compatibility while ADS.  
-Weapon scaling auto-tuned from player settings FOV.  
-Lens-based stencil masking for reticle visibility.  
-Scope shadow / vignette tied into the same stencil-aware render path.  
-In-memory mesh caching per weapon / raid flow.  
-Customizable LOD bias + culling settings while ADSing.  
-Whitelist / auto-bypass system.  
-Auto-exclusion of night vision and thermal scopes.  
-Per-scope meshcutter settings.  
-Per-scope reticle size.  
+Reliable magnification level through scope json (may not be exactly same as PiP).  
+Weapon scaling using absolute jank approximations.  
+Customizable LODbias + Culling settings while ADSing.  
+Whitelist system.  
+Mesh caching in raid only.  
+Auto-exclusion of nightvision and thermal scopes.  
+Customizable ADS speed.  
+Per scope meshcutter settings.  
+Per scope reticle size.  
 
 <h1>Roadmap:</h1>    
   
--~~Fix Fika ping system / healthbar / nameplates while ADS~~ Done  
--~~Make FOV on freelook exit equal to FOV before freelook enter~~ Done  
--~~Find a way to make hybrid / all-in-one optics bypass correctly~~ Done with scope-mode bypass config  
--~~Improve reticle masking using the actual visible lens instead of only housing heuristics~~ Done  
--~~Remove old cache system / rework it~~ Reworked into in-memory cache flow  
--~~Improve weapon scaling method~~ Auto-tuned by player settings FOV  
--~~Hide more useless options under advanced BepInEx settings~~ Mostly done  
--Solve FOV restore on pose changes  
--Tune more per-scope mesh surgery presets  
--Keep cleaning old AI-jank / dead code paths until the whole thing is readable without archaeology  
-
+-~~Remove cache system or rework it, performance impact needs to be inspected~~ Auto delete cache at end of raid option  
+-~~More targeted meshes (weapon,attachments...)~~ Done  
+-~~Find way to work across more scopes~~ Done  
+-~~More consistent zoom FOVs~~ Done, using the multiplier stored in the item json  
+-~~Make default whitelist~~ Auto disable for variable scopes, NV and thermal scopes  
+-~~Remove useless options/code~~ Done  
+-~~Support variable scopes~~ lmao fuckoff  
+-~~Improve weapon scaling offset/multiplier or method~~ Feels right  
+-~~Improve reticle scaling~~ Per scope reticle size  
+-~~Make meshcutting more precise.~~ Per scope meshcutting   
+-~~Add whitelist system~~ Done   
+-~~Add per scope config~~ **(maybe even per mag level ?)**    
+-~~Hide reticle when swaying across scope housing/weapon~~ Done  
+-~~Find way to make vignette stick to scope.~~ Kind of, all the guns scale approximately the same so one vignette/shadow size fits all  
+-~~Release 0.1~~  
+-~~When rendering reticle at AfterForwardAlpha it gets upscaled so blurry, add toggle for aftereverything ?~~  Added toggle to have it at AfterForwardAlpha only when using NVG   
+-Cleanup code from AI Jank, make sure that I know everything I'm doing, become god  
+-Try to make lens transparent + render reticle on it instead of the center of screen + camera alignment method  
+-Hide multiple options under advanced BepInEx settings  
+-Find best settings for different scopes. (Help welcome)  
 
 # How to use:  
 Coming soon
