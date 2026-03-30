@@ -822,7 +822,6 @@ namespace PiPDisabler
             _itemProp = scType.GetProperty("Item", anyFlags);
             _itemField = scType.GetField("Item", anyFlags);
 
-            // Scope state properties for scope-mode bypass evaluation
             _selectedScopeIndexProp = scType.GetProperty("SelectedScopeIndex", anyFlags);
             _selectedScopeModeProp  = scType.GetProperty("SelectedScopeMode",  anyFlags);
 
