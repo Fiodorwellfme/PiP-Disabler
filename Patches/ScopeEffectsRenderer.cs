@@ -360,7 +360,7 @@ namespace PiPDisabler
                 _cmdBuffer.SetViewport(GetSceneViewport(cam));
             }
 
-            bool useStencil = _shadowActive && _hasStencilSupport;
+            bool useStencil = _hasStencilSupport;
 
             // Pure screen-space draw (clip-space matrices).
             _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
@@ -379,8 +379,8 @@ namespace PiPDisabler
             if (_shadowActive && _shadowMat != null && _shadowMesh != null)
                 _cmdBuffer.DrawMesh(_shadowMesh, _shadowMatrix, _shadowMat, 0, -1);
 
-            // Draw vignette on top
-            if (_vigActive && _vigMat != null && _vigMesh != null)
+            // Draw vignette only in lens mask area
+            if (_vigActive && useStencil && _vigMat != null && _vigMesh != null)
                 _cmdBuffer.DrawMesh(_vigMesh, _vigMatrix, _vigMat, 0, -1);
 
             // Restore original matrices
