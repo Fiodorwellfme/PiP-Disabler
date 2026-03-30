@@ -194,6 +194,8 @@ namespace PiPDisabler
         internal static ConfigEntry<float> VignetteSizeMult;
         internal static ConfigEntry<float> VignetteSoftness;
         internal static ConfigEntry<bool>  ScopeShadowEnabled;
+        internal static ConfigEntry<bool>  DebugShowScopeShadowMask;
+        internal static ConfigEntry<bool>  ScopeShadowPersistOnUnscope;
         internal static ConfigEntry<float> ScopeShadowOpacity;
         internal static ConfigEntry<float> ScopeShadowRadius;
         internal static ConfigEntry<float> ScopeShadowSoftness;
@@ -305,7 +307,7 @@ namespace PiPDisabler
                 "always occupies the same screen space at every magnification level.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            BaselineWeaponScale = Config.Bind("General", "BaselineWeaponScale", 0.9624413f,
+            BaselineWeaponScale = Config.Bind("General", "BaselineWeaponScale", 0.8873239f,
                 new ConfigDescription(
                     "Base weapon scale applied at all FOV values before compensation.\n" +
                     "1.00 = default EFT visual scale.",
@@ -757,6 +759,16 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Overlay a fullscreen scope-tube shadow: black everywhere except a transparent\n" +
                 "circular window in the centre.  Simulates looking down a scope tube.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false }));
+            DebugShowScopeShadowMask = Config.Bind("Scope Effects", "DebugShowScopeShadowMask", false,
+                new ConfigDescription(
+                    "Render the shadow lens mask as a green overlay for debugging.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            ScopeShadowPersistOnUnscope = Config.Bind("Scope Effects", "ScopeShadow Persist On Unscope", false,
+                new ConfigDescription(
+                    "Keep the scope shadow visible after leaving ADS until the FOV restore finishes.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
             ScopeShadowOpacity = Config.Bind("Scope Effects", "ScopeShadow Opacity", 0.75f,

@@ -5,6 +5,7 @@ using EFT.Animations;
 using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
+using UnityEngine;
 
 namespace PiPDisabler.Patches
 {
@@ -73,14 +74,33 @@ namespace PiPDisabler.Patches
                     float zoomBaseFov = FovController.ZoomBaselineFov;
                     float zoomedFov = FovController.ComputeZoomedFov();
 
-                    if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
+                    if (zoomedFov >= 0.5f && zoomedFov <= zoomBaseFov)
                     {
-                        targetFov = zoomedFov;
-                        FreelookTracker.CacheAppliedFov(zoomedFov);
-                        // Keep the game's original duration so ADS/unADS speed is unaffected
-                        force = false;
+                        if (FovController.HasFovChanged(zoomedFov))
+                        {
+                            // FOV changed enough — restart lerp to new target.
+                            FovController.TrackAppliedFov(zoomedFov);
+                            FreelookTracker.CacheAppliedFov(zoomedFov);
+                            // Keep the game's original duration so ADS/unADS speed is unaffected
+                            cameraClass.SetFov(zoomedFov, duration, false);
+                        }
+                        // Whether or not we called SetFov, suppress EFT's original call
+                        // so the lerp coroutine can run undisturbed to the target.
+                        return;
                     }
                 }
+            }
+
+            // After scope exit, RestoreFov starts a coroutine toward the player's base
+            // FOV. EFT's method_23 keeps firing with SetFov(35°), which would kill that
+            // coroutine immediately and cause the FOV to flash. Suppress any call whose
+            // target differs significantly from our restore target for the duration of
+            // the animation.
+            if (ScopeLifecycle.HasPostExitRestore)
+            {
+                float restoreFov = ScopeLifecycle.PostExitRestoreFov;
+                if (Mathf.Abs(targetFov - restoreFov) > FovController.FovChangeThreshold)
+                    return; // Let the restore coroutine run undisturbed
             }
 
             cameraClass.SetFov(targetFov, duration, force);

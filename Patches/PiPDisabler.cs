@@ -467,6 +467,10 @@ _ignoreOnDisableFrame.Clear();
 
         private static bool ShouldAllowVanillaPiP()
         {
+            // Scope-mode bypass keeps PiP DISABLED (the optic component is still active
+            // on the backup/iron branch and rendering PiP would cost FPS for no benefit).
+            if (ScopeLifecycle.IsScopeModeBypassActive) return false;
+
             return !PiPDisablerPlugin.ModEnabled.Value
                 || !PiPDisablerPlugin.DisablePiP.Value
                 || ScopeLifecycle.IsModBypassedForCurrentScope

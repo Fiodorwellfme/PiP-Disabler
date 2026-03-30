@@ -4,6 +4,7 @@ using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
+using System.Linq;
 
 namespace PiPDisabler.Patches
 {
@@ -16,7 +17,7 @@ namespace PiPDisabler.Patches
         private static void Postfix(OpticSight __instance)
         {
             // Always cache the enabled optic (so it's ready if mod is toggled on later)
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogVerbose(
                 $"[Patch] OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"enabled={__instance?.enabled} frame={Time.frameCount}");
 
@@ -33,7 +34,7 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix(OpticSight __instance)
         {
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogVerbose(
                 $"[Patch] OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"frame={Time.frameCount}");
 
@@ -52,9 +53,49 @@ namespace PiPDisabler.Patches
         {
             if (!PiPDisablerPlugin.ModEnabled.Value) return;
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogVerbose(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
             ScopeLifecycle.CheckAndUpdate("ChangeAimingMode");
+            // Elcan / G36 HKV and similar hybrid optics switch modes via ChangeAimingMode,
+            // not SetScopeMode, so re-evaluate scope-mode bypass here as well.
+            ScopeLifecycle.OnSetScopeMode();
+        }
+    }
+
+    /// <summary>
+    /// Postfix on Player.FirearmController.SetScopeMode(FirearmScopeStateStruct[]).
+    /// Fires after EFT applies the new scope/mode state to SightComponent, so
+    /// ScopeLifecycle can re-evaluate scope-mode bypass without waiting for
+    /// an un-scope / re-scope cycle.
+    /// </summary>
+    internal sealed class SetScopeModePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+        {
+            // FirearmController is an inner class of Player; find SetScopeMode by name and
+            // parameter type (FirearmScopeStateStruct[]) to avoid ambiguity.
+            var fcType = typeof(Player.FirearmController);
+            var method = fcType.GetMethods(
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                .FirstOrDefault(m =>
+                    m.Name == "SetScopeMode"
+                    && m.GetParameters().Length == 1
+                    && m.GetParameters()[0].ParameterType.IsArray);
+
+            if (method == null)
+                PiPDisablerPlugin.LogWarn("[Patch] SetScopeMode: target method not found");
+
+            return method;
+        }
+
+        [PatchPostfix]
+        private static void Postfix()
+        {
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+
+            PiPDisablerPlugin.LogVerbose(
+                $"[Patch] SetScopeMode frame={Time.frameCount}");
+            ScopeLifecycle.OnSetScopeMode();
         }
     }
 }

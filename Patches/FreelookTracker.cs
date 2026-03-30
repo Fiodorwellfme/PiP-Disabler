@@ -22,14 +22,16 @@ namespace PiPDisabler
     /// Update(), we cannot reliably race it with a post-hoc SetFov call.
     ///
     /// ── THE FIX ──────────────────────────────────────────────────────────
-    /// A Harmony transpiler on Player.Look replaces the CameraClass.SetFov
-    /// callsite with our LookSetFovInterceptor.  When the mod is active
-    /// and the FOV being set is the "exit freelook" value (35° for optics),
-    /// we substitute our cached scoped FOV instead.
+    /// On freelook enter the actual camera FOV is snapshotted into
+    /// _fovBeforeFreelook.  On freelook exit two complementary mechanisms
+    /// restore it:
+    ///   1. OnFreelookExit() calls CameraClass.SetFov directly (Update path).
+    ///   2. The Player.Look transpiler (LookSetFovInterceptor) intercepts
+    ///      EFT's SetFov(35) call in LateUpdate and substitutes the cached
+    ///      value, so whichever runs last still lands the correct FOV.
     ///
-    /// The cache (_lastAppliedScopedFov) is updated every time the mod
-    /// successfully writes a zoomed FOV via ApplyFov or the PWAMethod23
-    /// transpiler, so it always reflects the current magnification level.
+    /// _lastAppliedScopedFov is kept as a fallback for the interceptor in
+    /// case OnFreelookEnter fires before CameraClass is valid.
     /// </summary>
     internal static class FreelookTracker
     {
@@ -37,10 +39,17 @@ namespace PiPDisabler
         private static bool _wasFreelooking;
 
         /// <summary>
+        /// Camera FOV snapshotted at the moment freelook begins.
+        /// This is the value we restore when freelook ends.
+        /// </summary>
+        private static float _fovBeforeFreelook;
+
+        /// <summary>
         /// The last FOV value the mod successfully applied while scoped.
         /// Updated by ScopeLifecycle.ApplyFov and PWAMethod23Patch via
         /// CacheAppliedFov().  Stays frozen during freelook because all
         /// mod FOV writes are gated on !IsFreelooking.
+        /// Used as fallback when _fovBeforeFreelook is unavailable.
         /// </summary>
         private static float _lastAppliedScopedFov;
 
@@ -125,15 +134,29 @@ namespace PiPDisabler
             _isFreelooking = false;
             _wasFreelooking = false;
             _lastAppliedScopedFov = 0f;
+            _fovBeforeFreelook = 0f;
         }
 
         // ===== Transitions =====
 
         private static void OnFreelookEnter()
         {
+            // Snapshot the current camera FOV so we can restore it precisely on exit.
+            try
+            {
+                if (CameraClass.Exist && CameraClass.Instance != null)
+                    _fovBeforeFreelook = CameraClass.Instance.Fov;
+                else if (_lastAppliedScopedFov > 0.5f)
+                    _fovBeforeFreelook = _lastAppliedScopedFov;
+            }
+            catch
+            {
+                _fovBeforeFreelook = _lastAppliedScopedFov;
+            }
+
             PiPDisablerPlugin.LogInfo(
-                $"[FreelookTracker] Freelook START — cached FOV={_lastAppliedScopedFov:F1}°, " +
-                "releasing rotation lock, hiding reticle");
+                $"[FreelookTracker] Freelook START — cached FOV={_fovBeforeFreelook:F1}°, " +
+                "hiding reticle");
 
             ReticleRenderer.Hide();
             ScopeEffectsRenderer.Hide();
@@ -141,9 +164,23 @@ namespace PiPDisabler
 
         private static void OnFreelookExit()
         {
+            float fovToRestore = _fovBeforeFreelook > 0.5f ? _fovBeforeFreelook : _lastAppliedScopedFov;
+
             PiPDisablerPlugin.LogInfo(
-                $"[FreelookTracker] Freelook END — cached FOV={_lastAppliedScopedFov:F1}°, " +
-                "re-locking rotation, showing reticle (FOV handled by Look transpiler)");
+                $"[FreelookTracker] Freelook END — restoring FOV={fovToRestore:F1}°, showing reticle");
+
+            // Directly restore the cached FOV (Update path).
+            // The Player.Look transpiler also runs in LateUpdate as a safety net.
+            if (fovToRestore > 0.5f)
+            {
+                try
+                {
+                    if (CameraClass.Exist && CameraClass.Instance != null)
+                        CameraClass.Instance.SetFov(fovToRestore,
+                            PiPDisablerPlugin.FovAnimationDuration.Value, false);
+                }
+                catch { }
+            }
 
             var os = ScopeLifecycle.ActiveOptic;
             if (os != null)
@@ -175,11 +212,14 @@ namespace PiPDisabler
             //  - We have a valid cached FOV
             //  - The game is trying to set a non-freelook FOV (i.e. freelook just ended
             //    and EFT wants to set 35° — we know because targetFov < settingsFov)
+            // Prefer the FOV snapshotted at freelook-enter; fall back to last mod-applied value.
+            float fovToRestore = _fovBeforeFreelook > 0.5f ? _fovBeforeFreelook : _lastAppliedScopedFov;
+
             if (PiPDisablerPlugin.ModEnabled.Value &&
                 PiPDisablerPlugin.EnableZoom.Value &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
-                _lastAppliedScopedFov > 0.5f)
+                fovToRestore > 0.5f)
             {
                 // EFT sets targetFov to 35 when exiting freelook with an optic,
                 // and to settingsFov when entering freelook.
@@ -189,9 +229,9 @@ namespace PiPDisabler
                 {
                     PiPDisablerPlugin.LogInfo(
                         $"[FreelookTracker] Look interceptor: replacing FOV {targetFov:F1}° → " +
-                        $"{_lastAppliedScopedFov:F1}° (cached scoped FOV)");
+                        $"{fovToRestore:F1}° (pre-freelook snapshot)");
 
-                    targetFov = _lastAppliedScopedFov;
+                    targetFov = fovToRestore;
                 }
             }
 

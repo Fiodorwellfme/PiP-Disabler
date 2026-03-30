@@ -51,8 +51,10 @@ namespace PiPDisabler
         // write to the stencil buffer and test against it without a custom shader.
         private static Material            _stencilClearMat; // full-screen quad: write 0 to stencil
         private static Material            _lensStencilMat;  // lens pass: write 1 to stencil, no colour
+        private static Material            _occluderStencilMat; // housing/weapon pass: write 2 to stencil
         private static Material            _stencilDebugMat; // debug overlay: red tint where lens writes
         private static readonly List<LensTransparency.LensMaskEntry> _lensMaskEntries = new List<LensTransparency.LensMaskEntry>();
+        private static readonly List<Renderer> _occluderMaskRenderers = new List<Renderer>();
         private static bool                _hasStencilSupport; // true when UI/Default was found
 
         // Debug frame counter — logs stencil state for first N frames after scope enter
@@ -77,6 +79,7 @@ namespace PiPDisabler
 
         // Rendering state
         private static bool _settled;
+        private static bool _stencilOnlyPersistence;
 
         // Camera alignment state
         private static bool _alignmentActive;
@@ -163,6 +166,7 @@ namespace PiPDisabler
                 // Attach CommandBuffer + onPreCull
                 AttachToCamera();
 
+                _stencilOnlyPersistence = false;
                 _settled = true;
                 _alignmentActive = true;
 
@@ -199,13 +203,35 @@ namespace PiPDisabler
         {
             _alignmentActive = false;
             _settled = false;
+            _stencilOnlyPersistence = false;
             DetachFromCamera();
+        }
+
+        public static void OnScopeExit(bool keepStencil)
+        {
+            _alignmentActive = false;
+            _settled = false;
+
+            if (keepStencil && _cmdBuffer != null)
+            {
+                _stencilOnlyPersistence = true;
+                return;
+            }
+
+            Cleanup();
+        }
+
+        public static void StopStencilOnlyPersistence()
+        {
+            if (!_stencilOnlyPersistence) return;
+            Cleanup();
         }
 
         public static void Cleanup()
         {
             Hide();
             _lensMaskEntries.Clear();
+            _occluderMaskRenderers.Clear();
             _debugFrameCount   = 0;
             _savedMarkTex      = null;
             _savedMaskTex      = null;
@@ -228,6 +254,8 @@ namespace PiPDisabler
         /// </summary>
         public static Transform OpticTransform => _opticTransform;
 
+        public static CameraEvent CurrentCameraEvent => _attachedEvent;
+
         /// <summary>
         /// Provide cached lens mesh entries for the stencil pass.
         /// Pass null or an empty list to disable lens masking.
@@ -242,6 +270,13 @@ namespace PiPDisabler
             PiPDisablerPlugin.LogInfo(
                 $"[Reticle] Lens mask: {_lensMaskEntries.Count} entry(s) registered" +
                 $" stencilSupport={_hasStencilSupport}");
+        }
+
+        public static void SetOccluderMaskRenderers(List<Renderer> renderers)
+        {
+            _occluderMaskRenderers.Clear();
+            if (renderers != null)
+                _occluderMaskRenderers.AddRange(renderers);
         }
 
         // ── CommandBuffer management ────────────────────────────────────────
@@ -465,15 +500,20 @@ namespace PiPDisabler
 
                 // ── Step 2: write lens visibility to stencil (world-space) ──────────
                 _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
+                for (int i = 0; i < _occluderMaskRenderers.Count; i++)
+                    DrawOccluderMaskRenderer(_occluderMaskRenderers[i]);
                 for (int i = 0; i < _lensMaskEntries.Count; i++)
                 {
                     var entry = _lensMaskEntries[i];
                     DrawLensMaskEntry(entry);
                 }
 
-                // ── Step 3: draw reticle only inside the visible lens (clip-space) ──
-                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                if (!_stencilOnlyPersistence)
+                {
+                    // ── Step 3: draw reticle only inside the visible lens (clip-space) ──
+                    _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                    _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                }
 
                 // ── Step 4: optional debug overlay — red tint where lens writes ─────
                 // Renders anywhere stencil == 1, i.e. every visible lens pixel.
@@ -503,6 +543,22 @@ namespace PiPDisabler
             Matrix4x4 matrix = entry.Renderer.localToWorldMatrix;
             for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
                 _cmdBuffer.DrawMesh(entry.Mesh, matrix, _lensStencilMat, subMesh, -1);
+        }
+
+        private static void DrawOccluderMaskRenderer(Renderer renderer)
+        {
+            if (renderer == null) return;
+            if (!renderer.gameObject.activeInHierarchy) return;
+
+            var mf = renderer.GetComponent<MeshFilter>();
+            var smr = renderer as SkinnedMeshRenderer;
+            Mesh mesh = mf?.sharedMesh ?? smr?.sharedMesh;
+            if (mesh == null) return;
+
+            int subMeshCount = Mathf.Max(1, mesh.subMeshCount);
+            Matrix4x4 matrix = renderer.localToWorldMatrix;
+            for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
+                _cmdBuffer.DrawMesh(mesh, matrix, _occluderStencilMat, subMesh, -1);
         }
 
         // ── Private helpers ─────────────────────────────────────────────────
@@ -638,6 +694,15 @@ namespace PiPDisabler
                     _lensStencilMat.SetFloat("_ColorMask",        0f);
                     _lensStencilMat.SetInt("_ZTest",  (int)CompareFunction.LessEqual);
                     _lensStencilMat.SetInt("_ZWrite", 0);
+
+                    _occluderStencilMat = new Material(stencilShader) { renderQueue = 4998 };
+                    _occluderStencilMat.SetFloat("_Stencil",          2f);
+                    _occluderStencilMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
+                    _occluderStencilMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
+                    _occluderStencilMat.SetFloat("_StencilWriteMask", 255f);
+                    _occluderStencilMat.SetFloat("_ColorMask",        0f);
+                    _occluderStencilMat.SetInt("_ZTest",  (int)CompareFunction.LessEqual);
+                    _occluderStencilMat.SetInt("_ZWrite", 0);
 
                     // Debug overlay: renders a semi-transparent red tint wherever stencil == 1.
                     // Reveals which screen regions are inside the visible lens mask.

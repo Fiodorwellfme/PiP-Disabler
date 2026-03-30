@@ -57,6 +57,7 @@ namespace PiPDisabler
         private static readonly Dictionary<GameObject, SphereState> _disabledWeaponSpheres =
             new Dictionary<GameObject, SphereState>(32);
         private static bool _loggedGpuCopy;
+        private static int _lastCutAttemptFrame;
         private static object _inventoryEventSource;
         private static Delegate _addItemHandler;
         private static Delegate _removeItemHandler;
@@ -148,6 +149,57 @@ namespace PiPDisabler
             RestoreAll();
             DestroyCurrentWeaponCache();
             UnbindInventoryEvents();
+            _lastCutAttemptFrame = 0;
+        }
+
+        /// <summary>
+        /// Returns true if the current weapon cache has at least one successfully
+        /// applied cut mesh entry. Used by ScopeLifecycle.Tick() to detect whether
+        /// the initial mesh surgery silently produced zero cuts (e.g. GPU buffers
+        /// not ready on the first frame, or TryGetPlane returned a degenerate position).
+        /// </summary>
+        public static bool HasSuccessfulCut()
+        {
+            var cache = _currentWeaponCache;
+            if (cache == null) return false;
+            if (!cache.Built) return false;
+            return cache.Entries.Count > 0;
+        }
+
+        /// <summary>
+        /// Force a full rebuild of the current weapon cache.
+        /// Called from ScopeLifecycle.Tick() when mesh surgery produced zero entries
+        /// on the initial ADS frame (GPU buffers / transform positions weren't ready).
+        /// Returns true if the retry produced at least one cut entry.
+        /// </summary>
+        public static bool RetryPendingCut(OpticSight os)
+        {
+            if (os == null) return false;
+
+            // Throttle: don't retry more than once every 3 frames
+            if (Time.frameCount - _lastCutAttemptFrame < 3) return false;
+            _lastCutAttemptFrame = Time.frameCount;
+
+            var cache = _currentWeaponCache;
+            if (cache == null)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][Retry] No current weapon cache — calling ApplyForOptic. frame={Time.frameCount}");
+                ApplyForOptic(os);
+                cache = _currentWeaponCache;
+                return cache != null && cache.Entries.Count > 0;
+            }
+
+            // Force a full rebuild by marking dirty
+            PiPDisablerPlugin.LogInfo(
+                $"[MeshSurgery][Retry] Forcing rebuild: Built={cache.Built} Entries={cache.Entries.Count} frame={Time.frameCount}");
+            cache.Dirty = true;
+            ApplyForOptic(os);
+
+            bool success = cache.Entries.Count > 0;
+            PiPDisablerPlugin.LogInfo(
+                $"[MeshSurgery][Retry] Result: Entries={cache.Entries.Count} success={success} frame={Time.frameCount}");
+            return success;
         }
 
         private static CutProfileCache GetOrCreateCurrentWeaponCache(Transform scopeRoot, Transform activeMode)
@@ -206,13 +258,20 @@ namespace PiPDisabler
             if (cache == null || os == null || scopeRoot == null) return;
             if (!activeMode) activeMode = os.transform;
             var weaponRootTf = FindWeaponTransform(scopeRoot);
-            if (weaponRootTf == null) return;
+            if (weaponRootTf == null)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] FindWeaponTransform returned null for scopeRoot='{scopeRoot.name}' frame={Time.frameCount}");
+                return;
+            }
             cache.WeaponRoot = weaponRootTf.gameObject;
 
             if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
                 out var planePoint, out var planeNormal, out var camPos))
             {
-                PiPDisablerPlugin.LogVerbose("[MeshSurgery] TryGetPlane failed — no plane found.");
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] TryGetPlane FAILED — no plane found. " +
+                    $"os='{os.name}' scopeRoot='{scopeRoot.name}' activeMode='{activeMode.name}' frame={Time.frameCount}");
                 return;
             }
 
@@ -257,7 +316,12 @@ namespace PiPDisabler
                     bool isCylinder = PiPDisablerPlugin.GetCutMode() == "Cylinder";
                     Mesh readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
                     if (readable == null)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DEBUG] MakeReadableMeshCopy returned null for '{originalAsset.name}' " +
+                            $"(isReadable={originalAsset.isReadable} verts={originalAsset.vertexCount}) frame={Time.frameCount}");
                         continue;
+                    }
 
                     if (!_loggedGpuCopy)
                     {
@@ -326,6 +390,20 @@ namespace PiPDisabler
             cache.Built = true;
             cache.Dirty = false;
             cache.SettingsSignature = BuildCutSettingsSignature();
+            _lastCutAttemptFrame = Time.frameCount;
+
+            if (cache.Entries.Count == 0)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] RebuildCutCache finished with ZERO entries! " +
+                    $"targets={targets.Count} os='{os.name}' scopeRoot='{scopeRoot.name}' " +
+                    $"activeMode='{activeMode.name}' frame={Time.frameCount}");
+            }
+            else
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] RebuildCutCache OK: {cache.Entries.Count} entries from {targets.Count} targets. frame={Time.frameCount}");
+            }
         }
 
         private static void ReapplyCachedCutMeshes(CutProfileCache cache, Transform scopeRoot)
@@ -1042,15 +1120,23 @@ namespace PiPDisabler
                 }
             }
 
-            if (refTransform == null) return false;
+            if (refTransform == null)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[ScopeHierarchy][DEBUG] TryGetPlane: ALL fallbacks failed. " +
+                    $"os='{(os != null ? os.name : "null")}' activeMode='{activeMode.name}' " +
+                    $"scopeRoot='{scopeRoot.name}' frame={Time.frameCount}. " +
+                    $"Checked: backLens=null, LensRenderer=null, lens/linza/glass=null, optic_camera=null");
+                return false;
+            }
 
             // Determine the plane normal based on config.
             planeNormal = GetConfiguredNormal(refTransform);
 
-            PiPDisablerPlugin.LogVerbose(
-                $"[ScopeHierarchy] TryGetPlane: ref='{refTransform.name}', " +
-                $"axis={PiPDisablerPlugin.GetPlaneNormalAxis()}, " +
-                $"normal={planeNormal:F3}");
+            PiPDisablerPlugin.LogInfo(
+                $"[ScopeHierarchy][DEBUG] TryGetPlane OK: ref='{refTransform.name}', " +
+                $"planePoint={planePoint:F4}, normal={planeNormal:F3}, " +
+                $"frame={Time.frameCount}");
 
             return true;
         }

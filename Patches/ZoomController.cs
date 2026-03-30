@@ -1,6 +1,5 @@
 using System;
 using EFT.CameraControl;
-using UnityEngine;
 
 namespace PiPDisabler
 {
@@ -56,37 +55,7 @@ namespace PiPDisabler
                 if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
                 if (szh != null)
                 {
-                    var szhType = szh.GetType();
-                    float minFov = 0f;
-
-                    var s1Prop = szhType.GetProperty("Single_1",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    if (s1Prop != null && s1Prop.PropertyType == typeof(float))
-                        minFov = (float)s1Prop.GetValue(szh);
-
-                    if (minFov < 0.1f)
-                    {
-                        foreach (var field in szhType.GetFields(
-                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
-                        {
-                            if (field.FieldType.Name.Contains("IAdjustableOpticData") ||
-                                field.FieldType.Name.Contains("AdjustableOptic") ||
-                                field.Name.Contains("iadjustableOpticData"))
-                            {
-                                var opticData = field.GetValue(szh);
-                                if (opticData == null) continue;
-
-                                var mmfProp = opticData.GetType().GetProperty("MinMaxFov");
-                                if (mmfProp != null && mmfProp.PropertyType == typeof(Vector3))
-                                {
-                                    var mmf = (Vector3)mmfProp.GetValue(opticData);
-                                    minFov = mmf.y;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
+                    float minFov = szh.Single_1;
                     if (minFov > 0.1f)
                         return minFov;
                 }
@@ -140,51 +109,15 @@ namespace PiPDisabler
                     return;
                 }
 
-                var szhType = szh.GetType();
-                float maxFov = 0f, minFov = 0f;
-
-                var s0Prop = szhType.GetProperty("Single_0",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                var s1Prop = szhType.GetProperty("Single_1",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
-                if (s0Prop != null && s1Prop != null &&
-                    s0Prop.PropertyType == typeof(float) && s1Prop.PropertyType == typeof(float))
-                {
-                    maxFov = (float)s0Prop.GetValue(szh);
-                    minFov = (float)s1Prop.GetValue(szh);
-                }
-
-                if (maxFov < 0.1f || minFov < 0.1f)
-                {
-                    foreach (var field in szhType.GetFields(
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
-                    {
-                        if (field.FieldType.Name.Contains("IAdjustableOpticData") ||
-                            field.FieldType.Name.Contains("AdjustableOptic") ||
-                            field.Name.Contains("iadjustableOpticData"))
-                        {
-                            var opticData = field.GetValue(szh);
-                            if (opticData == null) continue;
-
-                            var mmfProp = opticData.GetType().GetProperty("MinMaxFov");
-                            if (mmfProp != null && mmfProp.PropertyType == typeof(Vector3))
-                            {
-                                var mmf = (Vector3)mmfProp.GetValue(opticData);
-                                maxFov = mmf.x;
-                                minFov = mmf.y;
-                                break;
-                            }
-                        }
-                    }
-                }
+                float maxFov = szh.Single_0;
+                float minFov = szh.Single_1;
 
                 if (maxFov > 0.1f && minFov > 0.1f && maxFov > minFov)
                 {
                     // Convert FOV range to magnification range (35° optic camera baseline)
                     _nativeMinMag = 35f / maxFov; // max FOV → min magnification
                     _nativeMaxMag = 35f / minFov; // min FOV → max magnification
-                        PiPDisablerPlugin.LogInfo(
+                    PiPDisablerPlugin.LogInfo(
                         $"[ZoomController] Discovered FOV-based zoom range: " +
                         $"{_nativeMinMag:F2}x - {_nativeMaxMag:F2}x (from FOV {minFov:F2}°-{maxFov:F2}°)");
                 }
