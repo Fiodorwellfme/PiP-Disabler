@@ -56,8 +56,6 @@ namespace PiPDisabler.Patches
             PiPDisablerPlugin.LogVerbose(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
             ScopeLifecycle.CheckAndUpdate("ChangeAimingMode");
-            // Elcan / G36 HKV and similar hybrid optics switch modes via ChangeAimingMode,
-            // not SetScopeMode, so re-evaluate scope-mode bypass here as well.
             ScopeLifecycle.OnSetScopeMode();
         }
     }
