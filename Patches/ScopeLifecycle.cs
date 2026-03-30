@@ -42,9 +42,6 @@ namespace PiPDisabler
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
-        // Scope-mode bypass: active when backup/iron branch is selected on a hybrid optic.
-        // Unlike regular bypass, PiP stays DISABLED to avoid the FPS cost of the still-active optic component.
-        private static bool _scopeModeBypassActive;
         private static bool _restoreOneXFovOnScopeExit;
 
         // Mesh surgery retry: when the initial cut on scope enter produces zero
@@ -72,7 +69,6 @@ namespace PiPDisabler
 
         public static bool IsScoped => _isScoped;
         public static bool IsModBypassedForCurrentScope => _modBypassedForCurrentScope;
-        public static bool IsScopeModeBypassActive => _scopeModeBypassActive;
         public static OpticSight ActiveOptic => _activeOptic;
 
         /// <summary>
@@ -217,17 +213,14 @@ namespace PiPDisabler
                 _activeOptic = os;
 
                 float minFov = ZoomController.GetMinFov(os);
-                bool newScopeModeBypassed = IsScopeModeBypassConditionMet(os);
-                bool bypassForMode = newScopeModeBypassed || ShouldBypassForCurrentOptic(os, minFov);
+                bool bypassForMode = ShouldBypassForCurrentOptic(os, minFov);
                 if (bypassForMode)
                 {
-                    _scopeModeBypassActive = newScopeModeBypassed;
                     _modBypassedForCurrentScope = true;
                     ApplyBypassState(os, minFov, reason: "mode switch",
-                        restoreFov: true, keepPipDisabled: newScopeModeBypassed);
+                        restoreFov: true);
                     return;
                 }
-                _scopeModeBypassActive = false;
 
                 _modBypassedForCurrentScope = false;
 
@@ -484,7 +477,6 @@ namespace PiPDisabler
             PlaneVisualizer.Hide();
             ZeroingController.Reset();
             _modBypassedForCurrentScope = false;
-            _scopeModeBypassActive = false;
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
             _lastEnabledOptic = null;
@@ -567,7 +559,13 @@ namespace PiPDisabler
             if (!string.IsNullOrWhiteSpace(modScopeName))
                 return modScopeName;
 
-            // Fallback for runtimes where hierarchy naming is atypical.
+            // Prefer the runtime object name over template metadata.
+            // Template reflection can momentarily report stale values on mode switches.
+            string objectName = NormalizeScopeKey(os.name);
+            if (!string.IsNullOrWhiteSpace(objectName))
+                return objectName;
+
+            // Fallback for atypical hierarchies.
             string templateName = FovController.GetOpticTemplateName(os);
             if (!string.IsNullOrWhiteSpace(templateName)
                 && !string.Equals(templateName, "unknown", StringComparison.OrdinalIgnoreCase))
@@ -577,9 +575,6 @@ namespace PiPDisabler
             if (!string.IsNullOrWhiteSpace(templateId)
                 && !string.Equals(templateId, "unknown", StringComparison.OrdinalIgnoreCase))
                 return templateId;
-
-            if (!string.IsNullOrWhiteSpace(os.name))
-                return NormalizeScopeKey(os.name);
 
             return null;
         }
@@ -637,35 +632,8 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Returns true when the backup/iron branch of a hybrid optic is active
-        /// (SelectedScopeIndex==1, SelectedScopeMode==0) AND the scope's template
-        /// appears in scope_mode_bypass_ids.json.
-        /// </summary>
-        private static bool IsScopeModeBypassConditionMet(OpticSight os)
-        {
-            if (os == null) return false;
-
-            var (scopeIndex, scopeMode) = FovController.GetCurrentScopeState(os);
-            if (scopeIndex != 1 || scopeMode != 0) return false;
-
-            string tid = FovController.GetOpticTemplateId(os);
-            string tname = FovController.GetOpticTemplateName(os);
-            bool matched = ScopeModeBypassConfig.IsTemplateMatched(tid, tname);
-
-            if (matched)
-            {
-                PiPDisablerPlugin.LogInfo(
-                    $"[ScopeLifecycle] Scope-mode bypass condition met: " +
-                    $"id='{tid}' name='{tname}' scopeIndex={scopeIndex} scopeMode={scopeMode}");
-            }
-
-            return matched;
-        }
-
-        /// <summary>
-        /// Called from the SetScopeMode patch after EFT applies scope state changes.
-        /// Re-evaluates scope-mode bypass so transitions while ADS (e.g. toggling to
-        /// backup iron on a hybrid optic) take effect immediately without un-scoping.
+        /// Called from SetScopeMode patches after EFT applies scope state changes.
+        /// Re-applies zoom/FOV immediately while scoped.
         /// </summary>
         public static void OnSetScopeMode()
         {
@@ -678,59 +646,11 @@ namespace PiPDisabler
             var os = _activeOptic;
             if (os == null) return;
 
-            bool wasScopeModeBypassed = _scopeModeBypassActive;
-            bool isScopeModeBypassed  = IsScopeModeBypassConditionMet(os);
+            if (_modBypassedForCurrentScope) return;
 
-            if (isScopeModeBypassed == wasScopeModeBypassed) return; // no change
-
-            _scopeModeBypassActive = isScopeModeBypassed;
-            float minFov = ZoomController.GetMinFov(os);
-
-            if (isScopeModeBypassed)
-            {
-                // Entering scope-mode bypass: apply bypass but keep PiP disabled
-                PiPDisablerPlugin.LogInfo(
-                    "[ScopeLifecycle] Scope-mode bypass ACTIVATED (backup/iron branch)");
-                _modBypassedForCurrentScope = true;
-                ApplyBypassState(os, minFov,
-                    reason: "scope-mode (backup iron)",
-                    restoreFov: true,
-                    keepPipDisabled: true);
-            }
-            else
-            {
-                // Exiting scope-mode bypass: re-enable mod effects for the optic branch
-                PiPDisablerPlugin.LogInfo(
-                    "[ScopeLifecycle] Scope-mode bypass DEACTIVATED — re-applying mod effects");
-                _modBypassedForCurrentScope = false;
-
-                // Re-run scope enter logic for the now-active optic branch
-                ReticleRenderer.ExtractReticle(os);
-                LensTransparency.HideAllLensSurfaces(os);
-                ReticleRenderer.SetLensMaskEntries(CollectStencilEntries(os));
-                FovController.OnModeSwitch();
-
-                if (PiPDisablerPlugin.EnableMeshSurgery.Value)
-                {
-                    MeshSurgeryManager.ApplyForOptic(os);
-                    if (!MeshSurgeryManager.HasSuccessfulCut())
-                    {
-                        _meshRetryAttemptsLeft = MeshRetryMaxAttempts;
-                        _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
-                    }
-                }
-
-                CameraSettingsManager.ApplyForOptic(os);
-                Patches.WeaponScalingPatch.CaptureBaseState();
-
-                if (!FreelookTracker.IsFreelooking)
-                {
-                    float mag = ZoomController.GetMagnification(os);
-                    ReticleRenderer.Show(os, mag);
-                    ScopeEffectsRenderer.Show();
-                    ApplyFov(true);
-                }
-            }
+            FovController.OnModeSwitch();
+            if (!FreelookTracker.IsFreelooking)
+                ApplyFov(true);
         }
 
         private static bool ShouldBypassForCurrentOptic(OpticSight os, float minFov)
@@ -860,23 +780,21 @@ namespace PiPDisabler
         // ===== State transitions =====
 
         private static void ApplyBypassState(OpticSight os, float minFov, string reason,
-            bool restoreFov, bool keepPipDisabled = false)
+            bool restoreFov)
         {
             string opticName = os != null ? os.name : "null";
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] Bypassing mod for current scope ({reason}): " +
                 $"'{opticName}'[{FovController.GetOpticTemplateId(os)}] " +
                 $"key='{ResolveWhitelistScopeKey(os)}' minFov={minFov:F2}° adjustable={FovController.IsOpticAdjustable(os)} " +
-                $"keepPipDisabled={keepPipDisabled}");
+                $"restoreFov={restoreFov}");
 
             // On fresh scope enter, forcing RestoreFov() can stomp EFT's own optic zoom
             // for bypassed scopes until the next zoom/mode event. Let vanilla drive FOV
             // immediately on enter, but still restore when switching from a modded mode.
             if (restoreFov)
             {
-                _restoreOneXFovOnScopeExit = keepPipDisabled;
                 RestoreFov();
-                _restoreOneXFovOnScopeExit = false;
             }
             Patches.WeaponScalingPatch.RestoreScale();
             ZoomController.Restore();
@@ -884,10 +802,7 @@ namespace PiPDisabler
             ScopeEffectsRenderer.Cleanup();
             LensTransparency.RestoreAll();
             CameraSettingsManager.Restore();
-            // For scope-mode bypass, keep PiP cameras disabled to avoid FPS cost of
-            // the still-active optic component on the backup/iron branch.
-            if (!keepPipDisabled)
-                PiPDisabler.RestoreAllCameras();
+            PiPDisabler.RestoreAllCameras();
 
             if (PiPDisablerPlugin.GetRestoreOnUnscope())
             {
@@ -916,12 +831,11 @@ namespace PiPDisabler
             PerScopeMeshSurgerySettings.SetActiveScope(ResolveWhitelistScopeKey(os));
 
             float minFov = ZoomController.GetMinFov(os);
-            _scopeModeBypassActive = IsScopeModeBypassConditionMet(os);
-            _modBypassedForCurrentScope = _scopeModeBypassActive || ShouldBypassForCurrentOptic(os, minFov);
+            _modBypassedForCurrentScope = ShouldBypassForCurrentOptic(os, minFov);
             if (_modBypassedForCurrentScope)
             {
                 ApplyBypassState(os, minFov, reason: "scope enter",
-                    restoreFov: false, keepPipDisabled: _scopeModeBypassActive);
+                    restoreFov: false);
                 return;
             }
 
@@ -1011,17 +925,10 @@ namespace PiPDisabler
             _activeOptic = null;
             PerScopeMeshSurgerySettings.ClearActiveScope();
 
-            bool wasScopeModeBypassed = _scopeModeBypassActive;
-            _scopeModeBypassActive = false;
-
             // If this scope was bypassed, skip mod cleanup paths.
-            // For scope-mode bypass we still need to restore PiP on exit since the
-            // optic component is fully deactivated when the player un-scopes.
             if (_modBypassedForCurrentScope)
             {
                 _modBypassedForCurrentScope = false;
-                if (wasScopeModeBypassed)
-                    PiPDisabler.RestoreAllCameras();
                 _restoreOneXFovOnScopeExit = false;
                 return;
             }
