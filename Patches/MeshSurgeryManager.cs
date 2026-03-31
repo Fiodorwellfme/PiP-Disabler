@@ -163,7 +163,13 @@ namespace PiPDisabler
             var cache = _currentWeaponCache;
             if (cache == null) return false;
             if (!cache.Built) return false;
-            return cache.Entries.Count > 0;
+            for (int i = 0; i < cache.Entries.Count; i++)
+            {
+                var entry = cache.Entries[i];
+                if (entry != null && entry.Applied && entry.Filter != null && entry.CutMesh != null)
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -412,6 +418,7 @@ namespace PiPDisabler
             if (weaponRootTf == null)
             {
                 cache.Dirty = true;
+                cache.Built = false;
                 return;
             }
 
@@ -419,6 +426,9 @@ namespace PiPDisabler
             if (!TryRebindEntries(cache, weaponRootTf))
             {
                 cache.Dirty = true;
+                cache.Built = false;
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] Reapply failed: rebind miss for profile '{cache.ProfileKey}'. Forcing rebuild.");
                 return;
             }
 
