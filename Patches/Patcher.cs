@@ -26,6 +26,8 @@ namespace PiPDisabler.Patches
             SafeEnable<PlayerLookPatch>();
             // Weapon scaling (freeze ribcage scale while scoped)
             SafeEnable<WeaponScalingPatch>();
+            // Disable SpeedTree terrain crossfade setup at source.
+            SafeEnable<SpeedTreeCrossfadePatch>();
             // Fika compatibility patch
             FikaCompat.Enable();
         }
