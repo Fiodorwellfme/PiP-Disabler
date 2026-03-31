@@ -201,7 +201,9 @@ namespace PiPDisabler
                 LensTransparency.HideAllLensSurfaces(os);
 
                 // Recollect housing + weapon renderers for the new mode's geometry.
-                ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
+                var stencilRenderers = CollectStencilRenderers(os);
+                ReticleRenderer.SetHousingRenderers(stencilRenderers);
+                ScopeEffectsRenderer.SetHousingRenderers(stencilRenderers);
 
                 // Show reticle for the new mode (with magnification scaling)
                 float modeMag = ZoomController.GetMagnification(os);
@@ -781,7 +783,9 @@ namespace PiPDisabler
 
             // 2b. Collect housing + weapon renderers for reticle stencil mask (lens surfaces
             //     are already empty-meshed above, so they won't end up in the list).
-            ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
+            var stencilRenderers = CollectStencilRenderers(os);
+            ReticleRenderer.SetHousingRenderers(stencilRenderers);
+            ScopeEffectsRenderer.SetHousingRenderers(stencilRenderers);
 
             // 3. Get magnification for reticle scaling and zoom
             float mag = ZoomController.GetMagnification(os);

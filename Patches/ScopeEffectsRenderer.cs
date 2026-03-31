@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Rendering;
+using System.Collections.Generic;
 
 namespace PiPDisabler
 {
@@ -48,6 +49,10 @@ namespace PiPDisabler
         private static Matrix4x4  _shadowMatrix = Matrix4x4.identity;
         private static bool       _shadowActive;
         private static bool       _effectsVisible;
+        private static readonly List<Renderer> _housingRenderers = new List<Renderer>(64);
+        private static Material   _stencilClearMat;
+        private static Material   _housingStencilMat;
+        private static bool       _hasStencilSupport;
 
         // ── CommandBuffer ───────────────────────────────────────────────────
         private static CommandBuffer _cmdBuffer;
@@ -124,7 +129,15 @@ namespace PiPDisabler
             _effectsVisible = false;
             _vigActive = false;
             _shadowActive = false;
+            _housingRenderers.Clear();
             DetachFromCamera();
+        }
+
+        public static void SetHousingRenderers(List<Renderer> renderers)
+        {
+            _housingRenderers.Clear();
+            if (renderers != null)
+                _housingRenderers.AddRange(renderers);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -252,9 +265,29 @@ namespace PiPDisabler
             if (_shadowActive && _shadowMat != null && _shadowMesh != null)
                 _cmdBuffer.DrawMesh(_shadowMesh, _shadowMatrix, _shadowMat, 0, -1);
 
-            // Draw vignette on top
+            // Draw vignette on top, masked by housing stencil.
             if (_vigActive && _vigMat != null && _vigMesh != null)
+            {
+                bool useHousingStencil = _hasStencilSupport
+                                         && _stencilClearMat != null
+                                         && _housingStencilMat != null
+                                         && _housingRenderers.Count > 0;
+
+                if (useHousingStencil)
+                {
+                    _cmdBuffer.DrawMesh(_vigMesh, Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f)), _stencilClearMat, 0, -1);
+                    _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
+                    for (int i = 0; i < _housingRenderers.Count; i++)
+                    {
+                        var r = _housingRenderers[i];
+                        if (r == null || !r.gameObject.activeInHierarchy) continue;
+                        _cmdBuffer.DrawRenderer(r, _housingStencilMat);
+                    }
+                    _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                }
+
                 _cmdBuffer.DrawMesh(_vigMesh, _vigMatrix, _vigMat, 0, -1);
+            }
 
             // Restore original matrices
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
@@ -271,14 +304,25 @@ namespace PiPDisabler
 
             if (_vigMat == null)
             {
-                _vigMat = new Material(FindAlphaShader())
+                _vigMat = new Material(FindStencilAlphaShader())
                 {
                     color       = Color.white,
                     renderQueue = 3099
                 };
                 _vigMat.SetInt("_ZTest", (int)CompareFunction.Always);
                 _vigMat.SetInt("_ZWrite", 0);
+
+                if (_vigMat.HasProperty("_Stencil"))
+                {
+                    _vigMat.SetFloat("_Stencil",          1f);
+                    _vigMat.SetFloat("_StencilComp",      (float)CompareFunction.NotEqual);
+                    _vigMat.SetFloat("_StencilOp",        (float)StencilOp.Keep);
+                    _vigMat.SetFloat("_StencilReadMask",  255f);
+                    _vigMat.SetFloat("_StencilWriteMask", 0f);
+                }
             }
+
+            EnsureStencilHelperMaterials();
         }
 
         /// <summary>
@@ -362,13 +406,21 @@ namespace PiPDisabler
 
             if (_shadowMat == null)
             {
-                _shadowMat = new Material(FindAlphaShader())
+                _shadowMat = new Material(FindStencilAlphaShader())
                 {
                     color       = Color.white,
                     renderQueue = 3050
                 };
                 _shadowMat.SetInt("_ZTest", (int)CompareFunction.Always);
                 _shadowMat.SetInt("_ZWrite", 0);
+                if (_shadowMat.HasProperty("_Stencil"))
+                {
+                    _shadowMat.SetFloat("_Stencil",          1f);
+                    _shadowMat.SetFloat("_StencilComp",      (float)CompareFunction.NotEqual);
+                    _shadowMat.SetFloat("_StencilOp",        (float)StencilOp.Keep);
+                    _shadowMat.SetFloat("_StencilReadMask",  255f);
+                    _shadowMat.SetFloat("_StencilWriteMask", 0f);
+                }
             }
         }
 
@@ -472,6 +524,36 @@ namespace PiPDisabler
             Shader.Find("Unlit/Transparent")       ??
             Shader.Find("Particles/Alpha Blended") ??
             Shader.Find("Legacy Shaders/Transparent/Diffuse");
+
+        private static Shader FindStencilAlphaShader() =>
+            Shader.Find("UI/Default") ?? FindAlphaShader();
+
+        private static void EnsureStencilHelperMaterials()
+        {
+            if (_stencilClearMat != null && _housingStencilMat != null) return;
+
+            Shader stencilShader = Shader.Find("UI/Default");
+            _hasStencilSupport = stencilShader != null;
+            if (!_hasStencilSupport) return;
+
+            _stencilClearMat = new Material(stencilShader) { renderQueue = 4998 };
+            _stencilClearMat.SetFloat("_Stencil",          0f);
+            _stencilClearMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
+            _stencilClearMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
+            _stencilClearMat.SetFloat("_StencilWriteMask", 255f);
+            _stencilClearMat.SetFloat("_ColorMask",        0f);
+            _stencilClearMat.SetInt("_ZTest", (int)CompareFunction.Always);
+            _stencilClearMat.SetInt("_ZWrite", 0);
+
+            _housingStencilMat = new Material(stencilShader) { renderQueue = 4999 };
+            _housingStencilMat.SetFloat("_Stencil",          1f);
+            _housingStencilMat.SetFloat("_StencilComp",      (float)CompareFunction.Always);
+            _housingStencilMat.SetFloat("_StencilOp",        (float)StencilOp.Replace);
+            _housingStencilMat.SetFloat("_StencilWriteMask", 255f);
+            _housingStencilMat.SetFloat("_ColorMask",        0f);
+            _housingStencilMat.SetInt("_ZTest", (int)CompareFunction.LessEqual);
+            _housingStencilMat.SetInt("_ZWrite", 0);
+        }
 
         private static Mesh BuildQuadMesh(string meshName)
         {
