@@ -407,6 +407,7 @@ namespace PiPDisabler
 
             // Keep lens transparent if EFT restores the original materials
             LensTransparency.EnsureHidden();
+            CameraSettingsManager.RefreshDynamicLodBias();
 
             // ── Mesh surgery retry ─────────────────────────────────────────
             // If the initial cut on scope enter produced zero entries (GPU buffers

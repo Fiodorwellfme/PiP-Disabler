@@ -11,6 +11,7 @@ namespace PiPDisabler
         private static float[] _savedCullDistances;
         private static int _savedMaxLodLevel;
         private static bool _applied;
+        private static float _lastDynamicLodBias = -1f;
 
         public static void ApplyForOptic(OpticSight os)
         {
@@ -47,10 +48,7 @@ namespace PiPDisabler
             if (magnification < 0.1f)
                 magnification = scopeFov > 0.1f ? 35f / scopeFov : 1f;
 
-            float manualLodBias = PiPDisablerPlugin.GetManualLodBiasForCurrentMap();
-            float newLodBias = manualLodBias > 0f
-                ? manualLodBias
-                : _savedLodBias * Mathf.Max(magnification, 1f);
+            float newLodBias = ComputeScopedLodBias(magnification);
             QualitySettings.lodBias = newLodBias;
 
             int manualMaxLod = PiPDisablerPlugin.ManualMaximumLodLevel != null
@@ -84,6 +82,26 @@ namespace PiPDisabler
                 $"[CameraSettings] Applied: lodBias {_savedLodBias:F2}→{newLodBias:F2} (mag={magnification:F1}x) farClip={cam.farClipPlane:F0} maxLOD={appliedMaxLod}");
         }
 
+        public static void RefreshDynamicLodBias()
+        {
+            if (!_applied)
+                return;
+            if (PiPDisablerPlugin.DynamicLodBiasFromMagnification == null
+                || !PiPDisablerPlugin.DynamicLodBiasFromMagnification.Value)
+                return;
+
+            float magnification = FovController.GetEffectiveMagnification();
+            if (magnification < 0.1f)
+                return;
+
+            float lodBias = ComputeScopedLodBias(magnification);
+            if (Mathf.Abs(lodBias - _lastDynamicLodBias) < 0.01f)
+                return;
+
+            QualitySettings.lodBias = lodBias;
+            _lastDynamicLodBias = lodBias;
+        }
+
         public static void Restore()
         {
             if (!_applied)
@@ -104,6 +122,19 @@ namespace PiPDisabler
                 $"[CameraSettings] Restored: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0} maxLOD={_savedMaxLodLevel}");
 
             _applied = false;
+            _lastDynamicLodBias = -1f;
+        }
+
+        private static float ComputeScopedLodBias(float magnification)
+        {
+            if (PiPDisablerPlugin.DynamicLodBiasFromMagnification != null
+                && PiPDisablerPlugin.DynamicLodBiasFromMagnification.Value)
+                return Mathf.Clamp(magnification, 2f, 4f);
+
+            float manualLodBias = PiPDisablerPlugin.GetManualLodBiasForCurrentMap();
+            return manualLodBias > 0f
+                ? manualLodBias
+                : _savedLodBias * Mathf.Max(magnification, 1f);
         }
 
         private static bool TryGetScopeCameraData(OpticSight os, out float fov, out float farClip)

@@ -215,6 +215,7 @@ namespace PiPDisabler
         internal static ConfigEntry<float> FovAnimationDuration;
         internal static ConfigEntry<KeyCode> ZoomToggleKey;
         internal static ConfigEntry<float> ManualLodBias;
+        internal static ConfigEntry<bool> DynamicLodBiasFromMagnification;
         internal static ConfigEntry<int> ManualMaximumLodLevel;
         internal static ConfigEntry<float> ManualCullingMultiplier;
         internal static Dictionary<string, ConfigEntry<float>> MapManualLodBias;
@@ -355,6 +356,12 @@ namespace PiPDisabler
                     "0 = auto (baseLodBias * magnification).\n" +
                     ">0 = force this exact value (e.g. 4.0).",
                     new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            DynamicLodBiasFromMagnification = Config.Bind("Optimization", "DynamicLodBiasFromMagnification", false,
+                new ConfigDescription(
+                    "When enabled, scoped LOD bias tracks template magnification and clamps to [2, 4].\n" +
+                    "This overrides ManualLodBias and per-map ManualLodBias while scoped.",
+                    null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             ManualMaximumLodLevel = Config.Bind("Optimization", "ManualMaximumLodLevel", -1,
                 new ConfigDescription(
