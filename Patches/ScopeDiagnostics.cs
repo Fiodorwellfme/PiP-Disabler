@@ -155,8 +155,7 @@ namespace PiPDisabler
                 }
 
                 // ── Target meshes ─────────────────────────────────────────────
-                var targets = ScopeHierarchy.FindTargetMeshFilters(
-                    scopeRoot, activeMode ?? scopeRoot);
+                var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot);
                 sb.AppendLine($"[Diagnostics] --- Target Meshes ({targets.Count}) ---");
 
                 // Show the search root (may be parent of scope root)
