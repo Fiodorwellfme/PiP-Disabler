@@ -322,13 +322,24 @@ namespace PiPDisabler
 
                 var enabledOs = FindEnabledOpticFromPWA();
 
-                if (!isOptic)
+                // On hybrid transitions, CurrentScope.IsOptic can lag one frame behind
+                // while OpticSight.OnEnable already fired. Prefer enabled OpticSight.
+                if (enabledOs != null)
+                {
+                    shouldBeScoped = true;
+                    _activeOptic = enabledOs;
+                    _lastEnabledOptic = enabledOs;
+                    reason = isOptic
+                        ? "aiming+optic+enabled OpticSight"
+                        : "aiming+enabled OpticSight (CurrentScope lag)";
+                }
+                else if (!isOptic)
                 {
                     reason = "not optic";
                     exitingToNonOpticWhileAiming = true;
                     goto evaluate;
                 }
-                else if (enabledOs == null)
+                else
                 {
                     // Hybrid toggle case: CurrentScope may still report optic while the
                     // enabled OpticSight switched off (e.g., now in collimator mode).
@@ -339,11 +350,6 @@ namespace PiPDisabler
                     exitingToNonOpticWhileAiming = true;
                     goto evaluate;
                 }
-
-                shouldBeScoped = true;
-                _activeOptic = enabledOs;
-                _lastEnabledOptic = enabledOs;
-                reason = "aiming+optic+enabled OpticSight";
             }
             catch (Exception ex) { reason = $"exception: {ex.Message}"; }
 
