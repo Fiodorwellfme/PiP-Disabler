@@ -1231,59 +1231,13 @@ namespace PiPDisabler
             if (scopeRoot == null) return new List<MeshFilter>();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
-            // Determine search root: go up through intermediate containers to catch
-            // housing + mount meshes.  EFT hierarchy variants:
-            //
-            //   mount_xxx(Clone)/               ← mount LODs often HERE
-            //     mod_scope_000/                ← intermediate container
-            //       scope_xxx(Clone)/           ← scopeRoot (has mode_* children)
-            //         mode_000/ | mode/
-            //
-            //   mod_scope_xxx/                  ← housing meshes often HERE
-            //     scope_xxx(Clone)/             ← scopeRoot
-            //       mode_000/ | mode/
-            //
-            // We climb up through parents that look like scope/mod containers,
-            // stopping at the weapon root or a non-scope parent.
-            Transform searchRoot = scopeRoot;
-            for (var p = scopeRoot.parent; p != null; p = p.parent)
+            // Scope mesh surgery to the receiver subtree only.
+            Transform searchRoot = FindAncestorByName(scopeRoot, "mod_reciever");
+            if (searchRoot == null)
             {
-                var pName = p.name ?? "";
-                var plo = pName.ToLowerInvariant();
-                // Stop at weapon root/anim nodes. We intentionally do NOT stop on
-                // receiver nodes because many attachments (e.g. handguards and tactical
-                // devices) live under the same receiver branch and should be cut too.
-                if (plo.Contains("weapon") || plo.Contains("anim"))
-                    break;
-                // Climb through scope/mod/optic/mount containers and receiver branches.
-                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount") || plo.Contains("receiver") || plo.Contains("reciever"))
-                {
-                    searchRoot = p;
-                    continue; // keep climbing
-                }
-                break; // unknown parent — stop
-            }
-            if (searchRoot != scopeRoot)
-                PiPDisablerPlugin.LogVerbose(
-                    $"[ScopeHierarchy] Expanded search root: '{scopeRoot.name}' → '{searchRoot.name}'");
-
-            // Optional: climb further up to the Weapon_root node to include weapon body meshes.
-            // Normally the loop above stops at any parent whose name contains "weapon" or "anim".
-            // With ExpandSearchToWeaponRoot the search climbs through those intermediate nodes
-            // until it finds a transform whose name starts with "Weapon_root".
-            // Path example: Weapon_root/Weapon_root_anim/weapon/mod_scope/<scope>
-            if (PiPDisablerPlugin.GetExpandSearchToWeaponRoot())
-            {
-                for (var p = searchRoot.parent; p != null; p = p.parent)
-                {
-                    if ((p.name ?? "").StartsWith("Weapon_root", StringComparison.OrdinalIgnoreCase))
-                    {
-                        searchRoot = p;
-                        PiPDisablerPlugin.LogVerbose(
-                            $"[ScopeHierarchy] ExpandSearchToWeaponRoot: climbed to '{searchRoot.name}'");
-                        break;
-                    }
-                }
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] FindTargetMeshFilters: 'mod_reciever' ancestor not found for scopeRoot='{scopeRoot.name}'");
+                return new List<MeshFilter>();
             }
 
             var result = new List<MeshFilter>(64);
@@ -1336,6 +1290,16 @@ namespace PiPDisabler
             }
 
             return result;
+        }
+
+        private static Transform FindAncestorByName(Transform start, string name)
+        {
+            for (var t = start; t != null; t = t.parent)
+            {
+                if (string.Equals(t.name, name, StringComparison.OrdinalIgnoreCase))
+                    return t;
+            }
+            return null;
         }
 
         /// <summary>
