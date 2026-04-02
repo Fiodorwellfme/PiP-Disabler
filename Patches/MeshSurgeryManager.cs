@@ -423,12 +423,13 @@ namespace PiPDisabler
             }
 
             cache.WeaponRoot = weaponRootTf.gameObject;
-            if (!TryRebindEntries(cache, weaponRootTf))
+            if (!TryRebindEntries(cache, weaponRootTf, out var rebindFailureReason))
             {
                 cache.Dirty = true;
                 cache.Built = false;
                 PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DEBUG] Reapply failed: rebind miss for profile '{cache.ProfileKey}'. Forcing rebuild.");
+                    $"[MeshSurgery][DEBUG] Reapply failed: {rebindFailureReason} " +
+                    $"for profile '{cache.ProfileKey}'. Forcing rebuild.");
                 return;
             }
 
@@ -622,20 +623,30 @@ namespace PiPDisabler
             return activeMode;
         }
 
-        private static bool TryRebindEntries(CutProfileCache cache, Transform weaponRoot)
+        private static bool TryRebindEntries(CutProfileCache cache, Transform weaponRoot, out string failureReason)
         {
+            failureReason = null;
             foreach (var entry in cache.Entries)
             {
                 if (entry == null || entry.CutMesh == null || string.IsNullOrEmpty(entry.FilterPath))
+                {
+                    failureReason = "invalid cache entry (null entry/cut mesh/path)";
                     return false;
+                }
 
                 var tf = FindRelativeTransform(weaponRoot, entry.FilterPath);
                 if (tf == null)
+                {
+                    failureReason = $"missing transform at path '{entry.FilterPath}'";
                     return false;
+                }
 
                 var mf = tf.GetComponent<MeshFilter>();
                 if (mf == null)
+                {
+                    failureReason = $"missing MeshFilter at path '{entry.FilterPath}'";
                     return false;
+                }
 
                 entry.Filter = mf;
                 if (entry.OriginalMesh == null)
