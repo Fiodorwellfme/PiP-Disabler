@@ -297,7 +297,7 @@ namespace PiPDisabler
             DestroyCutMeshes(cache);
             cache.Entries.Clear();
 
-            var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
+            var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot);
             float cutRadius = PiPDisablerPlugin.GetCutRadius();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
@@ -1231,27 +1231,16 @@ namespace PiPDisabler
             return result;
         }
 
-        public static List<MeshFilter> FindTargetMeshFilters(Transform scopeRoot, Transform activeMode)
+        public static List<MeshFilter> FindTargetMeshFilters(Transform scopeRoot)
         {
             if (scopeRoot == null) return new List<MeshFilter>();
-            bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
             // Scope mesh surgery to the live weapon subtree.
             Transform searchRoot = FindAncestorByName(scopeRoot, "weapon");
             if (searchRoot == null)
-            {
-                PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DEBUG] FindTargetMeshFilters: 'weapon' ancestor not found for scopeRoot='{scopeRoot.name}'");
                 return new List<MeshFilter>();
-            }
 
             var result = new List<MeshFilter>(64);
-
-            if (logCandidates)
-            {
-                PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters searchRoot='{searchRoot.name}' scopeRoot='{scopeRoot.name}' activeMode='{(activeMode != null ? activeMode.name : "<null>")}'");
-            }
 
             foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
             {
@@ -1260,42 +1249,13 @@ namespace PiPDisabler
                 string relSearchPath = GetRelativePath(mf.transform, searchRoot);
 
                 if (IsExcludedWeaponPath(relSearchPath))
-                {
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip excluded path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
-                    }
                     continue;
-                }
 
                 var renderer = mf.GetComponent<Renderer>();
                 if (renderer != null && LensTransparency.IsLensSurfaceRenderer(renderer))
-                {
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip lens path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
-                    }
                     continue;
-                }
 
                 result.Add(mf);
-
-                if (logCandidates)
-                {
-                    PiPDisablerPlugin.LogInfo(
-                        $"[MeshSurgery][DebugCandidates] cuttable path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy}");
-                }
-            }
-
-            PiPDisablerPlugin.LogVerbose(
-                $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': {result.Count} targets");
-
-            if (logCandidates)
-            {
-                PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary cuttable={result.Count}");
             }
 
             return result;
