@@ -1246,8 +1246,6 @@ namespace PiPDisabler
             }
 
             var result = new List<MeshFilter>(64);
-            int skippedLens = 0, skippedExcluded = 0;
-            int inspected = 0;
 
             if (logCandidates)
             {
@@ -1258,13 +1256,11 @@ namespace PiPDisabler
             foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
             {
                 if (!mf || !mf.sharedMesh) continue;
-                inspected++;
 
                 string relSearchPath = GetRelativePath(mf.transform, searchRoot);
 
                 if (IsExcludedWeaponPath(relSearchPath))
                 {
-                    skippedExcluded++;
                     if (logCandidates)
                     {
                         PiPDisablerPlugin.LogInfo(
@@ -1276,7 +1272,6 @@ namespace PiPDisabler
                 var renderer = mf.GetComponent<Renderer>();
                 if (renderer != null && LensTransparency.IsLensSurfaceRenderer(renderer))
                 {
-                    skippedLens++;
                     if (logCandidates)
                     {
                         PiPDisablerPlugin.LogInfo(
@@ -1295,13 +1290,12 @@ namespace PiPDisabler
             }
 
             PiPDisablerPlugin.LogVerbose(
-                $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
-                $"{result.Count} targets, skipped: lens={skippedLens} excluded={skippedExcluded}");
+                $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': {result.Count} targets");
 
             if (logCandidates)
             {
                 PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedLens={skippedLens} skippedExcluded={skippedExcluded}");
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary cuttable={result.Count}");
             }
 
             return result;
