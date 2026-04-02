@@ -417,16 +417,14 @@ namespace PiPDisabler
             var weaponRootTf = FindWeaponTransform(scopeRoot);
             if (weaponRootTf == null)
             {
-                cache.Dirty = true;
-                cache.Built = false;
+                MarkCacheRebuildRequired(cache);
                 return;
             }
 
             cache.WeaponRoot = weaponRootTf.gameObject;
             if (!TryRebindEntries(cache, weaponRootTf, out var rebindFailureReason))
             {
-                cache.Dirty = true;
-                cache.Built = false;
+                MarkCacheRebuildRequired(cache);
                 PiPDisablerPlugin.LogInfo(
                     $"[MeshSurgery][DEBUG] Reapply failed: {rebindFailureReason} " +
                     $"for profile '{cache.ProfileKey}'. Forcing rebuild.");
@@ -445,6 +443,13 @@ namespace PiPDisabler
                 entry.Filter.sharedMesh = entry.CutMesh;
                 entry.Applied = true;
             }
+        }
+
+        private static void MarkCacheRebuildRequired(CutProfileCache cache)
+        {
+            if (cache == null) return;
+            cache.Dirty = true;
+            cache.Built = false;
         }
 
         private static void RestoreOriginalMeshes(CutProfileCache cache)
@@ -1188,7 +1193,7 @@ namespace PiPDisabler
             var result = new List<MeshFilter>(8);
             if (scopeRoot == null) return result;
 
-            // Keep search-root expansion aligned with FindTargetMeshFilters.
+            // Search broad scope/attachment parents for light effect helper meshes.
             Transform searchRoot = scopeRoot;
             for (var p = scopeRoot.parent; p != null; p = p.parent)
             {
@@ -1241,7 +1246,7 @@ namespace PiPDisabler
             }
 
             var result = new List<MeshFilter>(64);
-            int skippedMode = 0, skippedOther = 0, skippedLightFx = 0, skippedExcluded = 0;
+            int skippedLens = 0, skippedExcluded = 0;
             int inspected = 0;
 
             if (logCandidates)
@@ -1271,6 +1276,7 @@ namespace PiPDisabler
                 var renderer = mf.GetComponent<Renderer>();
                 if (renderer != null && LensTransparency.IsLensSurfaceRenderer(renderer))
                 {
+                    skippedLens++;
                     if (logCandidates)
                     {
                         PiPDisablerPlugin.LogInfo(
@@ -1290,12 +1296,12 @@ namespace PiPDisabler
 
             PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
-                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther} lightFx={skippedLightFx} excluded={skippedExcluded}");
+                $"{result.Count} targets, skipped: lens={skippedLens} excluded={skippedExcluded}");
 
             if (logCandidates)
             {
                 PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedMode={skippedMode} skippedOtherScope={skippedOther} skippedLightFx={skippedLightFx} skippedExcluded={skippedExcluded}");
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedLens={skippedLens} skippedExcluded={skippedExcluded}");
             }
 
             return result;
