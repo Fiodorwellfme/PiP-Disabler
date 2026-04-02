@@ -1231,17 +1231,17 @@ namespace PiPDisabler
             if (scopeRoot == null) return new List<MeshFilter>();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
-            // Scope mesh surgery to the receiver subtree only.
-            Transform searchRoot = FindAncestorByName(scopeRoot, "mod_reciever");
+            // Scope mesh surgery to the live weapon subtree.
+            Transform searchRoot = FindAncestorByName(scopeRoot, "weapon");
             if (searchRoot == null)
             {
                 PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DEBUG] FindTargetMeshFilters: 'mod_reciever' ancestor not found for scopeRoot='{scopeRoot.name}'");
+                    $"[MeshSurgery][DEBUG] FindTargetMeshFilters: 'weapon' ancestor not found for scopeRoot='{scopeRoot.name}'");
                 return new List<MeshFilter>();
             }
 
             var result = new List<MeshFilter>(64);
-            int skippedMode = 0, skippedOther = 0, skippedLightFx = 0;
+            int skippedMode = 0, skippedOther = 0, skippedLightFx = 0, skippedExcluded = 0;
             int inspected = 0;
 
             if (logCandidates)
@@ -1255,9 +1255,18 @@ namespace PiPDisabler
                 if (!mf || !mf.sharedMesh) continue;
                 inspected++;
 
-                string relSearchPath = null;
-                if (logCandidates)
-                    relSearchPath = GetRelativePath(mf.transform, searchRoot);
+                string relSearchPath = GetRelativePath(mf.transform, searchRoot);
+
+                if (IsExcludedWeaponPath(relSearchPath))
+                {
+                    skippedExcluded++;
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip excluded path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
 
                 var renderer = mf.GetComponent<Renderer>();
                 if (renderer != null && LensTransparency.IsLensSurfaceRenderer(renderer))
@@ -1281,12 +1290,12 @@ namespace PiPDisabler
 
             PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
-                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther} lightFx={skippedLightFx}");
+                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther} lightFx={skippedLightFx} excluded={skippedExcluded}");
 
             if (logCandidates)
             {
                 PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedMode={skippedMode} skippedOtherScope={skippedOther} skippedLightFx={skippedLightFx}");
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedMode={skippedMode} skippedOtherScope={skippedOther} skippedLightFx={skippedLightFx} skippedExcluded={skippedExcluded}");
             }
 
             return result;
@@ -1300,6 +1309,26 @@ namespace PiPDisabler
                     return t;
             }
             return null;
+        }
+
+        private static bool IsExcludedWeaponPath(string relativePath)
+        {
+            if (string.IsNullOrEmpty(relativePath)) return false;
+            return ContainsPathSegment(relativePath, "patron_in_weapon")
+                   || ContainsPathSegment(relativePath, "mod_magazine")
+                   || ContainsPathSegment(relativePath, "mod_magazine_new");
+        }
+
+        private static bool ContainsPathSegment(string path, string segment)
+        {
+            if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(segment)) return false;
+            var parts = path.Split('/');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (string.Equals(parts[i], segment, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>
