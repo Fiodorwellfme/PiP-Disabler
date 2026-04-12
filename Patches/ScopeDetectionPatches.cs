@@ -1,6 +1,7 @@
 using System.Reflection;
 using EFT;
 using EFT.CameraControl;
+using EFT.InventoryLogic;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
@@ -93,6 +94,35 @@ namespace PiPDisabler.Patches
             PiPDisablerPlugin.LogVerbose(
                 $"[Patch] SetScopeMode frame={Time.frameCount}");
             ScopeLifecycle.OnSetScopeMode();
+        }
+    }
+
+    /// <summary>
+    /// Postfix on Player.OnSetInHands(GEventArgs9).
+    /// Slot/weapon switches flow through this path; re-sync scope state so ADS
+    /// enter logic does not depend on manual slot toggling.
+    /// </summary>
+    internal sealed class PlayerOnSetInHandsPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(Player), "OnSetInHands");
+
+        [PatchPostfix]
+        private static void Postfix(Player __instance, GEventArgs9 eventArgs)
+        {
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            if (__instance == null || eventArgs == null || eventArgs.Status != CommandStatus.Succeed) return;
+
+            var localPlayer = PiPDisablerPlugin.GetLocalPlayer();
+            if (!ReferenceEquals(__instance, localPlayer)) return;
+
+            PiPDisablerPlugin.LogVerbose(
+                $"[Patch] OnSetInHands frame={Time.frameCount} item='{eventArgs.Item?.TemplateId ?? "null"}'");
+
+            if (ScopeLifecycle.IsScoped)
+                ScopeLifecycle.ForceExit();
+
+            ScopeLifecycle.SyncState();
         }
     }
 }

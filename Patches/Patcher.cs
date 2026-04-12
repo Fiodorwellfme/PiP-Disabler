@@ -16,6 +16,7 @@ namespace PiPDisabler.Patches
             SafeEnable<OpticSightOnDisablePatch>();
             SafeEnable<ChangeAimingModePatch>();
             SafeEnable<SetScopeModePatch>();
+            SafeEnable<PlayerOnSetInHandsPatch>();
             // No-PiP
             SafeEnable<PiPDisabler.OpticComponentUpdaterCopyComponentFromOptic_DisablePiP>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterLateUpdate_DisablePiP>();

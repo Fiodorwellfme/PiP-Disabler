@@ -61,6 +61,14 @@ namespace PiPDisabler
         private static object _inventoryEventSource;
         private static Delegate _addItemHandler;
         private static Delegate _removeItemHandler;
+        private static int _lastAttemptTargets;
+        private static int _lastAttemptEntries;
+        private static int _lastAttemptReadableCopyFailures;
+        private static bool _lastAttemptWeaponRootFound;
+        private static bool _lastAttemptPlaneFound;
+        private static string _lastAttemptOptic = "<none>";
+        private static string _lastAttemptScopeRoot = "<none>";
+        private static string _lastAttemptActiveMode = "<none>";
 
         public static void ApplyForOptic(OpticSight os)
         {
@@ -81,9 +89,15 @@ namespace PiPDisabler
             }
 
             if (cache.Dirty || !cache.Built)
+            {
                 RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode);
+            }
             else
+            {
                 ReapplyCachedCutMeshes(cache, scopeRoot);
+                if (cache.Dirty)
+                    RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode);
+            }
         }
 
         public static void RestoreForScope(Transform anyTransformUnderScope)
@@ -163,7 +177,22 @@ namespace PiPDisabler
             var cache = _currentWeaponCache;
             if (cache == null) return false;
             if (!cache.Built) return false;
-            return cache.Entries.Count > 0;
+            for (int i = 0; i < cache.Entries.Count; i++)
+            {
+                var entry = cache.Entries[i];
+                if (entry != null && entry.Applied && entry.Filter != null && entry.CutMesh != null)
+                    return true;
+            }
+            return false;
+        }
+
+        public static string GetLastAttemptDebugSnapshot()
+        {
+            return
+                $"optic='{_lastAttemptOptic}' scopeRoot='{_lastAttemptScopeRoot}' mode='{_lastAttemptActiveMode}' " +
+                $"weaponRootFound={_lastAttemptWeaponRootFound} planeFound={_lastAttemptPlaneFound} " +
+                $"targets={_lastAttemptTargets} entries={_lastAttemptEntries} readableCopyFailures={_lastAttemptReadableCopyFailures} " +
+                $"frame={_lastCutAttemptFrame}";
         }
 
         /// <summary>
@@ -187,7 +216,7 @@ namespace PiPDisabler
                     $"[MeshSurgery][Retry] No current weapon cache — calling ApplyForOptic. frame={Time.frameCount}");
                 ApplyForOptic(os);
                 cache = _currentWeaponCache;
-                return cache != null && cache.Entries.Count > 0;
+                return HasSuccessfulCut();
             }
 
             // Force a full rebuild by marking dirty
@@ -196,7 +225,7 @@ namespace PiPDisabler
             cache.Dirty = true;
             ApplyForOptic(os);
 
-            bool success = cache.Entries.Count > 0;
+            bool success = HasSuccessfulCut();
             PiPDisablerPlugin.LogInfo(
                 $"[MeshSurgery][Retry] Result: Entries={cache.Entries.Count} success={success} frame={Time.frameCount}");
             return success;
@@ -257,6 +286,15 @@ namespace PiPDisabler
         {
             if (cache == null || os == null || scopeRoot == null) return;
             if (!activeMode) activeMode = os.transform;
+            _lastAttemptOptic = os.name;
+            _lastAttemptScopeRoot = scopeRoot.name;
+            _lastAttemptActiveMode = activeMode.name;
+            _lastAttemptWeaponRootFound = false;
+            _lastAttemptPlaneFound = false;
+            _lastAttemptTargets = 0;
+            _lastAttemptEntries = 0;
+            _lastAttemptReadableCopyFailures = 0;
+
             var weaponRootTf = FindWeaponTransform(scopeRoot);
             if (weaponRootTf == null)
             {
@@ -264,6 +302,7 @@ namespace PiPDisabler
                     $"[MeshSurgery][DEBUG] FindWeaponTransform returned null for scopeRoot='{scopeRoot.name}' frame={Time.frameCount}");
                 return;
             }
+            _lastAttemptWeaponRootFound = true;
             cache.WeaponRoot = weaponRootTf.gameObject;
 
             if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
@@ -274,6 +313,7 @@ namespace PiPDisabler
                     $"os='{os.name}' scopeRoot='{scopeRoot.name}' activeMode='{activeMode.name}' frame={Time.frameCount}");
                 return;
             }
+            _lastAttemptPlaneFound = true;
 
             bool isCylinderMode = PiPDisablerPlugin.GetCutMode() == "Cylinder";
             float plane1Offset = isCylinderMode
@@ -292,6 +332,7 @@ namespace PiPDisabler
             cache.Entries.Clear();
 
             var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
+            _lastAttemptTargets = targets.Count;
             float cutRadius = PiPDisablerPlugin.GetCutRadius();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
@@ -320,6 +361,7 @@ namespace PiPDisabler
                         PiPDisablerPlugin.LogInfo(
                             $"[MeshSurgery][DEBUG] MakeReadableMeshCopy returned null for '{originalAsset.name}' " +
                             $"(isReadable={originalAsset.isReadable} verts={originalAsset.vertexCount}) frame={Time.frameCount}");
+                        _lastAttemptReadableCopyFailures++;
                         continue;
                     }
 
@@ -391,6 +433,7 @@ namespace PiPDisabler
             cache.Dirty = false;
             cache.SettingsSignature = BuildCutSettingsSignature();
             _lastCutAttemptFrame = Time.frameCount;
+            _lastAttemptEntries = cache.Entries.Count;
 
             if (cache.Entries.Count == 0)
             {
@@ -412,6 +455,8 @@ namespace PiPDisabler
             if (weaponRootTf == null)
             {
                 cache.Dirty = true;
+                if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
+                    PiPDisablerPlugin.LogInfo("[MeshSurgery][DEBUG] Reapply cache failed: weapon root missing, forcing rebuild.");
                 return;
             }
 
@@ -419,6 +464,8 @@ namespace PiPDisabler
             if (!TryRebindEntries(cache, weaponRootTf))
             {
                 cache.Dirty = true;
+                if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
+                    PiPDisablerPlugin.LogInfo("[MeshSurgery][DEBUG] Reapply cache failed: entry rebind failed, forcing rebuild.");
                 return;
             }
 
@@ -1210,63 +1257,24 @@ namespace PiPDisabler
             if (scopeRoot == null) return new List<MeshFilter>();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
-            // Determine search root: go up through intermediate containers to catch
-            // housing + mount meshes.  EFT hierarchy variants:
-            //
-            //   mount_xxx(Clone)/               ← mount LODs often HERE
-            //     mod_scope_000/                ← intermediate container
-            //       scope_xxx(Clone)/           ← scopeRoot (has mode_* children)
-            //         mode_000/ | mode/
-            //
-            //   mod_scope_xxx/                  ← housing meshes often HERE
-            //     scope_xxx(Clone)/             ← scopeRoot
-            //       mode_000/ | mode/
-            //
-            // We climb up through parents that look like scope/mod containers,
-            // stopping at the weapon root or a non-scope parent.
-            Transform searchRoot = scopeRoot;
-            for (var p = scopeRoot.parent; p != null; p = p.parent)
+            Transform searchRoot = null;
+            for (var p = scopeRoot; p != null; p = p.parent)
             {
-                var pName = p.name ?? "";
-                var plo = pName.ToLowerInvariant();
-                // Stop at weapon root/anim nodes. We intentionally do NOT stop on
-                // receiver nodes because many attachments (e.g. handguards and tactical
-                // devices) live under the same receiver branch and should be cut too.
-                if (plo.Contains("weapon") || plo.Contains("anim"))
-                    break;
-                // Climb through scope/mod/optic/mount containers and receiver branches.
-                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount") || plo.Contains("receiver") || plo.Contains("reciever"))
+                if (p.name != null && p.name.Equals("weapon", StringComparison.OrdinalIgnoreCase))
                 {
                     searchRoot = p;
-                    continue; // keep climbing
+                    break;
                 }
-                break; // unknown parent — stop
             }
-            if (searchRoot != scopeRoot)
-                PiPDisablerPlugin.LogVerbose(
-                    $"[ScopeHierarchy] Expanded search root: '{scopeRoot.name}' → '{searchRoot.name}'");
 
-            // Optional: climb further up to the Weapon_root node to include weapon body meshes.
-            // Normally the loop above stops at any parent whose name contains "weapon" or "anim".
-            // With ExpandSearchToWeaponRoot the search climbs through those intermediate nodes
-            // until it finds a transform whose name starts with "Weapon_root".
-            // Path example: Weapon_root/Weapon_root_anim/weapon/mod_scope/<scope>
-            if (PiPDisablerPlugin.GetExpandSearchToWeaponRoot())
+            if (searchRoot == null)
             {
-                for (var p = searchRoot.parent; p != null; p = p.parent)
-                {
-                    if ((p.name ?? "").StartsWith("Weapon_root", StringComparison.OrdinalIgnoreCase))
-                    {
-                        searchRoot = p;
-                        PiPDisablerPlugin.LogVerbose(
-                            $"[ScopeHierarchy] ExpandSearchToWeaponRoot: climbed to '{searchRoot.name}'");
-                        break;
-                    }
-                }
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters could not find weapon root for '{scopeRoot.name}'");
+                return new List<MeshFilter>();
             }
 
             var result = new List<MeshFilter>(64);
-            int skippedMode = 0, skippedOther = 0, skippedLightFx = 0;
             int inspected = 0;
 
             if (logCandidates)
@@ -1283,6 +1291,28 @@ namespace PiPDisabler
                 string relSearchPath = null;
                 if (logCandidates)
                     relSearchPath = GetRelativePath(mf.transform, searchRoot);
+
+                if (IsVolatileWeaponPath(relSearchPath))
+                {
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip volatile path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
+
+                if (ContainsPatronToken(relSearchPath)
+                    || ContainsPatronToken(mf.gameObject.name)
+                    || ContainsPatronToken(mf.sharedMesh.name))
+                {
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip patron path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
 
                 var renderer = mf.GetComponent<Renderer>();
                 if (renderer != null && LensTransparency.IsLensSurfaceRenderer(renderer))
@@ -1306,15 +1336,34 @@ namespace PiPDisabler
 
             PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
-                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther} lightFx={skippedLightFx}");
+                $"{result.Count} targets");
 
             if (logCandidates)
             {
                 PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedMode={skippedMode} skippedOtherScope={skippedOther} skippedLightFx={skippedLightFx}");
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count}");
             }
 
             return result;
+        }
+
+        private static bool IsVolatileWeaponPath(string relativePath)
+        {
+            if (string.IsNullOrEmpty(relativePath))
+                return false;
+
+            var path = relativePath.ToLowerInvariant();
+            return path.Contains("patron_in_weapon")
+                || path.Contains("mod_magazine")
+                || path.Contains("mod_magazine_new");
+        }
+
+        private static bool ContainsPatronToken(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return false;
+
+            return value.IndexOf("patron", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>

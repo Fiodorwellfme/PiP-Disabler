@@ -210,6 +210,7 @@ namespace PiPDisabler
         // --- Zoom / FOV ---
         internal static ConfigEntry<bool> EnableZoom;
         internal static ConfigEntry<float> DefaultZoom;
+        internal static ConfigEntry<float> BaselineFOV;
         internal static ConfigEntry<bool> AutoFovFromScope;
         internal static ConfigEntry<float> ScopedFov;
         internal static ConfigEntry<float> FovAnimationDuration;
@@ -227,6 +228,7 @@ namespace PiPDisabler
         // --- Debug ---
         internal static ConfigEntry<bool> VerboseLogging;
         internal static ConfigEntry<bool> DebugLogCutCandidates;
+        internal static ConfigEntry<bool> DebugMeshSurgeryLifecycle;
         internal static ConfigEntry<bool> DebugReticleAfterEverything;
 
 
@@ -330,6 +332,12 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Default magnification when auto-detection fails (e.g. fixed scopes without zoom data).",
                     new AcceptableValueRange<float>(1f, 16f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+            BaselineFOV = Config.Bind("General", "BaselineFOV", 35f,
+                new ConfigDescription(
+                    "What to use when calculating magnified FOV (if set to 50 then 2x will be 25°).\n" +
+                    "Be aware that 1x is always forced to 35°.",
+                    new AcceptableValueRange<float>(20f, 50f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             AutoFovFromScope = Config.Bind("General", "AutoFovFromScope", true,
                 new ConfigDescription(
@@ -809,6 +817,11 @@ namespace PiPDisabler
                 "plus per-candidate radius checks. Useful to diagnose attachments that are not being cut.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
+            DebugMeshSurgeryLifecycle = Config.Bind("Diagnostics", "DebugMeshSurgeryLifecycle", false,
+                new ConfigDescription(
+                    "When enabled, logs detailed scope-enter/mode-switch mesh-surgery context and last cut attempt snapshot.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             DebugReticleAfterEverything = Config.Bind("General", "Draw reticle after everything", false,
                 new ConfigDescription(
                     "When enabled, reticle is always clear but doesn't get tinted by NVGs",
@@ -872,6 +885,7 @@ namespace PiPDisabler
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
         internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
         internal static bool GetDebugLogCutCandidates() => DebugLogCutCandidates?.Value ?? false;
+        internal static bool GetDebugMeshSurgeryLifecycle() => DebugMeshSurgeryLifecycle?.Value ?? false;
         internal static bool GetDebugReticleAfterEverything() => DebugReticleAfterEverything?.Value ?? false;
         internal static bool GetAutoSwitchReticleRenderForNvg() => AutoSwitchReticleRenderForNvg?.Value ?? false;
 

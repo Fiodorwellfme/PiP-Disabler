@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Linq;
 using System.Reflection;
 using EFT.CameraControl;
@@ -24,8 +25,7 @@ namespace PiPDisabler
     internal static class FovController
     {
         // Fixed baseline for zoom-to-FOV conversion — independent of player FOV settings.
-        public const float ZoomBaselineFov = 50f;
-        public const float OneXFovOffset = 15f;
+        public static float ZoomBaselineFov => PiPDisablerPlugin.BaselineFOV.Value;
 
         // --- Per-scope caches (cleared on mode switch / scope exit) ---
         private static object _cachedSightComponent;
@@ -117,7 +117,7 @@ namespace PiPDisabler
                 {
                     _lastLoggedMag = magnification;
                     string mapping = magnification <= 1.01f
-                        ? $"(1x override={oneXTargetFov:F1}° base-15)"
+                        ? $"(1x override={oneXTargetFov:F1}°)"
                         : $"(baseline={ZoomBaselineFov:F0}°)";
                     PiPDisablerPlugin.LogInfo(
                         $"[FovController] mag={magnification:F2}x → mainFov={resultFov:F1}° " +
@@ -186,12 +186,54 @@ namespace PiPDisabler
 
         public static float GetOneXTargetFov()
         {
+            var os = ScopeLifecycle.ActiveOptic;
             var player = PiPDisablerPlugin.GetLocalPlayer();
             var pwa = player?.ProceduralWeaponAnimation;
-            if (pwa == null)
-                return ZoomBaselineFov - OneXFovOffset;
 
-            return Mathf.Max(1f, pwa.Single_2 - OneXFovOffset);
+            if (os != null && TryGetCurrentTemplateZoomEntry(os, out float currentZoom, out int modeCount))
+            {
+                if (Mathf.Abs(currentZoom - 1f) <= 0.01f)
+                {
+                    // Single-entry 1x mode uses vanilla ADS offset behavior.
+                    if (modeCount == 1 && pwa != null)
+                        return Mathf.Max(1f, pwa.Single_2 - 15f);
+
+                    // 1x inside a multi-mode stack stays fixed at optic FOV.
+                    return 35f;
+                }
+            }
+
+            if (pwa == null)
+                return ZoomBaselineFov;
+
+            return Mathf.Max(1f, pwa.Single_2);
+        }
+
+        private static bool TryGetCurrentTemplateZoomEntry(OpticSight os, out float zoom, out int modeCount)
+        {
+            zoom = 0f;
+            modeCount = 0;
+
+            if (os == null) return false;
+            if (!TryGetItemTemplateObject(os, out object template) || template == null) return false;
+
+            var state = GetCurrentScopeState(os);
+            if (state.index < 0 || state.mode < 0) return false;
+
+            const BindingFlags anyFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            object zoomsObj = template.GetType().GetProperty("Zooms", anyFlags)?.GetValue(template, null)
+                           ?? template.GetType().GetField("Zooms", anyFlags)?.GetValue(template);
+            if (!(zoomsObj is IList scopes) || state.index >= scopes.Count) return false;
+            if (!(scopes[state.index] is IList modes)) return false;
+
+            modeCount = modes.Count;
+            if (state.mode >= modeCount) return false;
+
+            object entry = modes[state.mode];
+            if (entry is float f) { zoom = f; return true; }
+            if (entry is double d) { zoom = (float)d; return true; }
+            if (entry is int i) { zoom = i; return true; }
+            return false;
         }
 
         /// <summary>
