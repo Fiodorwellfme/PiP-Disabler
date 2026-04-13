@@ -53,9 +53,9 @@ Per-scope reticle size.
 -~~Remove old cache system / rework it~~ Reworked into in-memory cache flow  
 -~~Improve weapon scaling method~~ Auto-tuned by player settings FOV  
 -~~Hide more useless options under advanced BepInEx settings~~ Mostly done  
--Solve FOV restore on pose changes  
+-~~Solve FOV restore on pose changes~~  
 -Tune more per-scope mesh surgery presets  
--Keep cleaning old AI-jank / dead code paths until the whole thing is readable without archaeology  
+-Keep cleaning old AI-jank / dead code   
 
 
 # How to use:  
