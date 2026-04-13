@@ -512,6 +512,15 @@ namespace PiPDisabler
                 };
                 _shadowMat.SetInt("_ZTest", (int)CompareFunction.Always);
                 _shadowMat.SetInt("_ZWrite", 0);
+                if (_hasStencilSupport)
+                {
+                    // Keep scope shadow outside the visible lens aperture.
+                    _shadowMat.SetFloat("_Stencil", 1f);
+                    _shadowMat.SetFloat("_StencilComp", (float)CompareFunction.NotEqual);
+                    _shadowMat.SetFloat("_StencilOp", (float)StencilOp.Keep);
+                    _shadowMat.SetFloat("_StencilReadMask", 255f);
+                    _shadowMat.SetFloat("_StencilWriteMask", 0f);
+                }
             }
         }
 
