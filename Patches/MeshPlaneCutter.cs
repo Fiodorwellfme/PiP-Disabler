@@ -468,7 +468,7 @@ namespace PiPDisabler
 
         /// <summary>
         /// Compute radius at normalized position t (0=near, 1=far) using piecewise interpolation.
-        /// Shared between CutMeshFrustum (for vertex testing) and PlaneVisualizer (for tube mesh).
+        /// Shared by frustum/cylinder cut math paths.
         /// </summary>
         public static float RadiusAtT(float t, float nearR, float midR, float midPos, float farR)
         {

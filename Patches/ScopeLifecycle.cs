@@ -1,11 +1,8 @@
 using System;
-using System.Reflection;
 using System.Collections.Generic;
 using EFT;
 using EFT.Animations;
 using EFT.CameraControl;
-using Comfort.Common;
-using HarmonyLib;
 using UnityEngine;
 
 namespace PiPDisabler
@@ -27,30 +24,42 @@ namespace PiPDisabler
     /// </summary>
     internal static class ScopeLifecycle
     {
-        // Reflection cache
-        private static PropertyInfo _isAimingProp;
-        private static PropertyInfo _currentScopeProp;
-        private static PropertyInfo _isOpticProp;
-        private static bool _reflectionReady;
-
-        // Fast delegates (avoid PropertyInfo.GetValue overhead per frame)
-        private static Func<ProceduralWeaponAnimation, bool> _getIsAiming;
-        private static Func<ProceduralWeaponAnimation, object> _getCurrentScope;
-        private static Func<object, bool> _getIsOptic;
+        // Direct property accessors — no reflection needed, all members are public
+        private static readonly Func<ProceduralWeaponAnimation, bool> _getIsAiming
+            = pwa => pwa.IsAiming;
+        private static readonly Func<ProceduralWeaponAnimation, ProceduralWeaponAnimation.SightNBone> _getCurrentScope
+            = pwa => pwa.CurrentScope;
+        private static readonly Func<ProceduralWeaponAnimation.SightNBone, bool> _getIsOptic
+            = scope => scope.IsOptic;
 
         // State
         private static bool _isScoped;
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
+        private static bool _restoreOneXFovOnScopeExit;
 
-        // Thermal/NV discovery cache (ScopeData component shape is stable at runtime)
-        private static Type _scopeDataType;
-        private static FieldInfo _scopeDataNightVisionField;
-        private static FieldInfo _scopeDataThermalField;
-        private static PropertyInfo _scopeDataNightVisionProp;
-        private static PropertyInfo _scopeDataThermalProp;
-        private static bool _scopeDataMembersSearched;
+        // Mesh surgery retry: when the initial cut on scope enter produces zero
+        // entries (GPU buffers not ready, transforms not settled), retry on
+        // subsequent frames until it succeeds or we hit the attempt limit.
+        private static int _meshRetryAttemptsLeft;
+        private static int _meshRetryNextFrame;
+        private const int MeshRetryMaxAttempts = 10;
+        private const int MeshRetryFrameInterval = 3;
+        private static bool _meshSurgerySuppressedByReload;
+        private static float _meshSurgeryResumeAfterTime = -1f;
+        private static bool _reticleSuppressedByReload;
+
+        // Post-exit FOV restore: suppresses EFT's method_23 SetFov calls while our
+        // restore coroutine is animating. Without this, EFT's SetFov(35°) kills the
+        // coroutine immediately, causing the FOV to flash on ADS exit.
+        private static float _postExitRestoreFov;
+        private static float _postExitRestoreExpiry; // Time.realtimeSinceStartup
+
+        public static bool HasPostExitRestore =>
+            _postExitRestoreFov > 0.5f &&
+            Time.realtimeSinceStartup < _postExitRestoreExpiry;
+        public static float PostExitRestoreFov => _postExitRestoreFov;
 
         private static readonly HashSet<string> _scopeWhitelistNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static string _scopeWhitelistRawCached;
@@ -94,71 +103,11 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// One-time reflection setup. Call from plugin Awake.
+        /// One-time setup. Call from plugin Awake.
         /// </summary>
         public static void Init()
         {
-            try
-            {
-                var pwaType = typeof(ProceduralWeaponAnimation);
-                _isAimingProp = AccessTools.Property(pwaType, "IsAiming");
-                _currentScopeProp = AccessTools.Property(pwaType, "CurrentScope");
-
-                if (_currentScopeProp != null)
-                {
-                    var scopeType = _currentScopeProp.PropertyType; // SightNBone
-                    _isOpticProp = AccessTools.Property(scopeType, "IsOptic");
-                }
-
-                _reflectionReady = _isAimingProp != null
-                                && _currentScopeProp != null
-                                && _isOpticProp != null;
-
-                // Build fast getter delegates to avoid PropertyInfo.GetValue overhead per frame
-                if (_reflectionReady)
-                {
-                    try
-                    {
-                        _getIsAiming = (Func<ProceduralWeaponAnimation, bool>)
-                            Delegate.CreateDelegate(typeof(Func<ProceduralWeaponAnimation, bool>),
-                                _isAimingProp.GetGetMethod(true));
-                    }
-                    catch
-                    {
-                        _getIsAiming = pwa => (bool)_isAimingProp.GetValue(pwa);
-                    }
-
-                    try
-                    {
-                        var getter = _currentScopeProp.GetGetMethod(true);
-                        // CurrentScope returns SightNBone (value may be null), use generic Func
-                        _getCurrentScope = pwa => getter.Invoke(pwa, null);
-                    }
-                    catch
-                    {
-                        _getCurrentScope = pwa => _currentScopeProp.GetValue(pwa);
-                    }
-
-                    try
-                    {
-                        var scopeType = _currentScopeProp.PropertyType;
-                        var isOpticGetter = _isOpticProp.GetGetMethod(true);
-                        _getIsOptic = scope => (bool)isOpticGetter.Invoke(scope, null);
-                    }
-                    catch
-                    {
-                        _getIsOptic = scope => (bool)_isOpticProp.GetValue(scope);
-                    }
-                }
-
-                PiPDisablerPlugin.LogInfo(
-                    $"[ScopeLifecycle] Reflection: IsAiming={_isAimingProp != null}, " +
-                    $"CurrentScope={_currentScopeProp != null}, IsOptic={_isOpticProp != null}");
-            }
-            catch (Exception ex)
-            {
-                PiPDisablerPlugin.LogError($"[ScopeLifecycle] Init failed: {ex.Message}");
-            }
+            PiPDisablerPlugin.LogInfo("[ScopeLifecycle] Init: IsAiming/CurrentScope/IsOptic are public — direct access.");
         }
 
         /// <summary>
@@ -168,6 +117,25 @@ namespace PiPDisabler
         {
             if (os != null)
                 _lastEnabledOptic = os;
+
+            // If NOT scoped but aiming and an OpticSight just enabled, this is a
+            // collimator→magnified switch while already ADS (e.g. LCO starting in
+            // red-dot mode). Log it distinctly; CheckAndUpdate below will call DoScopeEnter.
+            if (!_isScoped && os != null)
+            {
+                try
+                {
+                    var player = GetLocalPlayer();
+                    var pwa = player?.ProceduralWeaponAnimation;
+                    if (pwa != null && _getIsAiming(pwa))
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle] Collimator→optic switch while ADS: " +
+                            $"'{os.name}'[{FovController.GetOpticTemplateId(os)}] — treating as scope enter");
+                    }
+                }
+                catch { }
+            }
 
             // If already scoped and a DIFFERENT optic enables → genuine mode switch.
             // Guard against sibling mode_000/mode_001 co-activating on scope enter, which
@@ -182,12 +150,12 @@ namespace PiPDisabler
                 // Update the active optic to the new mode
                 _activeOptic = os;
 
-                float minFov = ZoomController.GetMinFov(os);
-                bool bypassForMode = ShouldBypassForCurrentOptic(os, minFov);
+                bool bypassForMode = ShouldBypassForCurrentOptic(os);
                 if (bypassForMode)
                 {
                     _modBypassedForCurrentScope = true;
-                    ApplyBypassState(os, minFov, reason: "mode switch", restoreFov: true);
+                    ApplyBypassState(os, reason: "mode switch",
+                        restoreFov: true);
                     return;
                 }
 
@@ -200,21 +168,51 @@ namespace PiPDisabler
                 // Re-hide lenses (the new mode's lens might not be hidden yet)
                 LensTransparency.HideAllLensSurfaces(os);
 
-                // Recollect housing + weapon renderers for the new mode's geometry.
-                ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
-
-                // Show reticle for the new mode (with magnification scaling)
-                float modeMag = ZoomController.GetMagnification(os);
-                ReticleRenderer.Show(os, modeMag);
+                // Recollect lens renderers for the new mode's geometry.
+                ReticleRenderer.SetLensMaskEntries(CollectStencilEntries(os));
 
                 // Notify FOV controller the mode changed so it re-reads ScopeCameraData
                 FovController.OnModeSwitch();
 
                 // RESTORE all meshes first, then re-cut with new mode's plane position.
+                _meshRetryAttemptsLeft = 0;
+                _meshSurgerySuppressedByReload = false;
+                _meshSurgeryResumeAfterTime = -1f;
                 if (PiPDisablerPlugin.EnableMeshSurgery.Value)
                 {
+                    if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle][DEBUG] Mode-switch mesh surgery start: optic='{os.name}' " +
+                            $"template='{FovController.GetOpticTemplateId(os)}' frame={Time.frameCount}");
+                    }
                     MeshSurgeryManager.RestoreForScope(os.transform);
-                    MeshSurgeryManager.ApplyForOptic(os);
+                    if (IsReloadActive())
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle] Skipping mode-switch mesh surgery because reload is active. frame={Time.frameCount}");
+                        LensTransparency.RestoreAll();
+                        SuppressReticleForReload();
+                        _meshSurgerySuppressedByReload = true;
+                    }
+                    else
+                    {
+                        MeshSurgeryManager.ApplyForOptic(os);
+
+                        if (!MeshSurgeryManager.HasSuccessfulCut())
+                        {
+                            PiPDisablerPlugin.LogInfo(
+                                $"[ScopeLifecycle][DEBUG] Mode-switch mesh surgery produced zero cuts — " +
+                                $"scheduling retry. frame={Time.frameCount}");
+                            if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
+                            {
+                                PiPDisablerPlugin.LogInfo(
+                                    $"[ScopeLifecycle][DEBUG] Last mesh attempt snapshot: {MeshSurgeryManager.GetLastAttemptDebugSnapshot()}");
+                            }
+                            _meshRetryAttemptsLeft = MeshRetryMaxAttempts;
+                            _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
+                        }
+                    }
                 }
 
                 // Re-apply camera settings for the new mode's FOV
@@ -223,8 +221,22 @@ namespace PiPDisabler
                 // Capture weapon base scale/FOV before FOV changes
                 Patches.WeaponScalingPatch.CaptureBaseState();
 
-                // Animated FOV change for mode switch (uses configured duration)
-                ApplyFov(true);
+                // If freelooking, defer reticle/effects/FOV — they'll be restored
+                // when freelook ends via FreelookTracker.OnFreelookExit().
+                if (!FreelookTracker.IsFreelooking && !_meshSurgerySuppressedByReload)
+                {
+                    // Show reticle for the new mode (with magnification scaling)
+                    float modeMag = FovController.GetEffectiveMagnification();
+                    ReticleRenderer.Show(os, modeMag);
+
+                    // Re-show scope effects so their CommandBuffer is re-ordered
+                    // AFTER ReticleRenderer's CB. Without this, the shadow's stencil
+                    // test reads before the stencil is written and the mask breaks.
+                    ScopeEffectsRenderer.Show();
+
+                    // Animated FOV change for mode switch (uses configured duration)
+                    ApplyFov(true);
+                }
             }
 
             CheckAndUpdate("OnOpticEnabled");
@@ -247,9 +259,9 @@ namespace PiPDisabler
         public static void CheckAndUpdate(string caller = "Update")
         {
             _lastCaller = caller;
-            if (!_reflectionReady) return;
 
             bool shouldBeScoped = false;
+            bool exitingToNonOpticWhileAiming = false;
             string reason = "unknown";
 
             try
@@ -263,14 +275,20 @@ namespace PiPDisabler
                 bool isAiming = _getIsAiming(pwa);
                 if (!isAiming) { reason = "not aiming"; goto evaluate; }
 
-                object currentScope = _getCurrentScope(pwa);
+                var currentScope = _getCurrentScope(pwa);
                 if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
 
                 bool isOptic = _getIsOptic(currentScope);
-                if (!isOptic) { reason = "not optic"; goto evaluate; }
 
                 var enabledOs = FindEnabledOpticFromPWA();
-                if (enabledOs == null)
+
+                if (!isOptic)
+                {
+                    reason = "not optic";
+                    exitingToNonOpticWhileAiming = true;
+                    goto evaluate;
+                }
+                else if (enabledOs == null)
                 {
                     // Hybrid toggle case: CurrentScope may still report optic while the
                     // enabled OpticSight switched off (e.g., now in collimator mode).
@@ -278,6 +296,7 @@ namespace PiPDisabler
                     // a full ADS exit.
                     shouldBeScoped = false;
                     reason = "optic flag true but no enabled OpticSight";
+                    exitingToNonOpticWhileAiming = true;
                     goto evaluate;
                 }
 
@@ -301,10 +320,12 @@ namespace PiPDisabler
 
             if (shouldBeScoped && !_isScoped)
             {
+                _restoreOneXFovOnScopeExit = false;
                 DoScopeEnter();
             }
             else if (!shouldBeScoped && _isScoped)
             {
+                _restoreOneXFovOnScopeExit = exitingToNonOpticWhileAiming;
                 DoScopeExit();
             }
         }
@@ -321,35 +342,120 @@ namespace PiPDisabler
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
 
-            // Ensure lens stays hidden + update variable zoom
-            if (ZoomController.IsActive)
-            {
-                if (_activeOptic != null)
-                {
-                    float mag = ZoomController.GetMagnification(_activeOptic);
-                    ZoomController.SetZoom(mag);
-                    // Update reticle + effects position (smoothed), rotation, and scale each frame
-                    ReticleRenderer.UpdateTransform(mag);
-                    ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
-                }
-                ZoomController.EnsureLensVisible();
+            // ── Freelook tracking ────────────────────────────────────────
+            // Poll each frame.  Returns true on the exact frame freelook ends.
+            bool freelookJustEnded = FreelookTracker.Tick();
 
-                // Always re-kill other lens surfaces.
-                // Pass the ZoomController's managed renderer as exclusion while
-                // any other glass/linza surfaces EFT restores get killed again immediately.
-                LensTransparency.EnsureHidden(ZoomController.ActiveLensRenderer);
+            if (FreelookTracker.IsFreelooking)
+            {
+                // While freelooking: skip all mod per-frame updates.
+                // Camera rotation is unlocked (checked in ReticleRenderer.OnPreCull).
+                // FOV override is skipped (checked in PWAMethod23Patch).
+                // Reticle/effects are hidden (done by FreelookTracker.OnFreelookEnter).
+                return;
             }
-            else
-            {
-                LensTransparency.EnsureHidden();
 
-                // Update reticle position/rotation/scale
-                if (_activeOptic != null)
+            if (freelookJustEnded)
+            {
+                // FOV is restored by two complementary paths:
+                //   1. FreelookTracker.OnFreelookExit() called SetFov directly (Update).
+                //   2. PlayerLookPatch transpiler intercepts Player.Look's SetFov(35)
+                //      in LateUpdate and substitutes the pre-freelook snapshot.
+                // Re-hide lenses in case EFT restored them during freelook.
+                LensTransparency.EnsureHidden();
+            }
+
+            // Keep lens transparent if EFT restores the original materials
+            LensTransparency.EnsureHidden();
+
+            // ── Mesh surgery retry ─────────────────────────────────────────
+            // If the initial cut on scope enter produced zero entries (GPU buffers
+            // weren't uploaded yet, or transforms hadn't settled), retry here.
+            if (_meshRetryAttemptsLeft > 0
+                && PiPDisablerPlugin.EnableMeshSurgery.Value
+                && _activeOptic != null
+                && !_meshSurgerySuppressedByReload
+                && Time.frameCount >= _meshRetryNextFrame)
+            {
+                _meshRetryAttemptsLeft--;
+                PiPDisablerPlugin.LogInfo(
+                    $"[ScopeLifecycle][DEBUG] Mesh surgery retry attempt " +
+                    $"({MeshRetryMaxAttempts - _meshRetryAttemptsLeft}/{MeshRetryMaxAttempts}) " +
+                    $"frame={Time.frameCount}");
+
+                bool success = MeshSurgeryManager.RetryPendingCut(_activeOptic);
+                if (success)
                 {
-                    float mag = ZoomController.GetMagnification(_activeOptic);
-                    ReticleRenderer.UpdateTransform(mag);
-                    ScopeEffectsRenderer.UpdateTransform(baseSize: 0f, magnification: mag);
+                    PiPDisablerPlugin.LogInfo(
+                        $"[ScopeLifecycle] Mesh surgery retry SUCCEEDED on attempt " +
+                        $"{MeshRetryMaxAttempts - _meshRetryAttemptsLeft}. frame={Time.frameCount}");
+                    _meshRetryAttemptsLeft = 0;
                 }
+                else
+                {
+                    if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle][DEBUG] Retry attempt failed snapshot: {MeshSurgeryManager.GetLastAttemptDebugSnapshot()}");
+                    }
+                    _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
+                    if (_meshRetryAttemptsLeft == 0)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle] Mesh surgery retry EXHAUSTED all {MeshRetryMaxAttempts} attempts. " +
+                            $"frame={Time.frameCount}");
+                    }
+                }
+            }
+
+            if (PiPDisablerPlugin.EnableMeshSurgery.Value && _activeOptic != null)
+            {
+                bool reloadActive = IsReloadActive();
+                if (reloadActive)
+                {
+                    _meshRetryAttemptsLeft = 0;
+                    _meshSurgeryResumeAfterTime = -1f;
+                    SuppressReticleForReload();
+                    if (!_meshSurgerySuppressedByReload)
+                    {
+                        MeshSurgeryManager.RestoreForScope(_activeOptic.transform);
+                        LensTransparency.RestoreAll();
+                        _meshSurgerySuppressedByReload = true;
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle] Mesh surgery suspended during reload. frame={Time.frameCount}");
+                    }
+                }
+                else if (_meshSurgerySuppressedByReload)
+                {
+                    if (_meshSurgeryResumeAfterTime < 0f)
+                    {
+                        _meshSurgeryResumeAfterTime = Time.realtimeSinceStartup +
+                            Mathf.Max(0f, PiPDisablerPlugin.ReloadMeshResumeDelaySeconds.Value);
+                    }
+                    if (Time.realtimeSinceStartup >= _meshSurgeryResumeAfterTime)
+                    {
+                        _meshSurgerySuppressedByReload = false;
+                        _meshSurgeryResumeAfterTime = -1f;
+                        MeshSurgeryManager.ApplyForOptic(_activeOptic);
+                        LensTransparency.HideAllLensSurfaces(_activeOptic);
+                        ResumeReticleAfterReload();
+                        if (!MeshSurgeryManager.HasSuccessfulCut())
+                        {
+                            _meshRetryAttemptsLeft = MeshRetryMaxAttempts;
+                            _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
+                        }
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle] Mesh surgery resumed after reload. frame={Time.frameCount}");
+                    }
+                }
+            }
+
+            // Update reticle position/rotation/scale and effects
+            if (_activeOptic != null)
+            {
+                float mag = FovController.GetEffectiveMagnification();
+                ReticleRenderer.UpdateTransform(mag);
+                ScopeEffectsRenderer.UpdateTransform();
             }
 
             // PiP stays disabled via Harmony patches — no per-frame action needed.
@@ -357,8 +463,6 @@ namespace PiPDisabler
             // Per-frame weapon scale compensation (tracks animated FOV transitions)
             Patches.WeaponScalingPatch.UpdateScale();
 
-            // Zeroing input polling
-            ZeroingController.Tick();
         }
 
         /// <summary>
@@ -367,8 +471,17 @@ namespace PiPDisabler
         /// </summary>
         public static void ForceExit()
         {
+            _meshRetryAttemptsLeft = 0;
+            _meshSurgerySuppressedByReload = false;
+            _meshSurgeryResumeAfterTime = -1f;
+            _reticleSuppressedByReload = false;
+            FreelookTracker.Reset();
             if (_isScoped)
                 DoScopeExit();
+            ReticleRenderer.Cleanup();
+            ScopeEffectsRenderer.Cleanup();
+            Patches.WeaponScalingPatch.RestoreScale();
+            CameraSettingsManager.Restore();
             _modBypassedForCurrentScope = false;
             // Always clear the last-enabled cache so a stale OpticSight reference
             // from before the disable doesn't get used on the next scope enter.
@@ -383,8 +496,8 @@ namespace PiPDisabler
         /// </summary>
         public static void SyncState()
         {
-            // _lastEnabledOptic was cleared by ForceExit; if we're already scoped
-            // FindOpticFromPWA() will locate the active one when DoScopeEnter fires.
+            // _lastEnabledOptic was cleared by ForceExit; CheckAndUpdate will rely on
+            // the latest enabled optic cache when DoScopeEnter runs.
             CheckAndUpdate("SyncState");
         }
 
@@ -452,7 +565,13 @@ namespace PiPDisabler
             if (!string.IsNullOrWhiteSpace(modScopeName))
                 return modScopeName;
 
-            // Fallback for runtimes where hierarchy naming is atypical.
+            // Prefer the runtime object name over template metadata.
+            // Template reflection can momentarily report stale values on mode switches.
+            string objectName = NormalizeScopeKey(os.name);
+            if (!string.IsNullOrWhiteSpace(objectName))
+                return objectName;
+
+            // Fallback for atypical hierarchies.
             string templateName = FovController.GetOpticTemplateName(os);
             if (!string.IsNullOrWhiteSpace(templateName)
                 && !string.Equals(templateName, "unknown", StringComparison.OrdinalIgnoreCase))
@@ -462,9 +581,6 @@ namespace PiPDisabler
             if (!string.IsNullOrWhiteSpace(templateId)
                 && !string.Equals(templateId, "unknown", StringComparison.OrdinalIgnoreCase))
                 return templateId;
-
-            if (!string.IsNullOrWhiteSpace(os.name))
-                return NormalizeScopeKey(os.name);
 
             return null;
         }
@@ -521,9 +637,51 @@ namespace PiPDisabler
             return s.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private static bool ShouldBypassForCurrentOptic(OpticSight os, float minFov)
+        /// <summary>
+        /// Called from SetScopeMode patches after EFT applies scope state changes.
+        /// Re-applies zoom/FOV immediately while scoped.
+        /// </summary>
+        public static void OnSetScopeMode()
         {
-            _ = minFov;
+            RefreshScopeAimTransformsForModeSwitch();
+            if (!_isScoped) return;
+            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+
+            PiPDisablerPlugin.LogInfo(
+                $"[ScopeLifecycle] SetScopeMode fired while scoped frame={Time.frameCount}");
+
+            
+
+            var os = _activeOptic;
+            if (os == null) return;
+
+            if (_modBypassedForCurrentScope) return;
+
+            FovController.OnModeSwitch();
+            if (!FreelookTracker.IsFreelooking)
+                ApplyFov(true);
+        }
+
+        private static void RefreshScopeAimTransformsForModeSwitch()
+        {
+            try
+            {
+                var player = GetLocalPlayer();
+                var pwa = player?.ProceduralWeaponAnimation;
+                if (pwa == null)
+                    return;
+
+                pwa.FindAimTransforms();
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.LogWarn(
+                    $"[ScopeLifecycle] Failed to refresh scope aim transforms on mode switch: {ex.Message}");
+            }
+        }
+
+        private static bool ShouldBypassForCurrentOptic(OpticSight os)
+        {
             if (os == null) return false;
 
             if (ShouldBypassByWhitelist(os))
@@ -607,15 +765,9 @@ namespace PiPDisabler
 
             try
             {
-                if (!_scopeDataMembersSearched)
-                    DiscoverScopeDataMembers();
-
-                if (_scopeDataType == null)
-                    return false;
-
-                Component scopeData = os.GetComponentInParent(_scopeDataType);
+                ScopeData scopeData = os.GetComponentInParent<ScopeData>();
                 if (scopeData == null)
-                    scopeData = os.GetComponentInChildren(_scopeDataType, true);
+                    scopeData = os.GetComponentInChildren<ScopeData>(true);
 
                 // ScopeData may live as a sibling under scope root (not direct parent/child of OpticSight).
                 if (scopeData == null)
@@ -623,24 +775,17 @@ namespace PiPDisabler
                     Transform scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
                     if (scopeRoot != null)
                     {
-                        scopeData = scopeRoot.GetComponentInChildren(_scopeDataType, true);
+                        scopeData = scopeRoot.GetComponentInChildren<ScopeData>(true);
                         if (scopeData == null && scopeRoot.parent != null)
-                            scopeData = scopeRoot.parent.GetComponentInChildren(_scopeDataType, true);
+                            scopeData = scopeRoot.parent.GetComponentInChildren<ScopeData>(true);
                     }
                 }
 
                 if (scopeData == null)
                     return false;
 
-                bool hasNightVision = HasScopeDataReference(
-                    scopeData,
-                    _scopeDataNightVisionField,
-                    _scopeDataNightVisionProp);
-
-                bool hasThermal = HasScopeDataReference(
-                    scopeData,
-                    _scopeDataThermalField,
-                    _scopeDataThermalProp);
+                bool hasNightVision = scopeData.NightVisionData != null;
+                bool hasThermal = scopeData.ThermalVisionData != null;
 
                 if (hasNightVision || hasThermal)
                 {
@@ -658,71 +803,26 @@ namespace PiPDisabler
             return false;
         }
 
-        private static bool HasScopeDataReference(Component scopeData, FieldInfo field, PropertyInfo prop)
-        {
-            try
-            {
-                object value = null;
-
-                if (field != null)
-                    value = field.GetValue(scopeData);
-                else if (prop != null)
-                    value = prop.GetValue(scopeData, null);
-
-                // In Unity-serialized ScopeData, non-zero m_PathID manifests as a non-null object reference.
-                return value != null;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static void DiscoverScopeDataMembers()
-        {
-            _scopeDataMembersSearched = true;
-
-            try
-            {
-                _scopeDataType = AccessTools.TypeByName("EFT.CameraControl.ScopeData");
-                if (_scopeDataType == null) return;
-
-                var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-                _scopeDataNightVisionField = _scopeDataType.GetField("NightVisionData", flags);
-                _scopeDataThermalField = _scopeDataType.GetField("ThermalVisionData", flags);
-
-                if (_scopeDataNightVisionField == null)
-                    _scopeDataNightVisionProp = _scopeDataType.GetProperty("NightVisionData", flags);
-
-                if (_scopeDataThermalField == null)
-                    _scopeDataThermalProp = _scopeDataType.GetProperty("ThermalVisionData", flags);
-            }
-            catch
-            {
-                _scopeDataType = null;
-            }
-        }
-
         // ===== State transitions =====
 
-        private static void ApplyBypassState(OpticSight os, float minFov, string reason, bool restoreFov)
+        private static void ApplyBypassState(OpticSight os, string reason,
+            bool restoreFov)
         {
             string opticName = os != null ? os.name : "null";
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] Bypassing mod for current scope ({reason}): " +
                 $"'{opticName}'[{FovController.GetOpticTemplateId(os)}] " +
-                $"key='{ResolveWhitelistScopeKey(os)}' minFov={minFov:F2}° adjustable={FovController.IsOpticAdjustable(os)}");
+                $"key='{ResolveWhitelistScopeKey(os)}' adjustable={FovController.IsOpticAdjustable(os)} " +
+                $"restoreFov={restoreFov}");
 
-            // Ensure this path behaves like a full unscope cleanup so non-whitelisted
-            // optics are truly vanilla while still staying in ADS.
             // On fresh scope enter, forcing RestoreFov() can stomp EFT's own optic zoom
             // for bypassed scopes until the next zoom/mode event. Let vanilla drive FOV
             // immediately on enter, but still restore when switching from a modded mode.
             if (restoreFov)
+            {
                 RestoreFov();
+            }
             Patches.WeaponScalingPatch.RestoreScale();
-            ZoomController.Restore();
-            ZoomController.ResetScrollZoom();
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
             LensTransparency.RestoreAll();
@@ -737,16 +837,11 @@ namespace PiPDisabler
                     MeshSurgeryManager.RestoreAll();
             }
 
-            PlaneVisualizer.Hide();
-            ZeroingController.Reset();
         }
 
         private static void DoScopeEnter()
         {
-            // Get the OpticSight — cached from OnEnable, or find from pwa
-            var os = _lastEnabledOptic;
-            if (os == null)
-                os = FindOpticFromPWA();
+            var os = FindEnabledOpticFromPWA();
             if (os == null)
             {
                 PiPDisablerPlugin.LogVerbose(
@@ -758,76 +853,113 @@ namespace PiPDisabler
             _activeOptic = os;
             PerScopeMeshSurgerySettings.SetActiveScope(ResolveWhitelistScopeKey(os));
 
-            float minFov = ZoomController.GetMinFov(os);
-            _modBypassedForCurrentScope = ShouldBypassForCurrentOptic(os, minFov);
+            _modBypassedForCurrentScope = ShouldBypassForCurrentOptic(os);
             if (_modBypassedForCurrentScope)
             {
-                ApplyBypassState(os, minFov, reason: "scope enter", restoreFov: false);
+                ApplyBypassState(os, reason: "scope enter",
+                    restoreFov: false);
                 return;
             }
 
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] ENTER: '{os.name}'[{FovController.GetOpticTemplateId(os)}] frame={Time.frameCount}");
 
-            // 1. Restore any black lens materials so ExtractReticle can read OpticSight textures.
-            //    (RestoreAll on previous scope-exit may have left sharedMaterials as Unlit/Color.)
-            LensTransparency.RestoreBlackLensMaterials();
-
-            // 2. Extract reticle texture BEFORE destroying lens mesh
+            // 1. Extract reticle texture BEFORE destroying lens mesh
             ReticleRenderer.ExtractReticle(os);
 
-            // 3. Hide ALL lens surfaces in the scope hierarchy (once)
+            // 2. Hide ALL lens surfaces in the scope hierarchy (once)
             LensTransparency.HideAllLensSurfaces(os);
 
-            // 2b. Collect housing + weapon renderers for reticle stencil mask (lens surfaces
-            //     are already empty-meshed above, so they won't end up in the list).
-            ReticleRenderer.SetHousingRenderers(CollectStencilRenderers(os));
+            // 2b. Collect lens renderers for the reticle stencil mask.
+            var lensMaskEntries = CollectStencilEntries(os);
+            ReticleRenderer.SetLensMaskEntries(lensMaskEntries);
+            var occluderRenderers = LensTransparency.CollectHousingRenderers(os);
+            if (PiPDisablerPlugin.StencilIncludeWeaponMeshes.Value)
+                occluderRenderers.AddRange(
+                    LensTransparency.CollectWeaponRenderers(os, occluderRenderers));
+            ReticleRenderer.SetOccluderMaskRenderers(occluderRenderers);
 
             // 3. Get magnification for reticle scaling and zoom
-            float mag = ZoomController.GetMagnification(os);
+            float mag = FovController.GetEffectiveMagnification();
 
             // 4. Show reticle overlay at the lens position, scaled for magnification
             ReticleRenderer.Show(os, mag);
 
             // 4b. Show lens vignette + scope shadow effects
-            Transform lensT = os.LensRenderer != null ? os.LensRenderer.transform : os.transform;
-            float baseSize = PiPDisablerPlugin.GetReticleBaseSize();
-            if (baseSize < 0.001f) baseSize = PiPDisablerPlugin.GetCylinderRadius() * 2f;
-            if (baseSize < 0.001f) baseSize = 0.030f;
-            ScopeEffectsRenderer.Show(lensT, baseSize, mag);
+            ScopeEffectsRenderer.Show();
 
-            // 5. Mesh surgery (once)
+            // 5. Mesh surgery (once) — if it fails (zero entries), Tick() will retry
+            _meshRetryAttemptsLeft = 0;
+            _meshSurgerySuppressedByReload = false;
+            _meshSurgeryResumeAfterTime = -1f;
             if (PiPDisablerPlugin.EnableMeshSurgery.Value)
-                MeshSurgeryManager.ApplyForOptic(os);
-
-            // 6. Show cut plane visualizer (even without mesh surgery, for debugging)
-            if (PiPDisablerPlugin.GetShowCutPlane()
-                && !PiPDisablerPlugin.EnableMeshSurgery.Value)
             {
-                ShowPlaneOnly(os);
+                if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
+                {
+                    PiPDisablerPlugin.LogInfo(
+                        $"[ScopeLifecycle][DEBUG] Enter mesh surgery start: optic='{os.name}' " +
+                        $"template='{FovController.GetOpticTemplateId(os)}' frame={Time.frameCount}");
+                }
+                if (IsReloadActive())
+                {
+                    PiPDisablerPlugin.LogInfo(
+                        $"[ScopeLifecycle] Skipping initial mesh surgery because reload is active. frame={Time.frameCount}");
+                    LensTransparency.RestoreAll();
+                    SuppressReticleForReload();
+                    _meshSurgerySuppressedByReload = true;
+                }
+                else
+                {
+                    MeshSurgeryManager.ApplyForOptic(os);
+
+                    if (!MeshSurgeryManager.HasSuccessfulCut())
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[ScopeLifecycle][DEBUG] Initial mesh surgery produced zero cuts — " +
+                            $"scheduling retry (up to {MeshRetryMaxAttempts} attempts). frame={Time.frameCount}");
+                        if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
+                        {
+                            PiPDisablerPlugin.LogInfo(
+                                $"[ScopeLifecycle][DEBUG] Last mesh attempt snapshot: {MeshSurgeryManager.GetLastAttemptDebugSnapshot()}");
+                        }
+                        _meshRetryAttemptsLeft = MeshRetryMaxAttempts;
+                        _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
+                    }
+                }
             }
 
-            // 7. Swap main camera LOD/culling settings with scope camera settings
+            // 6. Swap main camera LOD/culling settings with scope camera settings
             CameraSettingsManager.ApplyForOptic(os);
 
-            // 8. Capture weapon base scale/FOV BEFORE changing FOV (for weapon scaling compensation)
+            // 7. Capture weapon base scale/FOV BEFORE changing FOV (for weapon scaling compensation)
             Patches.WeaponScalingPatch.CaptureBaseState();
 
-            // 9. Apply animated FOV zoom (uses FovAnimationDuration)
+            // 8. Apply animated FOV zoom (uses FovAnimationDuration)
+            // Reset dead-band so the initial ApplyFov always fires regardless of previous state.
+            // Also clear any pending post-exit restore from a previous scope session.
+            _postExitRestoreFov = 0f;
+            FovController.OnModeSwitch();
             ApplyFov(true);
 
-            // 10. Read initial zeroing distance
-            ZeroingController.ReadCurrentZeroing();
         }
 
         private static void DoScopeExit()
         {
             if (!_isScoped) return;
 
+            _meshRetryAttemptsLeft = 0;
+            _meshSurgerySuppressedByReload = false;
+            _meshSurgeryResumeAfterTime = -1f;
+            _reticleSuppressedByReload = false;
+
+            // Reset freelook tracking so stale state doesn't persist into next scope
+            FreelookTracker.Reset();
+
             var prevOptic = _activeOptic;
             PiPDisablerPlugin.LogInfo(
                 $"[ScopeLifecycle] EXIT: '{(prevOptic != null ? prevOptic.name : "null")}'" +
                 $"[{FovController.GetOpticTemplateId(prevOptic)}] frame={Time.frameCount}");
+
 
             _isScoped = false;
             _activeOptic = null;
@@ -837,24 +969,22 @@ namespace PiPDisabler
             if (_modBypassedForCurrentScope)
             {
                 _modBypassedForCurrentScope = false;
+                _restoreOneXFovOnScopeExit = false;
                 return;
             }
-
+            
+            PiPDisabler.CleanupVanillaOpticState(prevOptic);
+            
             // 1. Restore FOV with ADS-matched animation timing
             RestoreFov();
 
             // 1b. Restore normal weapon model scaling (after FOV is back to normal)
             Patches.WeaponScalingPatch.RestoreScale();
 
-            // 2. Restore zoom controller
-            ZoomController.Restore();
-
-            // 2b. Reset cached zoom state
-            ZoomController.ResetScrollZoom();
-
             // 3. Hide reticle overlay + scope effects
-            ReticleRenderer.Cleanup();
-            ScopeEffectsRenderer.Cleanup();
+            bool allowShadowPersist = !_restoreOneXFovOnScopeExit;
+            bool keepShadowMask = ScopeEffectsRenderer.OnScopeExit(allowShadowPersist);
+            ReticleRenderer.OnScopeExit(keepShadowMask);
 
             // 4. Restore lens
             LensTransparency.RestoreAll();
@@ -871,11 +1001,7 @@ namespace PiPDisabler
                     MeshSurgeryManager.RestoreAll();
             }
 
-            // 7. Hide plane visualizer
-            PlaneVisualizer.Hide();
-
-            // 8. Reset zeroing state
-            ZeroingController.Reset();
+            _restoreOneXFovOnScopeExit = false;
         }
 
         // ===== FOV Helpers =====
@@ -890,22 +1016,17 @@ namespace PiPDisabler
         {
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
+            if (FreelookTracker.IsFreelooking) return;
             ApplyFov(false); // false = short duration for scroll feel
         }
 
         /// <summary>
-        /// Collects stencil-mask renderers: scope housing + (optionally) weapon body.
-        /// Weapon renderers are only added when StencilIncludeWeaponMeshes is enabled.
+        /// Collects stencil-mask renderers from the scope lens only.
+        /// The housing and weapon body are intentionally excluded.
         /// </summary>
-        private static List<Renderer> CollectStencilRenderers(OpticSight os)
+        private static List<LensTransparency.LensMaskEntry> CollectStencilEntries(OpticSight os)
         {
-            var housing = LensTransparency.CollectHousingRenderers(os);
-            if (PiPDisablerPlugin.StencilIncludeWeaponMeshes != null
-                && PiPDisablerPlugin.StencilIncludeWeaponMeshes.Value)
-            {
-                housing.AddRange(LensTransparency.CollectWeaponRenderers(os, housing));
-            }
-            return housing;
+            return LensTransparency.CollectLensMaskEntries(os);
         }
 
         /// <summary>
@@ -920,14 +1041,8 @@ namespace PiPDisabler
                 if (!PiPDisablerPlugin.EnableZoom.Value) return;
                 if (!CameraClass.Exist) return;
 
-                var player = GetLocalPlayer();
-                if (player == null) return;
-                var pwa = player.ProceduralWeaponAnimation;
-                if (pwa == null) return;
-
-                float playerBaseFov = pwa.Single_2;
                 float zoomBaseFov = FovController.ZoomBaselineFov;
-                float zoomedFov = FovController.ComputeZoomedFov(playerBaseFov, pwa);
+                float zoomedFov = FovController.ComputeZoomedFov();
 
                 if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
                 {
@@ -935,7 +1050,14 @@ namespace PiPDisabler
                         ? PiPDisablerPlugin.FovAnimationDuration.Value
                         : 0.1f; // Short duration for variable zoom updates
 
+                    // Skip if the target hasn't changed enough (prevents coroutine restarts
+                    // that stall the lerp and cause flashing). Always apply on mode transitions.
+                    if (!isTransition && !FovController.HasFovChanged(zoomedFov))
+                        return;
+
+                    FovController.TrackAppliedFov(zoomedFov);
                     CameraClass.Instance.SetFov(zoomedFov, duration, false);
+                    FreelookTracker.CacheAppliedFov(zoomedFov);
                     PiPDisablerPlugin.LogInfo(
                         $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
                 }
@@ -944,7 +1066,9 @@ namespace PiPDisabler
                     // High-to-low mode switch where new mode has no zoom:
                     // restore to baseline with configured duration so both directions are consistent
                     float duration = PiPDisablerPlugin.FovAnimationDuration.Value;
+                    FovController.TrackAppliedFov(zoomBaseFov);
                     CameraClass.Instance.SetFov(zoomBaseFov, duration, false);
+                    FreelookTracker.CacheAppliedFov(zoomBaseFov);
                     PiPDisablerPlugin.LogInfo(
                         $"[ScopeLifecycle] ApplyFov (restore baseline): {zoomBaseFov:F1}° dur={duration:F2}s");
                 }
@@ -973,13 +1097,21 @@ namespace PiPDisabler
                 if (pwa == null) return;
 
                 float baseFov = pwa.Single_2;
-                if (baseFov > 30f)
+                float targetFov = _restoreOneXFovOnScopeExit
+                    ? Mathf.Max(1f, baseFov - 15f)
+                    : baseFov;
+                if (targetFov > 30f)
                 {
-                float duration = PiPDisablerPlugin.FovAnimationDuration.Value;
-                    cc.SetFov(baseFov, duration, true);
+                    float duration = PiPDisablerPlugin.FovAnimationDuration.Value;
+                    // Arm the post-exit suppressor BEFORE calling SetFov so that any
+                    // concurrent method_23 tick in the same frame is already blocked.
+                    _postExitRestoreFov = targetFov;
+                    float suppressFor = Mathf.Max(duration, 0.05f) + 0.05f;
+                    _postExitRestoreExpiry = Time.realtimeSinceStartup + suppressFor;
+                    FovController.TrackAppliedFov(targetFov);
+                    cc.SetFov(targetFov, duration, true);
                     PiPDisablerPlugin.LogVerbose(
-                        $"[ScopeLifecycle] RestoreFov: {baseFov:F1}° dur={duration:F2}s");
-
+                        $"[ScopeLifecycle] RestoreFov: {targetFov:F1}° dur={duration:F2}s suppress={suppressFor:F2}s");
                 }
             }
             catch (Exception ex)
@@ -991,59 +1123,30 @@ namespace PiPDisabler
 
         // ===== Other Helpers =====
 
-        /// <summary>
-        /// Computes the cut plane and shows the visualizer without actually cutting.
-        /// </summary>
-        private static void ShowPlaneOnly(OpticSight os)
-        {
-            try
-            {
-                var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
-                if (scopeRoot == null) return;
-
-                Transform activeMode = os.transform;
-                if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
-                    out var planePoint, out var planeNormal, out var camPos))
-                    return;
-
-                planePoint += planeNormal * PiPDisablerPlugin.GetPlaneOffsetMeters();
-                PlaneVisualizer.Show(planePoint, planeNormal);
-            }
-            catch { }
-        }
-
         private static Player GetLocalPlayer()
+            => PiPDisablerPlugin.GetLocalPlayer();
+
+        private static bool IsReloadActive()
         {
-            try
-            {
-                var gw = Singleton<GameWorld>.Instance;
-                return gw != null ? gw.MainPlayer : null;
-            }
-            catch { return null; }
+            var player = GetLocalPlayer();
+            var firearmController = player?.HandsController as Player.FirearmController;
+            return firearmController != null && firearmController.IsInReloadOperation();
         }
 
-        /// <summary>
-        /// Fallback: find OpticSight if _lastEnabledOptic wasn't cached.
-        /// Uses FindObjectsOfType as last resort.
-        /// </summary>
-        private static OpticSight FindOpticFromPWA()
+        private static void SuppressReticleForReload()
         {
-            try
-            {
-                var all = UnityEngine.Object.FindObjectsOfType<OpticSight>();
-                foreach (var os in all)
-                {
-                    if (os != null && os.isActiveAndEnabled)
-                        return os;
-                }
-                foreach (var os in all)
-                {
-                    if (os != null) return os;
-                }
-            }
-            catch { }
+            if (_reticleSuppressedByReload) return;
+            ReticleRenderer.Hide();
+            _reticleSuppressedByReload = true;
+        }
 
-            return null;
+        private static void ResumeReticleAfterReload()
+        {
+            if (!_reticleSuppressedByReload) return;
+            if (_activeOptic == null) return;
+            float mag = FovController.GetEffectiveMagnification();
+            ReticleRenderer.Show(_activeOptic, mag);
+            _reticleSuppressedByReload = false;
         }
 
         /// <summary>

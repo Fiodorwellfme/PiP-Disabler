@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using EFT;
 using EFT.CameraControl;
 using EFT.InventoryLogic;
@@ -20,16 +17,24 @@ namespace PiPDisabler
             public Mesh OriginalMesh;
             public Mesh CutMesh;
             public bool Applied;
+            public string FilterPath;
         }
 
-        private sealed class WeaponCutCache
+        private sealed class CutProfileCache
         {
-            public Weapon WeaponItem;
             public GameObject WeaponRoot;
             public readonly List<CutMeshEntry> Entries = new List<CutMeshEntry>(64);
             public bool Built;
             public bool Dirty = true;
             public string SettingsSignature;
+            public string ProfileKey;
+        }
+
+        private sealed class RaidWeaponCache
+        {
+            public string WeaponId;
+            public Weapon WeaponItem;
+            public readonly Dictionary<string, CutProfileCache> Profiles = new Dictionary<string, CutProfileCache>(4);
         }
 
         private sealed class LightFxState
@@ -44,269 +49,26 @@ namespace PiPDisabler
             public bool DisabledByUs;
         }
 
-        private static WeaponCutCache _currentWeaponCache;
+        private static readonly Dictionary<string, RaidWeaponCache> _raidCaches = new Dictionary<string, RaidWeaponCache>(16);
+        private static CutProfileCache _currentWeaponCache;
+        private static string _currentWeaponId;
         private static readonly Dictionary<GameObject, LightFxState> _disabledLightFx =
             new Dictionary<GameObject, LightFxState>(32);
         private static readonly Dictionary<GameObject, SphereState> _disabledWeaponSpheres =
             new Dictionary<GameObject, SphereState>(32);
         private static bool _loggedGpuCopy;
+        private static int _lastCutAttemptFrame;
         private static object _inventoryEventSource;
         private static Delegate _addItemHandler;
         private static Delegate _removeItemHandler;
-
-
-        public static void ClearPersistentCache()
-        {
-            string cacheDir = PiPDisablerPlugin.GetMeshCutCacheDirectory();
-            if (!Directory.Exists(cacheDir)) return;
-
-            try
-            {
-                int removed = 0;
-                foreach (string cacheFile in Directory.GetFiles(cacheDir, "*.bin"))
-                {
-                    File.Delete(cacheFile);
-                    removed++;
-                }
-
-                PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery] Cleared persistent mesh cache: removed {removed} file(s).");
-            }
-            catch (Exception ex)
-            {
-                PiPDisablerPlugin.LogWarn(
-                    $"[MeshSurgery] Failed to clear persistent cache: {ex.Message}");
-            }
-        }
-
-        private static class MeshCutCache
-        {
-            private const int Version = 1;
-
-            public static bool TryLoad(string key, out Mesh mesh)
-            {
-                mesh = null;
-                string path = GetPath(key);
-                if (!File.Exists(path)) return false;
-
-                try
-                {
-                    using (var fs = File.OpenRead(path))
-                    using (var br = new BinaryReader(fs))
-                    {
-                        if (br.ReadInt32() != Version) return false;
-
-                        int vertexCount = br.ReadInt32();
-                        if (vertexCount < 0) return false;
-
-                        var vertices = new Vector3[vertexCount];
-                        for (int i = 0; i < vertexCount; i++)
-                            vertices[i] = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
-
-                        var normals = new Vector3[vertexCount];
-                        for (int i = 0; i < vertexCount; i++)
-                            normals[i] = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
-
-                        var tangents = new Vector4[vertexCount];
-                        for (int i = 0; i < vertexCount; i++)
-                            tangents[i] = new Vector4(br.ReadSingle(), br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
-
-                        var uv = new Vector2[vertexCount];
-                        for (int i = 0; i < vertexCount; i++)
-                            uv[i] = new Vector2(br.ReadSingle(), br.ReadSingle());
-
-                        var indexFormat = (UnityEngine.Rendering.IndexFormat)br.ReadInt32();
-                        int subMeshCount = br.ReadInt32();
-                        if (subMeshCount <= 0) return false;
-
-                        var cachedMesh = new Mesh();
-                        cachedMesh.name = "mesh_cut_cached";
-                        cachedMesh.indexFormat = indexFormat;
-                        cachedMesh.vertices = vertices;
-                        cachedMesh.normals = normals;
-                        cachedMesh.tangents = tangents;
-                        cachedMesh.uv = uv;
-                        cachedMesh.subMeshCount = subMeshCount;
-
-                        for (int s = 0; s < subMeshCount; s++)
-                        {
-                            int triCount = br.ReadInt32();
-                            if (triCount < 0) return false;
-
-                            var tris = new int[triCount];
-                            for (int t = 0; t < triCount; t++)
-                                tris[t] = br.ReadInt32();
-                            cachedMesh.SetTriangles(tris, s, true);
-                        }
-
-                        cachedMesh.RecalculateBounds();
-                        mesh = cachedMesh;
-                        return true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Cache load failed '{path}': {ex.Message}");
-                    return false;
-                }
-            }
-
-            public static void Save(string key, Mesh mesh)
-            {
-                if (mesh == null) return;
-
-                string path = GetPath(key);
-                string tmpPath = path + ".tmp";
-
-                try
-                {
-                    var vertices = mesh.vertices ?? Array.Empty<Vector3>();
-                    var normals = mesh.normals;
-                    var tangents = mesh.tangents;
-                    var uv = mesh.uv;
-
-                    if (normals == null || normals.Length != vertices.Length)
-                    {
-                        mesh.RecalculateNormals();
-                        normals = mesh.normals;
-                    }
-                    if (tangents == null || tangents.Length != vertices.Length)
-                        tangents = new Vector4[vertices.Length];
-                    if (uv == null || uv.Length != vertices.Length)
-                        uv = new Vector2[vertices.Length];
-
-                    using (var fs = File.Create(tmpPath))
-                    using (var bw = new BinaryWriter(fs))
-                    {
-                        bw.Write(Version);
-                        bw.Write(vertices.Length);
-
-                        for (int i = 0; i < vertices.Length; i++)
-                        {
-                            bw.Write(vertices[i].x); bw.Write(vertices[i].y); bw.Write(vertices[i].z);
-                        }
-                        for (int i = 0; i < normals.Length; i++)
-                        {
-                            bw.Write(normals[i].x); bw.Write(normals[i].y); bw.Write(normals[i].z);
-                        }
-                        for (int i = 0; i < tangents.Length; i++)
-                        {
-                            bw.Write(tangents[i].x); bw.Write(tangents[i].y); bw.Write(tangents[i].z); bw.Write(tangents[i].w);
-                        }
-                        for (int i = 0; i < uv.Length; i++)
-                        {
-                            bw.Write(uv[i].x); bw.Write(uv[i].y);
-                        }
-
-                        bw.Write((int)mesh.indexFormat);
-                        bw.Write(mesh.subMeshCount);
-                        for (int s = 0; s < mesh.subMeshCount; s++)
-                        {
-                            var tris = mesh.GetTriangles(s);
-                            bw.Write(tris.Length);
-                            for (int t = 0; t < tris.Length; t++) bw.Write(tris[t]);
-                        }
-                    }
-
-                    if (File.Exists(path)) File.Delete(path);
-                    File.Move(tmpPath, path);
-                }
-                catch (Exception ex)
-                {
-                    PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Cache save failed '{path}': {ex.Message}");
-                    try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
-                }
-            }
-
-            public static string BuildKey(Transform scopeRoot, Transform activeMode, MeshFilter mf, Mesh originalAsset, MeshPlaneCutter.KeepSide keepSide, bool isCylinder)
-            {
-                var sb = new StringBuilder(512);
-                sb.Append("v3|");
-                sb.Append(scopeRoot != null ? scopeRoot.name : "scope").Append('|');
-                sb.Append(activeMode != null ? activeMode.name : "mode").Append('|');
-                sb.Append(GetRelativePath(scopeRoot, mf != null ? mf.transform : null)).Append('|');
-                sb.Append(originalAsset != null ? originalAsset.name : "null").Append('|');
-                sb.Append(originalAsset != null ? originalAsset.vertexCount : 0).Append('|');
-                sb.Append(originalAsset != null ? originalAsset.subMeshCount : 0).Append('|');
-                sb.Append((int)keepSide).Append('|');
-                sb.Append(isCylinder ? "cyl" : "plane").Append('|');
-
-                if (isCylinder)
-                {
-                    AppendFloat(sb, PiPDisablerPlugin.GetCylinderRadius());
-                    AppendFloat(sb, PiPDisablerPlugin.GetCutStartOffset());
-                    AppendFloat(sb, PiPDisablerPlugin.GetCutLength());
-                    AppendFloat(sb, PiPDisablerPlugin.GetNearPreserveDepth());
-                    AppendFloat(sb, PiPDisablerPlugin.GetPlane2PositionNormalized(PiPDisablerPlugin.GetCutLength()));
-                    AppendFloat(sb, PiPDisablerPlugin.GetPlane2Radius());
-                    AppendFloat(sb, PiPDisablerPlugin.GetPlane3Position());
-                    AppendFloat(sb, PiPDisablerPlugin.GetPlane3Radius());
-                    AppendFloat(sb, PiPDisablerPlugin.GetPlane4Position());
-                    AppendFloat(sb, PiPDisablerPlugin.GetPlane4Radius());
-                    AppendFloat(sb, PiPDisablerPlugin.GetPlane1OffsetMeters());
-                }
-                else
-                {
-                    AppendFloat(sb, PiPDisablerPlugin.GetPlaneOffsetMeters());
-                }
-
-                using (var sha = SHA256.Create())
-                {
-                    var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-                    var hash = sha.ComputeHash(bytes);
-                    var hex = new StringBuilder(hash.Length * 2);
-                    for (int i = 0; i < hash.Length; i++)
-                        hex.Append(hash[i].ToString("x2"));
-                    string scopeName = Sanitize(scopeRoot != null ? scopeRoot.name : "scope");
-                    string meshName = Sanitize(originalAsset != null ? originalAsset.name : "mesh");
-                    return scopeName + "__" + meshName + "__" + hex;
-                }
-            }
-
-            private static string GetPath(string key)
-            {
-                return Path.Combine(PiPDisablerPlugin.GetMeshCutCacheDirectory(), key + ".bin");
-            }
-
-            private static string GetRelativePath(Transform root, Transform child)
-            {
-                if (child == null) return "none";
-                if (root == null) return child.name ?? "unnamed";
-
-                var nodes = new List<string>();
-                for (var t = child; t != null; t = t.parent)
-                {
-                    nodes.Add(t.name ?? "unnamed");
-                    if (t == root) break;
-                }
-                nodes.Reverse();
-                return string.Join("/", nodes.ToArray());
-            }
-
-            private static string Sanitize(string value)
-            {
-                if (string.IsNullOrEmpty(value)) return "unknown";
-                var invalid = Path.GetInvalidFileNameChars();
-                var sb = new StringBuilder(value.Length);
-                for (int i = 0; i < value.Length; i++)
-                {
-                    char c = value[i];
-                    bool bad = false;
-                    for (int j = 0; j < invalid.Length; j++)
-                    {
-                        if (c == invalid[j]) { bad = true; break; }
-                    }
-                    if (bad || char.IsWhiteSpace(c)) sb.Append('_');
-                    else sb.Append(c);
-                }
-                return sb.ToString();
-            }
-
-            private static void AppendFloat(StringBuilder sb, float v)
-            {
-                sb.Append(Mathf.Round(v * 1000f) / 1000f).Append('|');
-            }
-        }
+        private static int _lastAttemptTargets;
+        private static int _lastAttemptEntries;
+        private static int _lastAttemptReadableCopyFailures;
+        private static bool _lastAttemptWeaponRootFound;
+        private static bool _lastAttemptPlaneFound;
+        private static string _lastAttemptOptic = "<none>";
+        private static string _lastAttemptScopeRoot = "<none>";
+        private static string _lastAttemptActiveMode = "<none>";
 
         public static void ApplyForOptic(OpticSight os)
         {
@@ -315,7 +77,8 @@ namespace PiPDisabler
             var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
             if (!scopeRoot) return;
 
-            var cache = GetOrCreateCurrentWeaponCache(scopeRoot);
+            var activeMode = ResolveActiveMode(os, scopeRoot);
+            var cache = GetOrCreateCurrentWeaponCache(scopeRoot, activeMode);
             if (cache == null) return;
 
             string currentSignature = BuildCutSettingsSignature();
@@ -326,9 +89,15 @@ namespace PiPDisabler
             }
 
             if (cache.Dirty || !cache.Built)
-                RebuildCutCacheForOptic(cache, os, scopeRoot);
+            {
+                RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode);
+            }
             else
+            {
                 ReapplyCachedCutMeshes(cache, scopeRoot);
+                if (cache.Dirty)
+                    RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode);
+            }
         }
 
         public static void RestoreForScope(Transform anyTransformUnderScope)
@@ -349,8 +118,12 @@ namespace PiPDisabler
 
         public static void RestoreAll()
         {
-            if (_currentWeaponCache != null)
-                RestoreOriginalMeshes(_currentWeaponCache);
+            foreach (var weaponCache in _raidCaches.Values)
+            {
+                if (weaponCache == null) continue;
+                foreach (var profile in weaponCache.Profiles.Values)
+                    RestoreOriginalMeshes(profile);
+            }
 
             var lightKeys = _disabledLightFx.Keys.ToArray();
             var sphereKeys = _disabledWeaponSpheres.Keys.ToArray();
@@ -390,9 +163,75 @@ namespace PiPDisabler
             RestoreAll();
             DestroyCurrentWeaponCache();
             UnbindInventoryEvents();
+            _lastCutAttemptFrame = 0;
         }
 
-        private static WeaponCutCache GetOrCreateCurrentWeaponCache(Transform scopeRoot)
+        /// <summary>
+        /// Returns true if the current weapon cache has at least one successfully
+        /// applied cut mesh entry. Used by ScopeLifecycle.Tick() to detect whether
+        /// the initial mesh surgery silently produced zero cuts (e.g. GPU buffers
+        /// not ready on the first frame, or TryGetPlane returned a degenerate position).
+        /// </summary>
+        public static bool HasSuccessfulCut()
+        {
+            var cache = _currentWeaponCache;
+            if (cache == null) return false;
+            if (!cache.Built) return false;
+            for (int i = 0; i < cache.Entries.Count; i++)
+            {
+                var entry = cache.Entries[i];
+                if (entry != null && entry.Applied && entry.Filter != null && entry.CutMesh != null)
+                    return true;
+            }
+            return false;
+        }
+
+        public static string GetLastAttemptDebugSnapshot()
+        {
+            return
+                $"optic='{_lastAttemptOptic}' scopeRoot='{_lastAttemptScopeRoot}' mode='{_lastAttemptActiveMode}' " +
+                $"weaponRootFound={_lastAttemptWeaponRootFound} planeFound={_lastAttemptPlaneFound} " +
+                $"targets={_lastAttemptTargets} entries={_lastAttemptEntries} readableCopyFailures={_lastAttemptReadableCopyFailures} " +
+                $"frame={_lastCutAttemptFrame}";
+        }
+
+        /// <summary>
+        /// Force a full rebuild of the current weapon cache.
+        /// Called from ScopeLifecycle.Tick() when mesh surgery produced zero entries
+        /// on the initial ADS frame (GPU buffers / transform positions weren't ready).
+        /// Returns true if the retry produced at least one cut entry.
+        /// </summary>
+        public static bool RetryPendingCut(OpticSight os)
+        {
+            if (os == null) return false;
+
+            // Throttle: don't retry more than once every 3 frames
+            if (Time.frameCount - _lastCutAttemptFrame < 3) return false;
+            _lastCutAttemptFrame = Time.frameCount;
+
+            var cache = _currentWeaponCache;
+            if (cache == null)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][Retry] No current weapon cache — calling ApplyForOptic. frame={Time.frameCount}");
+                ApplyForOptic(os);
+                cache = _currentWeaponCache;
+                return HasSuccessfulCut();
+            }
+
+            // Force a full rebuild by marking dirty
+            PiPDisablerPlugin.LogInfo(
+                $"[MeshSurgery][Retry] Forcing rebuild: Built={cache.Built} Entries={cache.Entries.Count} frame={Time.frameCount}");
+            cache.Dirty = true;
+            ApplyForOptic(os);
+
+            bool success = HasSuccessfulCut();
+            PiPDisablerPlugin.LogInfo(
+                $"[MeshSurgery][Retry] Result: Entries={cache.Entries.Count} success={success} frame={Time.frameCount}");
+            return success;
+        }
+
+        private static CutProfileCache GetOrCreateCurrentWeaponCache(Transform scopeRoot, Transform activeMode)
         {
             var player = Singleton<GameWorld>.Instance != null ? Singleton<GameWorld>.Instance.MainPlayer : null;
             var fc = player != null ? player.HandsController as Player.FirearmController : null;
@@ -402,53 +241,79 @@ namespace PiPDisabler
             var weaponRoot = weaponRootTf != null ? weaponRootTf.gameObject : null;
             if (weapon == null || weaponRoot == null) return null;
 
-            bool changed = _currentWeaponCache == null
-                || _currentWeaponCache.WeaponItem != weapon
-                || _currentWeaponCache.WeaponRoot != weaponRoot;
-
-            if (changed)
+            string weaponId = !string.IsNullOrEmpty(weapon.Id) ? weapon.Id : weapon.TemplateId;
+            if (!_raidCaches.TryGetValue(weaponId, out var weaponCache) || weaponCache == null)
             {
-                if (_currentWeaponCache != null)
-                {
-                    RestoreOriginalMeshes(_currentWeaponCache);
-                    DestroyCutMeshes(_currentWeaponCache);
-                }
+                weaponCache = new RaidWeaponCache { WeaponId = weaponId };
+                _raidCaches[weaponId] = weaponCache;
+            }
 
-                _currentWeaponCache = new WeaponCutCache
+            weaponCache.WeaponItem = weapon;
+
+            string profileKey = BuildProfileKey(weaponRootTf, scopeRoot, activeMode, BuildCutSettingsSignature());
+            if (!weaponCache.Profiles.TryGetValue(profileKey, out var profileCache) || profileCache == null)
+            {
+                profileCache = new CutProfileCache
                 {
-                    WeaponItem = weapon,
                     WeaponRoot = weaponRoot,
+                    ProfileKey = profileKey,
                     Built = false,
                     Dirty = true
                 };
-
-                PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Weapon cache switched: '{weapon.TemplateId}'");
+                weaponCache.Profiles[profileKey] = profileCache;
+            }
+            else
+            {
+                profileCache.WeaponRoot = weaponRoot;
             }
 
+            if (!ReferenceEquals(_currentWeaponCache, profileCache) && _currentWeaponCache != null)
+                RestoreOriginalMeshes(_currentWeaponCache);
+
+            if (!string.Equals(_currentWeaponId, weaponId, StringComparison.Ordinal))
+            {
+                PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Weapon cache switched: '{weapon.TemplateId}' ({weaponId})");
+            }
+
+            _currentWeaponId = weaponId;
+            _currentWeaponCache = profileCache;
+
             BindInventoryEvents(player);
-            return _currentWeaponCache;
+            return profileCache;
         }
 
-        private static void RebuildCutCacheForOptic(WeaponCutCache cache, OpticSight os, Transform scopeRoot)
+        private static void RebuildCutCacheForOptic(CutProfileCache cache, OpticSight os, Transform scopeRoot, Transform activeMode)
         {
             if (cache == null || os == null || scopeRoot == null) return;
-
-            Transform activeMode = null;
-            if (os.transform.name != null &&
-                (os.transform.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
-                 || os.transform.name.Equals("mode", StringComparison.OrdinalIgnoreCase)))
-                activeMode = os.transform;
-            else
-                activeMode = ScopeHierarchy.FindBestMode(scopeRoot);
-
             if (!activeMode) activeMode = os.transform;
+            _lastAttemptOptic = os.name;
+            _lastAttemptScopeRoot = scopeRoot.name;
+            _lastAttemptActiveMode = activeMode.name;
+            _lastAttemptWeaponRootFound = false;
+            _lastAttemptPlaneFound = false;
+            _lastAttemptTargets = 0;
+            _lastAttemptEntries = 0;
+            _lastAttemptReadableCopyFailures = 0;
+
+            var weaponRootTf = FindWeaponTransform(scopeRoot);
+            if (weaponRootTf == null)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] FindWeaponTransform returned null for scopeRoot='{scopeRoot.name}' frame={Time.frameCount}");
+                return;
+            }
+            _lastAttemptWeaponRootFound = true;
+            cache.WeaponRoot = weaponRootTf.gameObject;
 
             if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
                 out var planePoint, out var planeNormal, out var camPos))
             {
-                PiPDisablerPlugin.LogVerbose("[MeshSurgery] TryGetPlane failed — no plane found.");
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] TryGetPlane FAILED — no plane found. " +
+                    $"os='{os.name}' scopeRoot='{scopeRoot.name}' activeMode='{activeMode.name}' frame={Time.frameCount}");
                 return;
             }
+            _lastAttemptPlaneFound = true;
 
             bool isCylinderMode = PiPDisablerPlugin.GetCutMode() == "Cylinder";
             float plane1Offset = isCylinderMode
@@ -460,13 +325,13 @@ namespace PiPDisabler
                 ? MeshPlaneCutter.KeepSide.Positive
                 : MeshPlaneCutter.KeepSide.Negative;
 
-            PlaneVisualizer.Show(planePoint, planeNormal);
 
             RestoreOriginalMeshes(cache);
             DestroyCutMeshes(cache);
             cache.Entries.Clear();
 
             var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
+            _lastAttemptTargets = targets.Count;
             float cutRadius = PiPDisablerPlugin.GetCutRadius();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
@@ -489,69 +354,62 @@ namespace PiPDisabler
                 try
                 {
                     bool isCylinder = PiPDisablerPlugin.GetCutMode() == "Cylinder";
-                    string cacheKey = MeshCutCache.BuildKey(scopeRoot, activeMode, mf, originalAsset, keepSide, isCylinder);
-
-                    Mesh readable;
-                    if (MeshCutCache.TryLoad(cacheKey, out var cachedMesh))
+                    Mesh readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
+                    if (readable == null)
                     {
-                        readable = cachedMesh;
-                        readable.name = originalAsset.name + "_CUT_CACHED";
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DEBUG] MakeReadableMeshCopy returned null for '{originalAsset.name}' " +
+                            $"(isReadable={originalAsset.isReadable} verts={originalAsset.vertexCount}) frame={Time.frameCount}");
+                        _lastAttemptReadableCopyFailures++;
+                        continue;
+                    }
+
+                    if (!_loggedGpuCopy)
+                    {
+                        _loggedGpuCopy = true;
+                        PiPDisablerPlugin.LogInfo(
+                            "[MeshSurgery] Created readable mesh copies via GPU buffer. Plane cutting enabled.");
+                    }
+
+                    int vertsBefore = readable.vertexCount;
+                    bool ok;
+                    if (isCylinder)
+                    {
+                        float nearR = PiPDisablerPlugin.GetCylinderRadius();
+                        float startOff = PiPDisablerPlugin.GetCutStartOffset();
+                        float cutLen = PiPDisablerPlugin.GetCutLength();
+                        float preserve = PiPDisablerPlugin.GetNearPreserveDepth();
+                        float p2 = PiPDisablerPlugin.GetPlane2PositionNormalized(cutLen);
+                        float r2 = PiPDisablerPlugin.GetPlane2Radius();
+                        float p3 = PiPDisablerPlugin.GetPlane3Position();
+                        float r3 = PiPDisablerPlugin.GetPlane3Radius();
+                        float p4 = PiPDisablerPlugin.GetPlane4Position();
+                        float r4 = PiPDisablerPlugin.GetPlane4Radius();
+
+                        ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
+                            planePoint, planeNormal, nearR, r4, startOff, cutLen,
+                            keepInside: false, midRadius: r2, midPosition: p2,
+                            nearPreserveDepth: preserve,
+                            plane3Radius: r3, plane3Position: p3, plane4Position: p4);
                     }
                     else
                     {
-                        readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
-                        if (readable == null)
-                            continue;
-
-                        if (!_loggedGpuCopy)
-                        {
-                            _loggedGpuCopy = true;
-                            PiPDisablerPlugin.LogInfo(
-                                "[MeshSurgery] Created readable mesh copies via GPU buffer. Plane cutting enabled.");
-                        }
-
-                        int vertsBefore = readable.vertexCount;
-                        bool ok;
-                        if (isCylinder)
-                        {
-                            float nearR = PiPDisablerPlugin.GetCylinderRadius();
-                            float startOff = PiPDisablerPlugin.GetCutStartOffset();
-                            float cutLen = PiPDisablerPlugin.GetCutLength();
-                            float preserve = PiPDisablerPlugin.GetNearPreserveDepth();
-                            float p2 = PiPDisablerPlugin.GetPlane2PositionNormalized(cutLen);
-                            float r2 = PiPDisablerPlugin.GetPlane2Radius();
-                            float p3 = PiPDisablerPlugin.GetPlane3Position();
-                            float r3 = PiPDisablerPlugin.GetPlane3Radius();
-                            float p4 = PiPDisablerPlugin.GetPlane4Position();
-                            float r4 = PiPDisablerPlugin.GetPlane4Radius();
-
-                            ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
-                                planePoint, planeNormal, nearR, r4, startOff, cutLen,
-                                keepInside: false, midRadius: r2, midPosition: p2,
-                                nearPreserveDepth: preserve,
-                                plane3Radius: r3, plane3Position: p3, plane4Position: p4);
-                        }
-                        else
-                        {
-                            ok = MeshPlaneCutter.CutMeshDirect(readable, mf.transform,
-                                planePoint, planeNormal, keepSide);
-                        }
-
-                        if (!ok)
-                        {
-                            readable.Clear();
-                            readable.name = originalAsset.name + "_CUT_EMPTY";
-                        }
-                        else
-                        {
-                            readable.name = originalAsset.name + "_CUT";
-                        }
-
-                        PiPDisablerPlugin.LogVerbose(
-                            $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
-
-                        MeshCutCache.Save(cacheKey, readable);
+                        ok = MeshPlaneCutter.CutMeshDirect(readable, mf.transform,
+                            planePoint, planeNormal, keepSide);
                     }
+
+                    if (!ok)
+                    {
+                        readable.Clear();
+                        readable.name = originalAsset.name + "_CUT_EMPTY";
+                    }
+                    else
+                    {
+                        readable.name = originalAsset.name + "_CUT";
+                    }
+
+                    PiPDisablerPlugin.LogVerbose(
+                        $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
 
                     mf.sharedMesh = readable;
                     cache.Entries.Add(new CutMeshEntry
@@ -559,7 +417,8 @@ namespace PiPDisabler
                         Filter = mf,
                         OriginalMesh = originalAsset,
                         CutMesh = readable,
-                        Applied = true
+                        Applied = true,
+                        FilterPath = GetRelativePath(weaponRootTf, mf.transform)
                     });
                 }
                 catch (Exception ex)
@@ -572,10 +431,43 @@ namespace PiPDisabler
             cache.Built = true;
             cache.Dirty = false;
             cache.SettingsSignature = BuildCutSettingsSignature();
+            _lastCutAttemptFrame = Time.frameCount;
+            _lastAttemptEntries = cache.Entries.Count;
+
+            if (cache.Entries.Count == 0)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] RebuildCutCache finished with ZERO entries! " +
+                    $"targets={targets.Count} os='{os.name}' scopeRoot='{scopeRoot.name}' " +
+                    $"activeMode='{activeMode.name}' frame={Time.frameCount}");
+            }
+            else
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DEBUG] RebuildCutCache OK: {cache.Entries.Count} entries from {targets.Count} targets. frame={Time.frameCount}");
+            }
         }
 
-        private static void ReapplyCachedCutMeshes(WeaponCutCache cache, Transform scopeRoot)
+        private static void ReapplyCachedCutMeshes(CutProfileCache cache, Transform scopeRoot)
         {
+            var weaponRootTf = FindWeaponTransform(scopeRoot);
+            if (weaponRootTf == null)
+            {
+                cache.Dirty = true;
+                if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
+                    PiPDisablerPlugin.LogInfo("[MeshSurgery][DEBUG] Reapply cache failed: weapon root missing, forcing rebuild.");
+                return;
+            }
+
+            cache.WeaponRoot = weaponRootTf.gameObject;
+            if (!TryRebindEntries(cache, weaponRootTf))
+            {
+                cache.Dirty = true;
+                if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
+                    PiPDisablerPlugin.LogInfo("[MeshSurgery][DEBUG] Reapply cache failed: entry rebind failed, forcing rebuild.");
+                return;
+            }
+
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
             DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
             DisableWeaponSphereObjects(scopeRoot, logCandidates);
@@ -590,7 +482,7 @@ namespace PiPDisabler
             }
         }
 
-        private static void RestoreOriginalMeshes(WeaponCutCache cache)
+        private static void RestoreOriginalMeshes(CutProfileCache cache)
         {
             if (cache == null) return;
 
@@ -609,7 +501,7 @@ namespace PiPDisabler
             }
         }
 
-        private static void DestroyCutMeshes(WeaponCutCache cache)
+        private static void DestroyCutMeshes(CutProfileCache cache)
         {
             if (cache == null) return;
 
@@ -625,11 +517,20 @@ namespace PiPDisabler
 
         private static void DestroyCurrentWeaponCache()
         {
-            if (_currentWeaponCache == null) return;
-            RestoreOriginalMeshes(_currentWeaponCache);
-            DestroyCutMeshes(_currentWeaponCache);
-            _currentWeaponCache.Entries.Clear();
+            foreach (var weaponCache in _raidCaches.Values)
+            {
+                if (weaponCache == null) continue;
+                foreach (var profile in weaponCache.Profiles.Values)
+                {
+                    RestoreOriginalMeshes(profile);
+                    DestroyCutMeshes(profile);
+                    profile.Entries.Clear();
+                }
+                weaponCache.Profiles.Clear();
+            }
+            _raidCaches.Clear();
             _currentWeaponCache = null;
+            _currentWeaponId = null;
         }
 
         private static void BindInventoryEvents(Player player)
@@ -704,18 +605,125 @@ namespace PiPDisabler
 
         private static void MarkCacheDirtyIfMeaningful(Item item, ItemAddress address)
         {
-            var cache = _currentWeaponCache;
-            if (cache == null || cache.WeaponItem == null || address == null)
-                return;
-
-            bool underWeapon = address.GetAllParentItems(false).Any(p => p == cache.WeaponItem);
-            if (!underWeapon)
+            if (address == null)
                 return;
 
             if (IsIgnoredWeaponChange(item, address))
                 return;
 
-            cache.Dirty = true;
+            var owner = FindOwningWeapon(address, item);
+            if (owner == null)
+                return;
+
+            string ownerId = !string.IsNullOrEmpty(owner.Id) ? owner.Id : owner.TemplateId;
+            if (!_raidCaches.TryGetValue(ownerId, out var weaponCache) || weaponCache == null)
+                return;
+
+            foreach (var profile in weaponCache.Profiles.Values)
+            {
+                if (profile != null)
+                    profile.Dirty = true;
+            }
+        }
+
+        private static Weapon FindOwningWeapon(ItemAddress address, Item changedItem)
+        {
+            if (changedItem is Weapon changedWeapon)
+                return changedWeapon;
+
+            var parents = address.GetAllParentItems(false);
+            if (parents == null)
+                return null;
+
+            foreach (var parent in parents)
+            {
+                if (parent is Weapon weapon)
+                    return weapon;
+            }
+
+            return null;
+        }
+
+        private static Transform ResolveActiveMode(OpticSight os, Transform scopeRoot)
+        {
+            Transform activeMode;
+            if (os.transform.name != null &&
+                (os.transform.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase)
+                 || os.transform.name.Equals("mode", StringComparison.OrdinalIgnoreCase)))
+                activeMode = os.transform;
+            else
+                activeMode = ScopeHierarchy.FindBestMode(scopeRoot);
+
+            if (!activeMode) activeMode = os.transform;
+            return activeMode;
+        }
+
+        private static bool TryRebindEntries(CutProfileCache cache, Transform weaponRoot)
+        {
+            foreach (var entry in cache.Entries)
+            {
+                if (entry == null || entry.CutMesh == null || string.IsNullOrEmpty(entry.FilterPath))
+                    return false;
+
+                var tf = FindRelativeTransform(weaponRoot, entry.FilterPath);
+                if (tf == null)
+                    return false;
+
+                var mf = tf.GetComponent<MeshFilter>();
+                if (mf == null)
+                    return false;
+
+                entry.Filter = mf;
+                if (entry.OriginalMesh == null)
+                    entry.OriginalMesh = mf.sharedMesh;
+            }
+
+            return true;
+        }
+
+        private static string BuildProfileKey(Transform weaponRoot, Transform scopeRoot, Transform activeMode, string settingsSignature)
+        {
+            return string.Join("|", new[]
+            {
+                GetRelativePath(weaponRoot, scopeRoot),
+                GetRelativePath(weaponRoot, activeMode),
+                settingsSignature ?? string.Empty
+            });
+        }
+
+        private static string GetRelativePath(Transform root, Transform child)
+        {
+            if (child == null) return string.Empty;
+            if (root == null) return child.name ?? "unnamed";
+
+            var nodes = new List<string>();
+            for (var t = child; t != null; t = t.parent)
+            {
+                nodes.Add(t.name ?? "unnamed");
+                if (t == root)
+                    break;
+            }
+
+            nodes.Reverse();
+            return string.Join("/", nodes.ToArray());
+        }
+
+        private static Transform FindRelativeTransform(Transform root, string relativePath)
+        {
+            if (root == null || string.IsNullOrEmpty(relativePath)) return null;
+            if (relativePath == root.name) return root;
+
+            var segments = relativePath.Split('/');
+            int start = segments.Length > 0 && string.Equals(segments[0], root.name, StringComparison.Ordinal) ? 1 : 0;
+            Transform current = root;
+            for (int i = start; i < segments.Length; i++)
+            {
+                if (string.IsNullOrEmpty(segments[i])) continue;
+                current = current.Find(segments[i]);
+                if (current == null) return null;
+            }
+
+            return current;
         }
 
         private static bool IsIgnoredWeaponChange(Item item, ItemAddress address)
@@ -1158,15 +1166,23 @@ namespace PiPDisabler
                 }
             }
 
-            if (refTransform == null) return false;
+            if (refTransform == null)
+            {
+                PiPDisablerPlugin.LogInfo(
+                    $"[ScopeHierarchy][DEBUG] TryGetPlane: ALL fallbacks failed. " +
+                    $"os='{(os != null ? os.name : "null")}' activeMode='{activeMode.name}' " +
+                    $"scopeRoot='{scopeRoot.name}' frame={Time.frameCount}. " +
+                    $"Checked: backLens=null, LensRenderer=null, lens/linza/glass=null, optic_camera=null");
+                return false;
+            }
 
             // Determine the plane normal based on config.
             planeNormal = GetConfiguredNormal(refTransform);
 
-            PiPDisablerPlugin.LogVerbose(
-                $"[ScopeHierarchy] TryGetPlane: ref='{refTransform.name}', " +
-                $"axis={PiPDisablerPlugin.GetPlaneNormalAxis()}, " +
-                $"normal={planeNormal:F3}");
+            PiPDisablerPlugin.LogInfo(
+                $"[ScopeHierarchy][DEBUG] TryGetPlane OK: ref='{refTransform.name}', " +
+                $"planePoint={planePoint:F4}, normal={planeNormal:F3}, " +
+                $"frame={Time.frameCount}");
 
             return true;
         }
@@ -1240,63 +1256,24 @@ namespace PiPDisabler
             if (scopeRoot == null) return new List<MeshFilter>();
             bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
-            // Determine search root: go up through intermediate containers to catch
-            // housing + mount meshes.  EFT hierarchy variants:
-            //
-            //   mount_xxx(Clone)/               ← mount LODs often HERE
-            //     mod_scope_000/                ← intermediate container
-            //       scope_xxx(Clone)/           ← scopeRoot (has mode_* children)
-            //         mode_000/ | mode/
-            //
-            //   mod_scope_xxx/                  ← housing meshes often HERE
-            //     scope_xxx(Clone)/             ← scopeRoot
-            //       mode_000/ | mode/
-            //
-            // We climb up through parents that look like scope/mod containers,
-            // stopping at the weapon root or a non-scope parent.
-            Transform searchRoot = scopeRoot;
-            for (var p = scopeRoot.parent; p != null; p = p.parent)
+            Transform searchRoot = null;
+            for (var p = scopeRoot; p != null; p = p.parent)
             {
-                var pName = p.name ?? "";
-                var plo = pName.ToLowerInvariant();
-                // Stop at weapon root/anim nodes. We intentionally do NOT stop on
-                // receiver nodes because many attachments (e.g. handguards and tactical
-                // devices) live under the same receiver branch and should be cut too.
-                if (plo.Contains("weapon") || plo.Contains("anim"))
-                    break;
-                // Climb through scope/mod/optic/mount containers and receiver branches.
-                if (plo.Contains("scope") || plo.Contains("mod_") || plo.Contains("optic") || plo.Contains("mount") || plo.Contains("receiver") || plo.Contains("reciever"))
+                if (p.name != null && p.name.Equals("weapon", StringComparison.OrdinalIgnoreCase))
                 {
                     searchRoot = p;
-                    continue; // keep climbing
+                    break;
                 }
-                break; // unknown parent — stop
             }
-            if (searchRoot != scopeRoot)
-                PiPDisablerPlugin.LogVerbose(
-                    $"[ScopeHierarchy] Expanded search root: '{scopeRoot.name}' → '{searchRoot.name}'");
 
-            // Optional: climb further up to the Weapon_root node to include weapon body meshes.
-            // Normally the loop above stops at any parent whose name contains "weapon" or "anim".
-            // With ExpandSearchToWeaponRoot the search climbs through those intermediate nodes
-            // until it finds a transform whose name starts with "Weapon_root".
-            // Path example: Weapon_root/Weapon_root_anim/weapon/mod_scope/<scope>
-            if (PiPDisablerPlugin.GetExpandSearchToWeaponRoot())
+            if (searchRoot == null)
             {
-                for (var p = searchRoot.parent; p != null; p = p.parent)
-                {
-                    if ((p.name ?? "").StartsWith("Weapon_root", StringComparison.OrdinalIgnoreCase))
-                    {
-                        searchRoot = p;
-                        PiPDisablerPlugin.LogVerbose(
-                            $"[ScopeHierarchy] ExpandSearchToWeaponRoot: climbed to '{searchRoot.name}'");
-                        break;
-                    }
-                }
+                PiPDisablerPlugin.LogInfo(
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters could not find weapon root for '{scopeRoot.name}'");
+                return new List<MeshFilter>();
             }
 
             var result = new List<MeshFilter>(64);
-            int skippedMode = 0, skippedOther = 0, skippedLightFx = 0;
             int inspected = 0;
 
             if (logCandidates)
@@ -1314,6 +1291,39 @@ namespace PiPDisabler
                 if (logCandidates)
                     relSearchPath = GetRelativePath(mf.transform, searchRoot);
 
+                if (IsVolatileWeaponPath(relSearchPath))
+                {
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip volatile path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
+
+                if (ContainsPatronToken(relSearchPath)
+                    || ContainsPatronToken(mf.gameObject.name)
+                    || ContainsPatronToken(mf.sharedMesh.name))
+                {
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip patron path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
+
+                var renderer = mf.GetComponent<Renderer>();
+                if (renderer != null && LensTransparency.IsLensSurfaceRenderer(renderer))
+                {
+                    if (logCandidates)
+                    {
+                        PiPDisablerPlugin.LogInfo(
+                            $"[MeshSurgery][DebugCandidates] skip lens path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+                    }
+                    continue;
+                }
+
                 result.Add(mf);
 
                 if (logCandidates)
@@ -1325,43 +1335,37 @@ namespace PiPDisabler
 
             PiPDisablerPlugin.LogVerbose(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
-                $"{result.Count} targets, skipped: mode={skippedMode} otherScope={skippedOther} lightFx={skippedLightFx}");
+                $"{result.Count} targets");
 
             if (logCandidates)
             {
                 PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count} skippedMode={skippedMode} skippedOtherScope={skippedOther} skippedLightFx={skippedLightFx}");
+                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count}");
             }
 
             return result;
         }
 
-        /// <summary>
-        /// Find all scope roots under a search root that are NOT the active scope root.
-        /// A scope root is any transform with mode_* children.
-        /// </summary>
-        private static void CollectOtherScopeRoots(Transform searchRoot, Transform activeScopeRoot,
-            List<Transform> results)
+        private static bool IsVolatileWeaponPath(string relativePath)
         {
-            var stack = new Stack<Transform>();
-            stack.Push(searchRoot);
-            while (stack.Count > 0)
-            {
-                var t = stack.Pop();
-                if (t == null) continue;
+            if (string.IsNullOrEmpty(relativePath))
+                return false;
 
-                // If this is a likely scope root (not just any mode_* device) and it's not
-                // the active one, record it so we can skip sibling scope subtrees.
-                if (t != activeScopeRoot && IsLikelyScopeRootForExclusion(t))
-                {
-                    results.Add(t);
-                    continue; // don't recurse into other scopes
-                }
-
-                for (int i = 0; i < t.childCount; i++)
-                    stack.Push(t.GetChild(i));
-            }
+            var path = relativePath.ToLowerInvariant();
+            return path.Contains("patron_in_weapon")
+                || path.Contains("mod_magazine")
+                || path.Contains("mod_magazine_new");
         }
+
+        private static bool ContainsPatronToken(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return false;
+
+            return value.IndexOf("patron", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
 
     }
 }

@@ -5,6 +5,7 @@ using EFT.Animations;
 using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
+using UnityEngine;
 
 namespace PiPDisabler.Patches
 {
@@ -55,31 +56,61 @@ namespace PiPDisabler.Patches
             if (cameraClass == null)
                 return;
 
-            if (pwa != null &&
+            bool modZoomEnabled =
                 PiPDisablerPlugin.ModEnabled.Value &&
-                PiPDisablerPlugin.EnableZoom.Value &&
+                PiPDisablerPlugin.EnableZoom.Value;
+
+            bool isAdsOptic = false;
+            if (pwa != null && pwa.IsAiming && !pwa.Sprint)
+            {
+                try { isAdsOptic = pwa.CurrentScope.IsOptic; }
+                catch { isAdsOptic = false; }
+            }
+
+            if (pwa != null &&
+                modZoomEnabled &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
-                pwa.IsAiming &&
-                !pwa.Sprint)
+                !FreelookTracker.IsFreelooking &&
+                isAdsOptic)
             {
-                bool isOptic;
-                try { isOptic = pwa.CurrentScope.IsOptic; }
-                catch { isOptic = false; }
+                float zoomBaseFov = FovController.ZoomBaselineFov;
+                float zoomedFov = FovController.ComputeZoomedFov();
 
-                if (isOptic)
+                if (zoomedFov >= 0.5f && zoomedFov <= zoomBaseFov)
                 {
-                    float playerBaseFov = pwa.Single_2;
-                    float zoomBaseFov = FovController.ZoomBaselineFov;
-                    float zoomedFov = FovController.ComputeZoomedFov(playerBaseFov, pwa);
-
-                    if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
+                    if (FovController.HasFovChanged(zoomedFov))
                     {
-                        targetFov = zoomedFov;
+                        // FOV changed enough — restart lerp to new target.
+                        FovController.TrackAppliedFov(zoomedFov);
+                        FreelookTracker.CacheAppliedFov(zoomedFov);
                         // Keep the game's original duration so ADS/unADS speed is unaffected
-                        force = false;
+                        cameraClass.SetFov(zoomedFov, duration, false);
                     }
+                    // Whether or not we called SetFov, suppress EFT's original call
+                    // so the lerp coroutine can run undisturbed to the target.
+                    return;
                 }
+            }
+
+            // Block EFT's method_23 FOV writes while ADS with an optic.
+            // Pose changes (stand/crouch/prone) call method_23 and can stomp zoom.
+            if (modZoomEnabled &&
+                ScopeLifecycle.IsScoped &&
+                !ScopeLifecycle.IsModBypassedForCurrentScope &&
+                isAdsOptic)
+                return;
+
+            // After scope exit, RestoreFov starts a coroutine toward the player's base
+            // FOV. EFT's method_23 keeps firing with SetFov(35°), which would kill that
+            // coroutine immediately and cause the FOV to flash. Suppress any call whose
+            // target differs significantly from our restore target for the duration of
+            // the animation.
+            if (ScopeLifecycle.HasPostExitRestore)
+            {
+                float restoreFov = ScopeLifecycle.PostExitRestoreFov;
+                if (Mathf.Abs(targetFov - restoreFov) > FovController.FovChangeThreshold)
+                    return; // Let the restore coroutine run undisturbed
             }
 
             cameraClass.SetFov(targetFov, duration, force);

@@ -32,7 +32,6 @@ namespace PiPDisabler
         public float NearPreserveDepth;
         public bool ShowReticle;
         public float ReticleBaseSize;
-        public bool ReticleOverlayCamera;
         public bool RestoreOnUnscope;
         public bool ExpandSearchToWeaponRoot;
     }
@@ -49,7 +48,7 @@ namespace PiPDisabler
         private static bool _loaded;
         private static string _activeScopeKey;
 
-        private static string FilePath => Path.Combine(PiPDisablerPlugin.GetMeshCutCacheDirectory(), "custom_mesh_surgery_settings.json");
+        private static string FilePath => Path.Combine(PiPDisablerPlugin.GetPluginRootDirectory(), "custom_mesh_surgery_settings.json");
 
         internal static void SetActiveScope(string scopeKey)
         {
@@ -94,7 +93,6 @@ namespace PiPDisabler
                 PiPDisablerPlugin.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
                 PiPDisablerPlugin.CustomShowReticle.Value = entry.ShowReticle;
                 PiPDisablerPlugin.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
-                PiPDisablerPlugin.CustomReticleOverlayCamera.Value = entry.ReticleOverlayCamera;
                 PiPDisablerPlugin.CustomRestoreOnUnscope.Value = entry.RestoreOnUnscope;
                 PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
                 PiPDisablerPlugin.LogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
@@ -177,7 +175,6 @@ namespace PiPDisabler
             target.NearPreserveDepth = PiPDisablerPlugin.CustomNearPreserveDepth.Value;
             target.ShowReticle = PiPDisablerPlugin.CustomShowReticle.Value;
             target.ReticleBaseSize = PiPDisablerPlugin.CustomReticleBaseSize.Value;
-            target.ReticleOverlayCamera = PiPDisablerPlugin.CustomReticleOverlayCamera.Value;
             target.RestoreOnUnscope = PiPDisablerPlugin.CustomRestoreOnUnscope.Value;
             target.ExpandSearchToWeaponRoot = PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value;
 

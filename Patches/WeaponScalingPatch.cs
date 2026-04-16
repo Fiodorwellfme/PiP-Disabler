@@ -1,6 +1,7 @@
 using System;
-using System.Reflection;
+using Bsg.GameSettings;
 using Comfort.Common;
+using System.Reflection;
 using EFT;
 using EFT.CameraControl;
 using HarmonyLib;
@@ -82,7 +83,8 @@ namespace PiPDisabler.Patches
                 if (!CameraClass.Exist) return;
 
                 float currentFov = CameraClass.Instance.Fov;
-                float scale = ComputeCompensatedScale(currentFov);
+                float settingsFov = GetSettingsFov(player);
+                float scale = ComputeCompensatedScale(currentFov, settingsFov);
 
                 // Override ONLY visual fields — aim math (_compensatoryScale etc.) untouched
                 player.RibcageScaleCurrentTarget = scale;
@@ -104,17 +106,12 @@ namespace PiPDisabler.Patches
                 var player = GetMainPlayer();
                 if (player == null) return;
 
-                // Use the player's SETTINGS FOV (50-75) — that's what EFT's
-                // CalculateScaleValueByFov expects.  Not the camera FOV which
-                // may still be zoomed when called mid-scope or from config toggle.
-                var pwa = player.ProceduralWeaponAnimation;
-                float settingsFov = pwa != null ? pwa.Single_2 : 50f;
-
-                player.CalculateScaleValueByFov(settingsFov);
-                player.SetCompensationScale(true);
+                // Match EFT's vanilla restore path (OnFovUpdatedEvent).
+                int settingsFov = GetVanillaSettingsFov();
+                player.OnFovUpdatedEvent(settingsFov);
 
                 PiPDisablerPlugin.LogVerbose(
-                    $"[WeaponScaling] Restored normal scaling (settingsFov={settingsFov:F1})");
+                    $"[WeaponScaling] Restored normal scaling (settingsFov={settingsFov})");
             }
             catch (Exception ex)
             {
@@ -129,17 +126,62 @@ namespace PiPDisabler.Patches
         /// invRatio = tan(referenceFov/2) / tan(currentFov/2)
         /// scale = baseline * ((1f - strength) + strength * invRatio)
         /// </summary>
-        private static float ComputeCompensatedScale(float currentFov)
+        private static float ComputeCompensatedScale(float currentFov, float settingsFov)
         {
             float halfRefRad = ZoomBaseline * 0.5f * Mathf.Deg2Rad;
             float halfCurRad = currentFov * 0.5f * Mathf.Deg2Rad;
-            float baseline = PiPDisablerPlugin.BaselineWeaponScale.Value;
-            float strength = PiPDisablerPlugin.WeaponScaleStrength.Value;
+            GetAutoScaleTuning(settingsFov, out float baseline, out float strength);
             float tanRef = Mathf.Tan(halfRefRad);
             float tanCur = Mathf.Tan(halfCurRad);
             float invRatio = tanRef / tanCur;
 
             return baseline * ((1f - strength) + strength * invRatio);
+        }
+
+        private static float GetSettingsFov(Player player)
+        {
+            var pwa = player != null ? player.ProceduralWeaponAnimation : null;
+            return pwa != null ? pwa.Single_2 : 50f;
+        }
+
+        private static int GetVanillaSettingsFov()
+        {
+            try
+            {
+                return (int)Singleton<SharedGameSettingsClass>.Instance.Game.Settings.FieldOfView;
+            }
+            catch
+            {
+                return 50;
+            }
+        }
+
+        private static void GetAutoScaleTuning(float settingsFov, out float baseline, out float strength)
+        {
+            const float fovMin = 50f;
+            const float fovMid = 62f;
+            const float fovMax = 75f;
+
+            const float baselineAt50 = 0.8873239f;
+            const float baselineAt62 = 0.6619719f;
+            const float baselineAt75 = 0.53990f;
+
+            const float strengthAt50 = 0.2723005f;
+            const float strengthAt62 = 0.2723005f;
+            const float strengthAt75 = 0.422535f;
+
+            float clampedFov = Mathf.Clamp(settingsFov, fovMin, fovMax);
+            if (clampedFov <= fovMid)
+            {
+                float tLow = Mathf.InverseLerp(fovMin, fovMid, clampedFov);
+                baseline = Mathf.Lerp(baselineAt50, baselineAt62, tLow);
+                strength = Mathf.Lerp(strengthAt50, strengthAt62, tLow);
+                return;
+            }
+
+            float tHigh = Mathf.InverseLerp(fovMid, fovMax, clampedFov);
+            baseline = Mathf.Lerp(baselineAt62, baselineAt75, tHigh);
+            strength = Mathf.Lerp(strengthAt62, strengthAt75, tHigh);
         }
 
         /// <summary>
@@ -165,7 +207,8 @@ namespace PiPDisabler.Patches
                 if (!CameraClass.Exist) return;
 
                 float currentFov = CameraClass.Instance.Fov;
-                float scale = ComputeCompensatedScale(currentFov);
+                float settingsFov = GetSettingsFov(__instance);
+                float scale = ComputeCompensatedScale(currentFov, settingsFov);
 
                 // Override visual scale AFTER EFT has finished all aim math
                 __instance.RibcageScaleCurrentTarget = scale;
@@ -175,13 +218,6 @@ namespace PiPDisabler.Patches
         }
 
         private static Player GetMainPlayer()
-        {
-            try
-            {
-                var gw = Singleton<GameWorld>.Instance;
-                return gw?.MainPlayer;
-            }
-            catch { return null; }
-        }
+            => PiPDisablerPlugin.GetLocalPlayer();
     }
 }

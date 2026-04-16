@@ -11,22 +11,24 @@ namespace PiPDisabler.Patches
         {
             if (_enabled) return;
             _enabled = true;
-
-            // Event-driven scope detection (like SPT-Dynamic-External-Resolution)
+            // Event-driven scope detection
             SafeEnable<OpticSightOnEnablePatch>();
             SafeEnable<OpticSightOnDisablePatch>();
             SafeEnable<ChangeAimingModePatch>();
-
+            SafeEnable<SetScopeModePatch>();
+            SafeEnable<PlayerOnSetInHandsPatch>();
             // No-PiP
             SafeEnable<PiPDisabler.OpticComponentUpdaterCopyComponentFromOptic_DisablePiP>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterLateUpdate_DisablePiP>();
             SafeEnable<PiPDisabler.OpticSightLensFade_NoPipPatch>();
-
             // FOV zoom
             SafeEnable<PWAMethod23Patch>();
-
+            // Freelook — intercept Player.Look's SetFov(35) stomp
+            SafeEnable<PlayerLookPatch>();
             // Weapon scaling (freeze ribcage scale while scoped)
             SafeEnable<WeaponScalingPatch>();
+            // Fika compatibility patch
+            FikaCompat.Enable();
         }
 
         private static void SafeEnable<T>() where T : ModulePatch, new()

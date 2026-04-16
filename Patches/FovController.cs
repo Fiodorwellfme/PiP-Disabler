@@ -1,7 +1,7 @@
 using System;
 using System.Reflection;
-using EFT.Animations;
 using EFT.CameraControl;
+using EFT.InventoryLogic;
 using HarmonyLib;
 using UnityEngine;
 
@@ -24,43 +24,48 @@ namespace PiPDisabler
     internal static class FovController
     {
         // Fixed baseline for zoom-to-FOV conversion — independent of player FOV settings.
-        public const float ZoomBaselineFov = 50f;
+        public static float ZoomBaselineFov => PiPDisablerPlugin.BaselineFOV.Value;
 
         // --- Per-scope caches (cleared on mode switch / scope exit) ---
-        private static object _cachedSightComponent;
+        private static SightComponent _cachedSightComponent;
         private static OpticSight _cachedSightComponentForOptic;
 
         // --- Per-frame magnification cache (avoids redundant reflection per frame) ---
         private static float _cachedMagnification;
         private static int _cachedMagnificationFrame = -1;
 
-        // --- Reflection cache for SightComponent access ---
+        // --- Reflection cache: SightModVisualControllers discovery only ---
+        // (SightComponent members are accessed directly — all public)
         private static Type _smvcType;           // SightModVisualControllers
         private static PropertyInfo _sightModProp; // .SightMod → SightComponent
         private static bool _smvcSearched;
-
-        private static MethodInfo _getCurrentZoom; // SightComponent.GetCurrentOpticZoom()
-        private static MethodInfo _getMinZoom;     // SightComponent.GetMinOpticZoom()
-        private static MethodInfo _getMaxZoom;     // SightComponent.GetMaxOpticZoom()
-        private static FieldInfo  _scopeZoomValue; // SightComponent.ScopeZoomValue (float)
-        private static PropertyInfo _adjOpticData; // SightComponent.AdjustableOpticData → IAdjustableOpticData
-        private static PropertyInfo _isAdjustable; // IAdjustableOpticData.IsAdjustableOptic (bool)
-        private static PropertyInfo _templateProp; // SightComponent.Template (item json)
-        private static FieldInfo _templateField;   // fallback template field
-        private static PropertyInfo _templateIdProp;
-        private static FieldInfo _templateIdField;
-        private static PropertyInfo _templateNameProp;
-        private static FieldInfo _templateNameField;
-        private static bool _sightComponentSearched;
 
         // --- Fallback: ScopeCameraData type/field cache ---
         private static Type _scopeCamDataType;
         private static FieldInfo _scopeCamDataFovField;
         private static bool _scopeCamDataSearched;
 
+        // Dead-band: suppress SetFov calls when the target FOV hasn't changed enough.
+        // Prevents CameraClass.SetFov from restarting the lerp coroutine every frame
+        // when method_23 is ticked, which would stall the animation and cause flashing.
+        private static float _lastAppliedFov;
+        public const float FovChangeThreshold = 0.05f; // degrees
+
+        /// <summary>
+        /// Returns true when <paramref name="newFov"/> differs from the last
+        /// applied FOV by at least <see cref="FovChangeThreshold"/> degrees.
+        /// </summary>
+        public static bool HasFovChanged(float newFov)
+            => Mathf.Abs(newFov - _lastAppliedFov) >= FovChangeThreshold;
+
+        /// <summary>Records the most-recently applied FOV target.</summary>
+        public static void TrackAppliedFov(float fov) => _lastAppliedFov = fov;
+
         // Dedup logging
         private static float _lastLoggedMag;
         private static string _lastLoggedSource;
+        private static float _lastTemplateZoomLog = -1f;
+        private static string _lastTemplateZoomLogMode;
 
         /// <summary>
         /// Computes the zoomed main-camera FOV from a fixed baseline of 50°.
@@ -70,27 +75,30 @@ namespace PiPDisabler
         ///   2. ScopeCameraData.FieldOfView fallback (mag = 35 / fov)
         ///   3. Config ScopedFov manual fallback
         /// </summary>
-        public static float ComputeZoomedFov(float baseFov, ProceduralWeaponAnimation pwa)
+        public static float ComputeZoomedFov()
         {
-            _ = baseFov;
-            _ = pwa;
-
             if (!PiPDisablerPlugin.AutoFovFromScope.Value)
                 return PiPDisablerPlugin.ScopedFov.Value;
 
             float magnification = GetEffectiveMagnification();
             if (magnification > 0.1f)
             {
-                float resultFov = MagnificationToFov(magnification, ZoomBaselineFov);
+                float oneXTargetFov = GetOneXTargetFov();
+                float resultFov = magnification <= 1.01f
+                    ? oneXTargetFov
+                    : MagnificationToFov(magnification, ZoomBaselineFov);
 
                 // Log on change
                 string source = _lastLoggedSource ?? "?";
                 if (Mathf.Abs(magnification - _lastLoggedMag) > 0.01f)
                 {
                     _lastLoggedMag = magnification;
+                    string mapping = magnification <= 1.01f
+                        ? $"(1x override={oneXTargetFov:F1}°)"
+                        : $"(baseline={ZoomBaselineFov:F0}°)";
                     PiPDisablerPlugin.LogInfo(
                         $"[FovController] mag={magnification:F2}x → mainFov={resultFov:F1}° " +
-                        $"(baseline={ZoomBaselineFov:F0}°) [{source}]");
+                        $"{mapping} [{source}]");
                 }
 
                 return resultFov;
@@ -101,7 +109,7 @@ namespace PiPDisabler
 
         /// <summary>
         /// Returns the current effective magnification from the best available source.
-        /// Used by both FovController and ZoomController.
+        /// Used by FovController.
         /// Cached per-frame to avoid redundant reflection calls when multiple
         /// systems query magnification in the same frame.
         /// </summary>
@@ -153,6 +161,56 @@ namespace PiPDisabler
             return resultRad * Mathf.Rad2Deg;
         }
 
+        public static float GetOneXTargetFov()
+        {
+            var os = ScopeLifecycle.ActiveOptic;
+            var player = PiPDisablerPlugin.GetLocalPlayer();
+            var pwa = player?.ProceduralWeaponAnimation;
+
+            if (os != null && TryGetCurrentTemplateZoomEntry(os, out float currentZoom, out int modeCount))
+            {
+                if (Mathf.Abs(currentZoom - 1f) <= 0.01f)
+                {
+                    // Single-entry 1x mode uses vanilla ADS offset behavior.
+                    if (modeCount == 1 && pwa != null)
+                        return Mathf.Max(1f, pwa.Single_2 - 15f);
+
+                    // 1x inside a multi-mode stack stays fixed at optic FOV.
+                    return 35f;
+                }
+            }
+
+            if (pwa == null)
+                return ZoomBaselineFov;
+
+            return Mathf.Max(1f, pwa.Single_2);
+        }
+
+        private static bool TryGetCurrentTemplateZoomEntry(OpticSight os, out float zoom, out int modeCount)
+        {
+            zoom = 0f;
+            modeCount = 0;
+
+            if (os == null) return false;
+            var sc = FindSightComponent(os);
+            if (sc == null) return false;
+
+            var state = GetCurrentScopeState(os);
+            if (state.index < 0 || state.mode < 0) return false;
+
+            var zooms = sc.Template?.Zooms;
+            if (zooms == null || state.index >= zooms.Length) return false;
+
+            var modeZooms = zooms[state.index];
+            if (modeZooms == null) return false;
+
+            modeCount = modeZooms.Length;
+            if (state.mode >= modeCount) return false;
+
+            zoom = modeZooms[state.mode];
+            return true;
+        }
+
         /// <summary>
         /// Called on mode switch to reset log dedup so the next computation logs.
         /// </summary>
@@ -165,6 +223,10 @@ namespace PiPDisabler
             _cachedSightComponentForOptic = null;
             // Invalidate per-frame cache
             _cachedMagnificationFrame = -1;
+            // Reset dead-band so the next ApplyFov always fires
+            _lastAppliedFov = 0f;
+            _lastTemplateZoomLog = -1f;
+            _lastTemplateZoomLogMode = null;
         }
 
         // =====================================================================
@@ -188,60 +250,37 @@ namespace PiPDisabler
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) return 0f;
 
-            // Find SightComponent via SightModVisualControllers
-            object sightComponent = FindSightComponent(os);
-            if (sightComponent == null) return 0f;
-
-            // Discover SightComponent methods if not yet cached
-            if (!_sightComponentSearched)
-            {
-                _sightComponentSearched = true;
-                DiscoverSightComponentMembers(sightComponent.GetType());
-            }
-
-            if (_getCurrentZoom == null) return 0f;
+            var sc = FindSightComponent(os);
+            if (sc == null) return 0f;
 
             try
             {
-                // Check if this is an adjustable (variable zoom) optic
-                bool isAdjustable = false;
-                if (_adjOpticData != null && _isAdjustable != null)
+                // Variable zoom: interpolate between template min/max using ScopeZoomValue
+                if (sc.AdjustableOpticData.IsAdjustableOptic)
                 {
-                    try
-                    {
-                        object adjData = _adjOpticData.GetValue(sightComponent);
-                        if (adjData != null)
-                            isAdjustable = (bool)_isAdjustable.GetValue(adjData);
-                    }
-                    catch { }
-                }
-
-                if (isAdjustable && _getMinZoom != null && _getMaxZoom != null && _scopeZoomValue != null)
-                {
-                    // Variable zoom: interpolate between template min/max
-                    float minZoom = (float)_getMinZoom.Invoke(sightComponent, null);
-                    float maxZoom = (float)_getMaxZoom.Invoke(sightComponent, null);
-                    float zoomT = (float)_scopeZoomValue.GetValue(sightComponent);
-
-                    // ScopeZoomValue: 0 = min zoom, 1 = max zoom. Clamp for safety.
-                    zoomT = Mathf.Clamp01(zoomT);
+                    float minZoom = sc.GetMinOpticZoom();
+                    float maxZoom = sc.GetMaxOpticZoom();
+                    float zoomT   = Mathf.Clamp01(sc.ScopeZoomValue);
 
                     if (minZoom > 0.1f && maxZoom > 0.1f && maxZoom > minZoom)
                     {
                         float zoom = Mathf.Lerp(minZoom, maxZoom, zoomT);
-                        PiPDisablerPlugin.LogVerbose(
+                        LogTemplateZoomVerbose(zoom,
                             $"[FovController] Variable zoom: min={minZoom:F2}x max={maxZoom:F2}x " +
-                            $"t={zoomT:F3} → {zoom:F2}x");
+                            $"t={zoomT:F3} → {zoom:F2}x",
+                            "variable");
                         return zoom;
                     }
                 }
 
                 // Stepped or fallback: use GetCurrentOpticZoom()
-                float currentZoom = (float)_getCurrentZoom.Invoke(sightComponent, null);
+                float currentZoom = sc.GetCurrentOpticZoom();
                 if (currentZoom > 0.1f)
                 {
-                    PiPDisablerPlugin.LogVerbose(
-                        $"[FovController] Template zoom: {currentZoom:F2}x (stepped)");
+                    LogTemplateZoomVerbose(
+                        currentZoom,
+                        $"[FovController] Template zoom: {currentZoom:F2}x (stepped)",
+                        "stepped");
                     return currentZoom;
                 }
             }
@@ -254,8 +293,19 @@ namespace PiPDisabler
             return 0f;
         }
 
+        private static void LogTemplateZoomVerbose(float zoom, string message, string mode)
+        {
+            if (Mathf.Abs(zoom - _lastTemplateZoomLog) <= 0.01f &&
+                string.Equals(mode, _lastTemplateZoomLogMode, StringComparison.Ordinal))
+                return;
+
+            _lastTemplateZoomLog = zoom;
+            _lastTemplateZoomLogMode = mode;
+            PiPDisablerPlugin.LogVerbose(message);
+        }
+
         /// <summary>
-        /// Returns the template min/max zoom for the current scope. Used by ZoomController
+        /// Returns the template min/max zoom for the current scope.
         /// for magnification bounds.
         /// Returns (minZoom, maxZoom). Returns (0,0) if not available.
         /// </summary>
@@ -264,21 +314,13 @@ namespace PiPDisabler
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) return (0f, 0f);
 
-            object sc = FindSightComponent(os);
+            var sc = FindSightComponent(os);
             if (sc == null) return (0f, 0f);
-
-            if (!_sightComponentSearched)
-            {
-                _sightComponentSearched = true;
-                DiscoverSightComponentMembers(sc.GetType());
-            }
-
-            if (_getMinZoom == null || _getMaxZoom == null) return (0f, 0f);
 
             try
             {
-                float minZ = (float)_getMinZoom.Invoke(sc, null);
-                float maxZ = (float)_getMaxZoom.Invoke(sc, null);
+                float minZ = sc.GetMinOpticZoom();
+                float maxZ = sc.GetMaxOpticZoom();
                 if (minZ > 0.1f && maxZ > 0.1f)
                     return (minZ, maxZ);
             }
@@ -287,122 +329,55 @@ namespace PiPDisabler
             return (0f, 0f);
         }
 
-        /// <summary>
-        /// Returns true when the current optic exposes AdjustableOpticData.IsAdjustableOptic.
-        /// Used for optional auto-bypass of variable scopes.
-        /// </summary>
-        public static bool IsCurrentOpticAdjustable()
-        {
-            return IsOpticAdjustable(ScopeLifecycle.ActiveOptic);
-        }
-
         public static bool IsOpticAdjustable(OpticSight os)
         {
             if (os == null) return false;
-
-            object sightComponent = FindSightComponent(os);
-            if (sightComponent == null) return false;
-
-            if (!_sightComponentSearched)
-            {
-                _sightComponentSearched = true;
-                DiscoverSightComponentMembers(sightComponent.GetType());
-            }
-
-            if (_adjOpticData == null || _isAdjustable == null) return false;
-
-            try
-            {
-                object adjData = _adjOpticData.GetValue(sightComponent);
-                if (adjData == null) return false;
-                return (bool)_isAdjustable.GetValue(adjData);
-            }
-            catch
-            {
-                return false;
-            }
+            var sc = FindSightComponent(os);
+            if (sc == null) return false;
+            try { return sc.AdjustableOpticData.IsAdjustableOptic; }
+            catch { return false; }
         }
 
-        private static bool TryGetTemplateObject(OpticSight os, out object template)
-        {
-            template = null;
-            if (os == null) return false;
-
-            object sightComponent = FindSightComponent(os);
-            if (sightComponent == null) return false;
-
-            if (!_sightComponentSearched)
-            {
-                _sightComponentSearched = true;
-                DiscoverSightComponentMembers(sightComponent.GetType());
-            }
-
-            try
-            {
-                if (_templateProp != null)
-                    template = _templateProp.GetValue(sightComponent, null);
-                else if (_templateField != null)
-                    template = _templateField.GetValue(sightComponent);
-            }
-            catch { }
-
-            return template != null;
-        }
 
         /// <summary>
-        /// Returns the scope template/item _id from SightComponent.Template (item json).
+        /// Returns the scope item _id from SightComponent.Item.Template.
         /// </summary>
         public static string GetOpticTemplateId(OpticSight os)
         {
-            if (!TryGetTemplateObject(os, out var template)) return "unknown";
-
             try
             {
-                if (_templateIdProp != null)
-                {
-                    object id = _templateIdProp.GetValue(template, null);
-                    if (id is string s && !string.IsNullOrWhiteSpace(s))
-                        return s;
-                }
-
-                if (_templateIdField != null)
-                {
-                    object id = _templateIdField.GetValue(template);
-                    if (id is string s && !string.IsNullOrWhiteSpace(s))
-                        return s;
-                }
+                var t = FindSightComponent(os)?.Item?.Template;
+                if (t == null) return "unknown";
+                var id = t._id.ToString();
+                return string.IsNullOrWhiteSpace(id) ? "unknown" : id;
             }
-            catch { }
-
-            return "unknown";
+            catch { return "unknown"; }
         }
 
         /// <summary>
-        /// Returns the scope template/item _name from SightComponent.Template (item json).
+        /// Returns the scope item _name from SightComponent.Item.Template.
         /// </summary>
         public static string GetOpticTemplateName(OpticSight os)
         {
-            if (!TryGetTemplateObject(os, out var template)) return "unknown";
-
             try
             {
-                if (_templateNameProp != null)
-                {
-                    object n = _templateNameProp.GetValue(template, null);
-                    if (n is string s && !string.IsNullOrWhiteSpace(s))
-                        return s;
-                }
-
-                if (_templateNameField != null)
-                {
-                    object n = _templateNameField.GetValue(template);
-                    if (n is string s && !string.IsNullOrWhiteSpace(s))
-                        return s;
-                }
+                var t = FindSightComponent(os)?.Item?.Template;
+                if (t == null) return "unknown";
+                return string.IsNullOrWhiteSpace(t._name) ? "unknown" : t._name;
             }
-            catch { }
+            catch { return "unknown"; }
+        }
 
-            return "unknown";
+        /// <summary>
+        /// Returns (SelectedScopeIndex, SelectedScopeMode) from the SightComponent
+        /// for the given optic. Returns (-1, -1) if the values cannot be read.
+        /// </summary>
+        public static (int index, int mode) GetCurrentScopeState(OpticSight os)
+        {
+            var sc = FindSightComponent(os);
+            if (sc == null) return (-1, -1);
+            try { return (sc.SelectedScopeIndex, sc.SelectedScopeMode); }
+            catch { return (-1, -1); }
         }
 
         // =====================================================================
@@ -419,7 +394,7 @@ namespace PiPDisabler
         ///     └── mode_0 / mode_1
         ///          └── OpticSight  ← we start here
         /// </summary>
-        private static object FindSightComponent(OpticSight os)
+        private static SightComponent FindSightComponent(OpticSight os)
         {
             // Per-scope cache: SightComponent doesn't change during a scope session
             if (_cachedSightComponentForOptic == os && _cachedSightComponent != null)
@@ -456,7 +431,7 @@ namespace PiPDisabler
 
                 if (smvc == null) return null;
 
-                var result = _sightModProp.GetValue(smvc);
+                var result = _sightModProp.GetValue(smvc) as SightComponent;
                 if (result != null)
                 {
                     _cachedSightComponent = result;
@@ -574,66 +549,6 @@ namespace PiPDisabler
             return fallback;
         }
 
-        /// <summary>
-        /// Discovers methods/fields on SightComponent type for zoom access.
-        /// </summary>
-        private static void DiscoverSightComponentMembers(Type scType)
-        {
-            var flags = BindingFlags.Public | BindingFlags.Instance;
-
-            _getCurrentZoom = scType.GetMethod("GetCurrentOpticZoom", flags);
-            _getMinZoom = scType.GetMethod("GetMinOpticZoom", flags);
-            _getMaxZoom = scType.GetMethod("GetMaxOpticZoom", flags);
-
-            // ScopeZoomValue: public float field
-            _scopeZoomValue = scType.GetField("ScopeZoomValue",
-                BindingFlags.Public | BindingFlags.Instance);
-
-            // AdjustableOpticData property → IAdjustableOpticData → IsAdjustableOptic
-            _adjOpticData = scType.GetProperty("AdjustableOpticData", flags);
-            if (_adjOpticData != null)
-            {
-                var adjType = _adjOpticData.PropertyType;
-                _isAdjustable = adjType.GetProperty("IsAdjustableOptic", flags);
-            }
-
-            // Template JSON carrier used by GetCurrentOpticZoom internals.
-            const BindingFlags anyFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-            _templateProp = scType.GetProperty("Template", anyFlags)
-                         ?? scType.GetProperty("ItemTemplate", anyFlags);
-            _templateField = scType.GetField("Template", anyFlags)
-                          ?? scType.GetField("ItemTemplate", anyFlags);
-
-            Type templateType = _templateProp != null
-                ? _templateProp.PropertyType
-                : _templateField != null ? _templateField.FieldType : null;
-
-            if (templateType != null)
-            {
-                _templateIdProp = templateType.GetProperty("_id", anyFlags)
-                               ?? templateType.GetProperty("Id", anyFlags)
-                               ?? templateType.GetProperty("TemplateId", anyFlags);
-                _templateIdField = templateType.GetField("_id", anyFlags)
-                                ?? templateType.GetField("Id", anyFlags)
-                                ?? templateType.GetField("TemplateId", anyFlags);
-                _templateNameProp = templateType.GetProperty("_name", anyFlags)
-                                 ?? templateType.GetProperty("Name", anyFlags);
-                _templateNameField = templateType.GetField("_name", anyFlags)
-                                  ?? templateType.GetField("Name", anyFlags);
-            }
-
-            PiPDisablerPlugin.LogInfo(
-                $"[FovController] SightComponent members: " +
-                $"GetCurrentOpticZoom={_getCurrentZoom != null}, " +
-                $"GetMinOpticZoom={_getMinZoom != null}, " +
-                $"GetMaxOpticZoom={_getMaxZoom != null}, " +
-                $"ScopeZoomValue={_scopeZoomValue != null}, " +
-                $"AdjustableOpticData={_adjOpticData != null}, " +
-                $"IsAdjustableOptic={_isAdjustable != null}, " +
-                $"Template={_templateProp != null || _templateField != null}, " +
-                $"TemplateId={_templateIdProp != null || _templateIdField != null}, " +
-                $"TemplateName={_templateNameProp != null || _templateNameField != null}");
-        }
 
         // =====================================================================
         //  FALLBACK: ScopeCameraData.FieldOfView → magnification
@@ -846,18 +761,6 @@ namespace PiPDisabler
         // =====================================================================
 
         private static bool IsOnSameModeAs(Transform candidate, Transform optic)
-        {
-            Transform GetMode(Transform t)
-            {
-                for (var p = t; p != null; p = p.parent)
-                    if (p.name != null && p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase))
-                        return p;
-                return null;
-            }
-            var modeC = GetMode(candidate);
-            var modeO = GetMode(optic);
-            if (modeC == null || modeO == null) return modeC == modeO;
-            return modeC == modeO;
-        }
+            => PiPDisablerPlugin.IsOnSameMode(candidate, optic);
     }
 }
