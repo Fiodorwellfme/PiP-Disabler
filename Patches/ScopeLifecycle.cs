@@ -829,14 +829,10 @@ namespace PiPDisabler
             CameraSettingsManager.Restore();
             PiPDisabler.RestoreAllCameras();
 
-            if (PiPDisablerPlugin.GetRestoreOnUnscope())
-            {
-                if (os != null)
-                    MeshSurgeryManager.RestoreForScope(os.transform);
-                else
-                    MeshSurgeryManager.RestoreAll();
-            }
-
+            if (os != null)
+                MeshSurgeryManager.RestoreForScope(os.transform);
+            else
+                MeshSurgeryManager.RestoreAll();
         }
 
         private static void DoScopeEnter()
@@ -993,13 +989,10 @@ namespace PiPDisabler
             CameraSettingsManager.Restore();
 
             // 6. Restore meshes
-            if (PiPDisablerPlugin.GetRestoreOnUnscope())
-            {
-                if (prevOptic != null)
-                    MeshSurgeryManager.RestoreForScope(prevOptic.transform);
-                else
-                    MeshSurgeryManager.RestoreAll();
-            }
+            if (prevOptic != null)
+                MeshSurgeryManager.RestoreForScope(prevOptic.transform);
+            else
+                MeshSurgeryManager.RestoreAll();
 
             _restoreOneXFovOnScopeExit = false;
         }
