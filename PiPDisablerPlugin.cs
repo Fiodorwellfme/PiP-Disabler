@@ -140,10 +140,7 @@ namespace PiPDisabler
         internal static ConfigEntry<bool> ShowCutVolume;
         internal static ConfigEntry<float> CutVolumeOpacity;
         internal static ConfigEntry<string> CutMode;
-        internal static ConfigEntry<float> CylinderRadius;
-        internal static ConfigEntry<float> MidCylinderRadius;
-        internal static ConfigEntry<float> MidCylinderPosition;
-        internal static ConfigEntry<float> FarCylinderRadius;
+        internal static ConfigEntry<float> Plane1Radius;
         internal static ConfigEntry<float> Plane1OffsetMeters;
         internal static ConfigEntry<float> Plane2Position;
         internal static ConfigEntry<float> Plane2Radius;
@@ -170,10 +167,7 @@ namespace PiPDisabler
         internal static ConfigEntry<bool> CustomShowCutVolume;
         internal static ConfigEntry<float> CustomCutVolumeOpacity;
         internal static ConfigEntry<string> CustomCutMode;
-        internal static ConfigEntry<float> CustomCylinderRadius;
-        internal static ConfigEntry<float> CustomMidCylinderRadius;
-        internal static ConfigEntry<float> CustomMidCylinderPosition;
-        internal static ConfigEntry<float> CustomFarCylinderRadius;
+        internal static ConfigEntry<float> CustomPlane1Radius;
         internal static ConfigEntry<float> CustomPlane1OffsetMeters;
         internal static ConfigEntry<float> CustomPlane2Position;
         internal static ConfigEntry<float> CustomPlane2Radius;
