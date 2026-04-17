@@ -479,37 +479,15 @@ namespace PiPDisabler
                     "Cylinder removes geometry inside a cylinder of CylinderRadius around the lens center.",
                     new AcceptableValueList<string>("Plane", "Cylinder"),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CylinderRadius = Config.Bind("Global Mesh Surgery settings", "CylinderRadius", 0.011f,
+            Plane1Radius = Config.Bind("Global Mesh Surgery settings", "Plane1Radius", 0.011f,
                 new ConfigDescription(
                     "Near radius (meters) of the cylindrical/cone cut (camera side).\n" +
                     "Typical scope lens radius is ~0.01-0.02m.",
                     new AcceptableValueRange<float>(0.001f, 0.1f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            MidCylinderRadius = Config.Bind("Global Mesh Surgery settings", "MidCylinderRadius", 0.013f,
-                new ConfigDescription(
-                    "Intermediate radius (meters) at MidCylinderPosition along the bore.\n" +
-                    "0 = disabled (linear near→far interpolation).\n" +
-                    ">0 = two-segment interpolation: near→mid, then mid→far.\n" +
-                    "Set smaller than near/far to create a waist (hourglass). Set larger for a bulge.",
-                    new AcceptableValueRange<float>(0f, 0.2f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            MidCylinderPosition = Config.Bind("Global Mesh Surgery settings", "MidCylinderPosition", 0.28f,
-                new ConfigDescription(
-                    "Position of the mid-radius control point along the cut length (0=near, 1=far).\n" +
-                    "0.5 = midpoint. 0.3 = closer to camera. 0.7 = closer to objective.",
-                    new AcceptableValueRange<float>(0.01f, 0.99f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            FarCylinderRadius = Config.Bind("Global Mesh Surgery settings", "FarCylinderRadius", 0.12f,
-                new ConfigDescription(
-                    "Far radius (meters) of the cone cut (objective side).\n" +
-                    "0 = same as CylinderRadius (pure cylinder). >0 creates a cone/frustum shape.\n" +
-                    "Set larger than CylinderRadius to widen the bore toward the objective lens.",
-                    new AcceptableValueRange<float>(0f, 0.2f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane1OffsetMeters = Config.Bind("Global Mesh Surgery settings", "Plane1OffsetMeters", 0f,
                 new ConfigDescription(
-                    "Offset (meters) for plane 1 from linza/backLens origin along bore axis.\n" +
-                    "Plane 1 radius is always CylinderRadius.",
+                    "Offset (meters) for plane 1 from linza/backLens origin along bore axis.",
                     new AcceptableValueRange<float>(-0.02f, 0.02f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane2Position = Config.Bind("Global Mesh Surgery settings", "Plane2Position", 0.1138498f,
@@ -650,25 +628,10 @@ namespace PiPDisabler
                     "Custom per-scope mesh cut mode.",
                     new AcceptableValueList<string>("Plane", "Cylinder"),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomCylinderRadius = Config.Bind("Per scope settings", "CylinderRadius", 0.011f,
+            CustomPlane1 = Config.Bind("Per scope settings", "Plane1Radius", 0.011f,
                 new ConfigDescription(
                     "Custom per-scope near radius in meters.",
                     new AcceptableValueRange<float>(0.001f, 0.1f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomMidCylinderRadius = Config.Bind("Per scope settings", "MidCylinderRadius", 0.013f,
-                new ConfigDescription(
-                    "Custom per-scope mid profile radius in meters.",
-                    new AcceptableValueRange<float>(0f, 0.2f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomMidCylinderPosition = Config.Bind("Per scope settings", "MidCylinderPosition", 0.28f,
-                new ConfigDescription(
-                    "Custom per-scope mid profile position (0..1).",
-                    new AcceptableValueRange<float>(0.01f, 0.99f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomFarCylinderRadius = Config.Bind("Per scope settings", "FarCylinderRadius", 0.12f,
-                new ConfigDescription(
-                    "Custom per-scope far radius in meters.",
-                    new AcceptableValueRange<float>(0f, 0.2f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             CustomPlane1OffsetMeters = Config.Bind("Per scope settings", "Plane1OffsetMeters", 0f,
                 new ConfigDescription(
