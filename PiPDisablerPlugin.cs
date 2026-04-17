@@ -195,9 +195,6 @@ namespace PiPDisabler
         internal static ConfigEntry<float> ScopeShadowRadius;
         internal static ConfigEntry<float> ScopeShadowSoftness;
 
-        // --- Diagnostics ---
-        internal static ConfigEntry<KeyCode> DiagnosticsKey;
-
         // --- Weapon Scaling ---
         internal static ConfigEntry<bool> EnableWeaponScaling;
         internal static ConfigEntry<float> BaselineWeaponScale;
@@ -757,14 +754,6 @@ namespace PiPDisabler
                     new AcceptableValueRange<float>(0f, 0.3f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
 
-            // --- Diagnostics ---
-            DiagnosticsKey = Config.Bind("Diagnostics", "DiagnosticsKey", KeyCode.None,
-                new ConfigDescription(
-                    "Press to log full diagnostics for the currently active scope: name, hierarchy,\n" +
-                "magnification and cut-plane config.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-
             // --- Debug ---
             VerboseLogging = Config.Bind("Diagnostics", "VerboseLogging", false,
                 new ConfigDescription(
@@ -988,10 +977,6 @@ namespace PiPDisabler
                 EnableZoom.Value = !EnableZoom.Value;
                 LogInfo($"Zoom toggled: {EnableZoom.Value}");
             }
-
-            // --- Diagnostics dump ---
-            if (DiagnosticsKey.Value != KeyCode.None && InputProxy.GetKeyDown(DiagnosticsKey.Value))
-                ScopeDiagnostics.Dump(ScopeLifecycle.ActiveOptic);
 
             // --- Per-frame logic ---
             PiPDisabler.TickBaseOpticCamera();
