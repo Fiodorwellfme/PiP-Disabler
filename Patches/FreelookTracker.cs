@@ -218,7 +218,7 @@ namespace PiPDisabler
         {
             try
             {
-                var player = PiPDisablerPlugin.GetLocalPlayer();
+                var player = Helpers.GetLocalPlayer();
                 if (player == null) return false;
                 return _getMouseLookControl(player);
             }

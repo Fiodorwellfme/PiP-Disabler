@@ -7,47 +7,18 @@ using UnityEngine;
 
 namespace PiPDisabler
 {
-    /// <summary>
-    /// Computes the zoomed FOV for the main camera from template zoom multipliers.
-    ///
-    /// PRIMARY SOURCE — Template.Zooms via SightComponent:
-    ///   Stepped scopes:  SightComponent.GetCurrentOpticZoom()
-    ///   Variable scopes: Lerp(GetMinOpticZoom(), GetMaxOpticZoom(), ScopeZoomValue)
-    ///
-    /// FALLBACK — ScopeCameraData.FieldOfView (only if template zoom unavailable):
-    ///   magnification = 35 / scopeCameraFov
-    ///
-    /// FOV formula (physically correct):
-    ///   resultFov = 2 * atan(tan(baseFov/2) / magnification)
-    ///   baseFov   = 50° fixed baseline
-    /// </summary>
     internal static class FovController
     {
-        // Fixed baseline for zoom-to-FOV conversion — independent of player FOV settings.
         public static float ZoomBaselineFov => PiPDisablerPlugin.BaselineFOV.Value;
-
-        // --- Per-scope caches (cleared on mode switch / scope exit) ---
         private static SightComponent _cachedSightComponent;
         private static OpticSight _cachedSightComponentForOptic;
-
-        // --- Per-frame magnification cache (avoids redundant reflection per frame) ---
         private static float _cachedMagnification;
         private static int _cachedMagnificationFrame = -1;
-
-        // --- Reflection cache: SightModVisualControllers discovery only ---
-        // (SightComponent members are accessed directly — all public)
-        private static Type _smvcType;           // SightModVisualControllers
-        private static PropertyInfo _sightModProp; // .SightMod → SightComponent
+        private static Type _smvcType;
+        private static PropertyInfo _sightModProp;
         private static bool _smvcSearched;
 
-        // --- Fallback: ScopeCameraData type/field cache ---
-        private static Type _scopeCamDataType;
-        private static FieldInfo _scopeCamDataFovField;
-        private static bool _scopeCamDataSearched;
 
-        // Dead-band: suppress SetFov calls when the target FOV hasn't changed enough.
-        // Prevents CameraClass.SetFov from restarting the lerp coroutine every frame
-        // when method_23 is ticked, which would stall the animation and cause flashing.
         private static float _lastAppliedFov;
         public const float FovChangeThreshold = 0.05f; // degrees
 
@@ -67,14 +38,6 @@ namespace PiPDisabler
         private static float _lastTemplateZoomLog = -1f;
         private static string _lastTemplateZoomLogMode;
 
-        /// <summary>
-        /// Computes the zoomed main-camera FOV from a fixed baseline of 50°.
-        ///
-        /// Priority chain:
-        ///   1. Template zoom from SightComponent (ground truth — matches HUD "xN")
-        ///   2. ScopeCameraData.FieldOfView fallback (mag = 35 / fov)
-        ///   3. Config ScopedFov manual fallback
-        /// </summary>
         public static float ComputeZoomedFov()
         {
             if (!PiPDisablerPlugin.AutoFovFromScope.Value)
@@ -128,25 +91,8 @@ namespace PiPDisabler
 
         private static float GetEffectiveMagnificationUncached()
         {
-            // 1. Template zoom (primary — matches HUD)
             float templateMag = GetTemplateZoom();
-            if (templateMag > 0.1f)
-            {
-                _lastLoggedSource = "TEMPLATE";
-                return templateMag;
-            }
-
-            // 2. ScopeCameraData FOV fallback
-            float fovMag = GetFovBasedMagnification();
-            if (fovMag > 0.1f)
-            {
-                _lastLoggedSource = "CAMERA_FOV";
-                return fovMag;
-            }
-
-            // 3. Config default
-            _lastLoggedSource = "DEFAULT";
-            return PiPDisablerPlugin.DefaultZoom.Value;
+            return templateMag;
         }
 
         /// <summary>
@@ -164,7 +110,7 @@ namespace PiPDisabler
         public static float GetOneXTargetFov()
         {
             var os = ScopeLifecycle.ActiveOptic;
-            var player = PiPDisablerPlugin.GetLocalPlayer();
+            var player = Helpers.GetLocalPlayer();
             var pwa = player?.ProceduralWeaponAnimation;
 
             if (os != null && TryGetCurrentTemplateZoomEntry(os, out float currentZoom, out int modeCount))
@@ -229,22 +175,6 @@ namespace PiPDisabler
             _lastTemplateZoomLogMode = null;
         }
 
-        // =====================================================================
-        //  PRIMARY: Template zoom from SightComponent
-        // =====================================================================
-
-        /// <summary>
-        /// Reads the magnification from Template.Zooms via SightComponent.
-        ///
-        /// Stepped (non-adjustable) scopes:
-        ///   SightComponent.GetCurrentOpticZoom()
-        ///     → Template.Zooms[SelectedScope][SelectedScopeMode]
-        ///
-        /// Variable (adjustable) scopes:
-        ///   Lerp(GetMinOpticZoom(), GetMaxOpticZoom(), ScopeZoomValue)
-        ///   This matches the HUD endpoint labels and smoothly interpolates
-        ///   between them using the same parameter the game tracks.
-        /// </summary>
         private static float GetTemplateZoom()
         {
             var os = ScopeLifecycle.ActiveOptic;
@@ -253,44 +183,17 @@ namespace PiPDisabler
             var sc = FindSightComponent(os);
             if (sc == null) return 0f;
 
-            try
+            float currentZoom = sc.GetCurrentOpticZoom();
+            if (currentZoom > 0.1f)
             {
-                // Variable zoom: interpolate between template min/max using ScopeZoomValue
-                if (sc.AdjustableOpticData.IsAdjustableOptic)
-                {
-                    float minZoom = sc.GetMinOpticZoom();
-                    float maxZoom = sc.GetMaxOpticZoom();
-                    float zoomT   = Mathf.Clamp01(sc.ScopeZoomValue);
-
-                    if (minZoom > 0.1f && maxZoom > 0.1f && maxZoom > minZoom)
-                    {
-                        float zoom = Mathf.Lerp(minZoom, maxZoom, zoomT);
-                        LogTemplateZoomVerbose(zoom,
-                            $"[FovController] Variable zoom: min={minZoom:F2}x max={maxZoom:F2}x " +
-                            $"t={zoomT:F3} → {zoom:F2}x",
-                            "variable");
-                        return zoom;
-                    }
-                }
-
-                // Stepped or fallback: use GetCurrentOpticZoom()
-                float currentZoom = sc.GetCurrentOpticZoom();
-                if (currentZoom > 0.1f)
-                {
-                    LogTemplateZoomVerbose(
-                        currentZoom,
-                        $"[FovController] Template zoom: {currentZoom:F2}x (stepped)",
-                        "stepped");
-                    return currentZoom;
-                }
-            }
-            catch (Exception ex)
-            {
-                PiPDisablerPlugin.LogVerbose(
-                    $"[FovController] GetTemplateZoom exception: {ex.Message}");
+                LogTemplateZoomVerbose(
+                    currentZoom,
+                    $"[FovController] Template zoom: {currentZoom:F2}x (stepped)",
+                    "stepped");
+                return currentZoom;
             }
 
-            return 0f;
+            return 0f; // <- missing path
         }
 
         private static void LogTemplateZoomVerbose(float zoom, string message, string mode)
@@ -548,219 +451,5 @@ namespace PiPDisabler
 
             return fallback;
         }
-
-
-        // =====================================================================
-        //  FALLBACK: ScopeCameraData.FieldOfView → magnification
-        // =====================================================================
-
-        /// <summary>
-        /// Fallback magnification from scope camera FOV.
-        /// Only used when template zoom is unavailable.
-        /// magnification = 35 / scopeCameraFov  (EFT's standard optic camera baseline is 35°)
-        /// </summary>
-        private static float GetFovBasedMagnification()
-        {
-            var os = ScopeLifecycle.ActiveOptic;
-            if (os == null) return 0f;
-
-            // Try ScopeZoomHandler.FiledOfView first (runtime, variable zoom)
-            float fov = GetScopeZoomHandlerFov(os);
-
-            // Then ScopeCameraData.FieldOfView
-            if (fov < 0.1f)
-                fov = GetFovFromScopeCameraData(os);
-
-            // Then brute force
-            if (fov < 0.1f)
-                fov = BruteForceFovSearch(os);
-
-            if (fov > 0.1f)
-                return 35f / fov;
-
-            return 0f;
-        }
-
-        private static float GetScopeZoomHandlerFov(OpticSight os)
-        {
-            try
-            {
-                var szh = os.GetComponentInParent<ScopeZoomHandler>();
-                if (szh == null) szh = os.GetComponentInChildren<ScopeZoomHandler>();
-                if (szh != null)
-                {
-                    float fov = szh.FiledOfView; // EFT typo
-                    if (fov > 0.1f) return fov;
-                }
-            }
-            catch { }
-            return 0f;
-        }
-
-        private static float GetFovFromScopeCameraData(OpticSight os)
-        {
-            if (!_scopeCamDataSearched)
-            {
-                _scopeCamDataSearched = true;
-                DiscoverScopeCameraDataType();
-            }
-
-            if (_scopeCamDataType == null || _scopeCamDataFovField == null) return 0f;
-
-            try
-            {
-                Component scd = os.GetComponent(_scopeCamDataType);
-                if (scd == null) scd = os.GetComponentInChildren(_scopeCamDataType);
-                if (scd == null) scd = os.GetComponentInParent(_scopeCamDataType);
-
-                if (scd == null)
-                {
-                    Transform root = os.transform;
-                    while (root.parent != null)
-                    {
-                        var pn = root.parent.name ?? "";
-                        if (pn.StartsWith("scope_", StringComparison.OrdinalIgnoreCase))
-                        { root = root.parent; break; }
-                        root = root.parent;
-                    }
-                    foreach (var comp in root.GetComponentsInChildren(_scopeCamDataType, true))
-                    {
-                        if (IsOnSameModeAs(comp.transform, os.transform))
-                        { scd = comp; break; }
-                    }
-                    if (scd == null)
-                    {
-                        var all = root.GetComponentsInChildren(_scopeCamDataType, true);
-                        if (all.Length > 0) scd = all[0];
-                    }
-                }
-
-                if (scd != null)
-                {
-                    float fov = (float)_scopeCamDataFovField.GetValue(scd);
-                    if (fov > 0.1f)
-                    {
-                        PiPDisablerPlugin.LogVerbose(
-                            $"[FovController] ScopeCameraData fallback: FOV={fov:F2}");
-                        return fov;
-                    }
-                }
-            }
-            catch { }
-            return 0f;
-        }
-
-        private static float BruteForceFovSearch(OpticSight os)
-        {
-            try
-            {
-                Transform root = os.transform;
-                while (root.parent != null)
-                {
-                    var n = root.parent.name ?? "";
-                    if (n.StartsWith("scope_", StringComparison.OrdinalIgnoreCase))
-                    { root = root.parent; break; }
-                    root = root.parent;
-                }
-
-                foreach (var mb in root.GetComponentsInChildren<MonoBehaviour>(true))
-                {
-                    if (mb == null) continue;
-                    var type = mb.GetType();
-                    var fovField = type.GetField("FieldOfView",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    if (fovField == null || fovField.FieldType != typeof(float)) continue;
-
-                    float fov = (float)fovField.GetValue(mb);
-                    if (fov <= 0.1f || fov >= 180f) continue;
-
-                    if (IsOnSameModeAs(mb.transform, os.transform))
-                    {
-                        PiPDisablerPlugin.LogVerbose(
-                            $"[FovController] BruteForce fallback: {mb.gameObject.name} FOV={fov:F2}");
-                        if (_scopeCamDataType == null)
-                        {
-                            _scopeCamDataType = type;
-                            _scopeCamDataFovField = fovField;
-                        }
-                        return fov;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                PiPDisablerPlugin.LogVerbose(
-                    $"[FovController] BruteForce error: {ex.Message}");
-            }
-            return 0f;
-        }
-
-        // =====================================================================
-        //  ScopeCameraData type discovery
-        // =====================================================================
-
-        private static void DiscoverScopeCameraDataType()
-        {
-            string[] typeNames = {
-                "EFT.CameraControl.ScopeCameraData",
-                "ScopeCameraData",
-                "EFT.ScopeCameraData",
-            };
-
-            foreach (var name in typeNames)
-            {
-                try
-                {
-                    var t = AccessTools.TypeByName(name);
-                    if (t != null && typeof(MonoBehaviour).IsAssignableFrom(t))
-                    {
-                        var f = t.GetField("FieldOfView", BindingFlags.Public | BindingFlags.Instance);
-                        if (f != null && f.FieldType == typeof(float))
-                        {
-                            _scopeCamDataType = t;
-                            _scopeCamDataFovField = f;
-                            PiPDisablerPlugin.LogInfo(
-                                $"[FovController] Found ScopeCameraData: {t.FullName}");
-                            return;
-                        }
-                    }
-                }
-                catch { }
-            }
-
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                try
-                {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (!typeof(MonoBehaviour).IsAssignableFrom(type)) continue;
-                        var fovF = type.GetField("FieldOfView", BindingFlags.Public | BindingFlags.Instance);
-                        if (fovF == null || fovF.FieldType != typeof(float)) continue;
-                        var ncpF = type.GetField("NearClipPlane", BindingFlags.Public | BindingFlags.Instance);
-                        if (ncpF == null || ncpF.FieldType != typeof(float)) continue;
-                        var fcpF = type.GetField("FarClipPlane", BindingFlags.Public | BindingFlags.Instance);
-                        if (fcpF == null) continue;
-
-                        _scopeCamDataType = type;
-                        _scopeCamDataFovField = fovF;
-                        PiPDisablerPlugin.LogInfo(
-                            $"[FovController] Discovered ScopeCameraData via scan: {type.FullName}");
-                        return;
-                    }
-                }
-                catch { }
-            }
-
-            PiPDisablerPlugin.LogInfo(
-                "[FovController] ScopeCameraData type NOT found — fallback unavailable");
-        }
-
-        // =====================================================================
-        //  Helpers
-        // =====================================================================
-
-        private static bool IsOnSameModeAs(Transform candidate, Transform optic)
-            => PiPDisablerPlugin.IsOnSameMode(candidate, optic);
     }
 }

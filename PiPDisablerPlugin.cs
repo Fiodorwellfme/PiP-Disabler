@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace PiPDisabler
 {
-    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.6.0")]
+    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.7.0")]
     public sealed class PiPDisablerPlugin : BaseUnityPlugin
     {
         internal static PiPDisablerPlugin Instance;
@@ -22,95 +22,6 @@ namespace PiPDisabler
         {
             if (Instance != null && VerboseLogging != null && VerboseLogging.Value)
                 Instance.Logger.LogInfo("[V] " + msg);
-        }
-
-        internal static string GetPluginRootDirectory()
-        {
-            string pluginDir;
-            try
-            {
-                pluginDir = System.IO.Path.GetDirectoryName(Instance != null ? Instance.Info.Location : null);
-            }
-            catch
-            {
-                pluginDir = null;
-            }
-
-            if (string.IsNullOrEmpty(pluginDir))
-                pluginDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "plugins");
-
-            return pluginDir;
-        }
-
-        /// <summary>
-        /// Returns the main FPS camera via CameraClass.Instance.Camera.
-        /// Unlike Camera.main (which does FindObjectWithTag every call and
-        /// can flicker to optic/UI cameras during ADS transitions),
-        /// CameraClass is EFT's own singleton and always points to the
-        /// correct main FPS camera.  Falls back to Camera.main if
-        /// CameraClass isn't initialized yet (menus, loading).
-        /// </summary>
-        internal static Camera GetMainCamera()
-        {
-            try
-            {
-                if (CameraClass.Exist)
-                {
-                    var cam = CameraClass.Instance.Camera;
-                    if (cam != null) return cam;
-                }
-            }
-            catch { }
-            return Camera.main;
-        }
-
-        /// <summary>
-        /// Returns the local player via GameWorld singleton.
-        /// Shared helper — used by WeaponScalingPatch and ScopeLifecycle.
-        /// </summary>
-        internal static Player GetLocalPlayer()
-        {
-            try
-            {
-                var gw = Singleton<GameWorld>.Instance;
-                return gw?.MainPlayer;
-            }
-            catch { return null; }
-        }
-
-        /// <summary>
-        /// Returns the display viewport in pixels (accounts for DLSS/FSR).
-        /// Shared helper — used by ReticleRenderer and ScopeEffectsRenderer.
-        /// </summary>
-        internal static Rect GetDisplayViewport(Camera cam)
-        {
-            float w = Mathf.Max(1f, Screen.width);
-            float h = Mathf.Max(1f, Screen.height);
-            if (cam != null)
-            {
-                w = Mathf.Max(w, cam.pixelWidth);
-                h = Mathf.Max(h, cam.pixelHeight);
-            }
-            return new Rect(0f, 0f, w, h);
-        }
-
-        /// <summary>
-        /// Check if two transforms share the same mode_XXX ancestor.
-        /// Shared helper — used by FovController, CameraSettingsManager.
-        /// </summary>
-        internal static bool IsOnSameMode(Transform a, Transform b)
-        {
-            var mA = FindModeAncestor(a);
-            var mB = FindModeAncestor(b);
-            return mA == mB;
-        }
-
-        private static Transform FindModeAncestor(Transform t)
-        {
-            for (var p = t; p != null; p = p.parent)
-                if (p.name != null && p.name.StartsWith("mode_", StringComparison.OrdinalIgnoreCase))
-                    return p;
-            return null;
         }
 
         // --- 0. Global ---
@@ -131,15 +42,9 @@ namespace PiPDisabler
         // --- Mesh Surgery ---
         internal static ConfigEntry<bool> EnableMeshSurgery;
         internal static ConfigEntry<KeyCode> MeshSurgeryToggleKey;
-        internal static ConfigEntry<bool> RestoreOnUnscope;
         internal static ConfigEntry<float> ReloadMeshResumeDelaySeconds;
         internal static ConfigEntry<float> PlaneOffsetMeters;
         internal static ConfigEntry<string> PlaneNormalAxis;
-        internal static ConfigEntry<float> CutRadius;
-        internal static ConfigEntry<bool> ShowCutPlane;
-        internal static ConfigEntry<bool> ShowCutVolume;
-        internal static ConfigEntry<float> CutVolumeOpacity;
-        internal static ConfigEntry<string> CutMode;
         internal static ConfigEntry<float> Plane1Radius;
         internal static ConfigEntry<float> Plane1OffsetMeters;
         internal static ConfigEntry<float> Plane2Position;
@@ -151,7 +56,6 @@ namespace PiPDisabler
         internal static ConfigEntry<float> CutStartOffset;
         internal static ConfigEntry<float> CutLength;
         internal static ConfigEntry<float> NearPreserveDepth;
-        internal static ConfigEntry<bool> ShowReticle;
         internal static ConfigEntry<float> ReticleBaseSize;
         internal static ConfigEntry<bool> ExpandSearchToWeaponRoot;
         internal static ConfigEntry<bool> DebugShowHousingMask;
@@ -161,12 +65,7 @@ namespace PiPDisabler
         internal static ConfigEntry<KeyCode> SaveCustomMeshSurgerySettingsKey;
         internal static ConfigEntry<KeyCode> DeleteCustomMeshSurgerySettingsKey;
         internal static ConfigEntry<float> CustomPlaneOffsetMeters;
-        internal static ConfigEntry<string> CustomPlaneNormalAxis;
         internal static ConfigEntry<float> CustomCutRadius;
-        internal static ConfigEntry<bool> CustomShowCutPlane;
-        internal static ConfigEntry<bool> CustomShowCutVolume;
-        internal static ConfigEntry<float> CustomCutVolumeOpacity;
-        internal static ConfigEntry<string> CustomCutMode;
         internal static ConfigEntry<float> CustomPlane1Radius;
         internal static ConfigEntry<float> CustomPlane1OffsetMeters;
         internal static ConfigEntry<float> CustomPlane2Position;
@@ -178,9 +77,7 @@ namespace PiPDisabler
         internal static ConfigEntry<float> CustomCutStartOffset;
         internal static ConfigEntry<float> CustomCutLength;
         internal static ConfigEntry<float> CustomNearPreserveDepth;
-        internal static ConfigEntry<bool> CustomShowReticle;
         internal static ConfigEntry<float> CustomReticleBaseSize;
-        internal static ConfigEntry<bool> CustomRestoreOnUnscope;
         internal static ConfigEntry<bool> CustomExpandSearchToWeaponRoot;
 
         // --- Scope Effects ---
@@ -211,11 +108,6 @@ namespace PiPDisabler
         internal static ConfigEntry<int> ManualMaximumLodLevel;
         internal static ConfigEntry<float> ManualCullingMultiplier;
         internal static Dictionary<string, ConfigEntry<float>> MapManualLodBias;
-
-        // --- 4. Zeroing ---
-        internal static ConfigEntry<bool> EnableZeroing;
-        internal static ConfigEntry<KeyCode> ZeroingUpKey;
-        internal static ConfigEntry<KeyCode> ZeroingDownKey;
 
         // --- Debug ---
         internal static ConfigEntry<bool> VerboseLogging;
@@ -388,24 +280,6 @@ namespace PiPDisabler
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
 
-            // --- 4. Zeroing --- //To remove
-            EnableZeroing = Config.Bind("4. Zeroing", "EnableZeroing", true,
-                new ConfigDescription(
-                    "Enable optic zeroing (calibration distance adjustment) via keyboard.\n" +
-                "Uses the proper EFT pathway (works with Fika).",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            ZeroingUpKey = Config.Bind("4. Zeroing", "ZeroingUpKey", KeyCode.PageUp,
-                new ConfigDescription(
-                    "Key to increase zeroing distance.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            ZeroingDownKey = Config.Bind("4. Zeroing", "ZeroingDownKey", KeyCode.PageDown,
-                new ConfigDescription(
-                    "Key to decrease zeroing distance.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-
             // --- Mesh Surgery (ON by default, Cylinder mode) --- //Needs global cleanup, config name standardization.
             EnableMeshSurgery = Config.Bind("Global Mesh Surgery settings", "EnableMeshSurgery", true,
                 new ConfigDescription(
@@ -415,11 +289,6 @@ namespace PiPDisabler
             MeshSurgeryToggleKey = Config.Bind("Global Mesh Surgery settings", "MeshSurgeryToggleKey", KeyCode.None,
                 new ConfigDescription(
                     "Toggle key for mesh surgery.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            RestoreOnUnscope = Config.Bind("Global Mesh Surgery settings", "RestoreOnUnscope", true,
-                new ConfigDescription(
-                    "Restore original meshes when leaving scope.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             ReloadMeshResumeDelaySeconds = Config.Bind("Global Mesh Surgery settings", "ReloadMeshResumeDelaySeconds", 0.12f, //Needs renaming, should be in general
@@ -440,35 +309,6 @@ namespace PiPDisabler
                     "-X/-Y/-Z = force the negative of that axis.\n" +
                     "If the cut is horizontal when it should be vertical, try Z or Y.",
                     new AcceptableValueList<string>("Auto", "X", "Y", "Z", "-X", "-Y", "-Z"),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CutRadius = Config.Bind("Global Mesh Surgery settings", "CutRadius", 0f, //Probably removable
-                new ConfigDescription(
-                    "Max distance (meters) from scope center to cut. 0 = unlimited (cut all geometry).\n" +
-                    "Set to e.g. 0.05 to only cut geometry near the lens opening.",
-                    new AcceptableValueRange<float>(0f, 1f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            ShowCutPlane = Config.Bind("Global Mesh Surgery settings", "ShowCutPlane", false, //To remove
-                new ConfigDescription(
-                    "Show green/red semi-transparent circles at the near/far cut plane positions.\n" +
-                "Use this to visualize the cut endpoints.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            ShowCutVolume = Config.Bind("Global Mesh Surgery settings", "ShowCutVolume", false, //To remove
-                new ConfigDescription(
-                    "Show a semi-transparent 3D tube representing the full cut volume.\n" +
-                "Visualizes the near→mid→far radius profile so you can see exactly what gets removed.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CutVolumeOpacity = Config.Bind("Global Mesh Surgery settings", "CutVolumeOpacity", 0.49f, //To remove
-                new ConfigDescription(
-                    "Opacity of the 3D cut volume visualizer (0 = invisible, 1 = opaque).",
-                    new AcceptableValueRange<float>(0.05f, 0.8f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CutMode = Config.Bind("Global Mesh Surgery settings", "CutMode", "Cylinder", //To remove, should be hard set to Cylinder
-                new ConfigDescription(
-                    "Plane = flat infinite cut. Cylinder = cylindrical bore cut centered on the lens axis.\n" +
-                    "Cylinder removes geometry inside a cylinder of CylinderRadius around the lens center.",
-                    new AcceptableValueList<string>("Plane", "Cylinder"),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
             Plane1Radius = Config.Bind("Global Mesh Surgery settings", "Plane1Radius", 0.011f,
                 new ConfigDescription(
@@ -536,12 +376,6 @@ namespace PiPDisabler
                     "0 = disabled (cut starts at the near plane — removes everything).",
                     new AcceptableValueRange<float>(0f, 0.15f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            ShowReticle = Config.Bind("Global Mesh Surgery settings", "ShowReticle", true, //Needs to be hardset
-                new ConfigDescription(
-                    "Render the scope reticle texture as a glowing overlay where the lens was.\n" +
-                "Uses alpha blending so the reticle's own alpha channel controls transparency.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             ReticleBaseSize = Config.Bind("Global Mesh Surgery settings", "ReticleBaseSize", 0.030f,
                 new ConfigDescription(
                     "Physical diameter (meters) of the reticle quad at 1x magnification.\n" +
@@ -589,37 +423,12 @@ namespace PiPDisabler
                     "Custom per-scope plane offset applied along plane normal (meters).",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomPlaneNormalAxis = Config.Bind("Per scope settings", "PlaneNormalAxis", "-Y",
-                new ConfigDescription(
-                    "Custom per-scope local axis for the cut plane normal.",
-                    new AcceptableValueList<string>("Auto", "X", "Y", "Z", "-X", "-Y", "-Z"),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             CustomCutRadius = Config.Bind("Per scope settings", "CutRadius", 0f,
                 new ConfigDescription(
                     "Custom per-scope max cut distance in meters (0 = unlimited).",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomShowCutPlane = Config.Bind("Per scope settings", "ShowCutPlane", false,
-                new ConfigDescription(
-                    "Custom per-scope cut plane visualizer toggle.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomShowCutVolume = Config.Bind("Per scope settings", "ShowCutVolume", false,
-                new ConfigDescription(
-                    "Custom per-scope cut volume visualizer toggle.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomCutVolumeOpacity = Config.Bind("Per scope settings", "CutVolumeOpacity", 0.49f,
-                new ConfigDescription(
-                    "Custom per-scope cut volume opacity.",
-                    new AcceptableValueRange<float>(0.05f, 0.8f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomCutMode = Config.Bind("Per scope settings", "CutMode", "Cylinder",
-                new ConfigDescription(
-                    "Custom per-scope mesh cut mode.",
-                    new AcceptableValueList<string>("Plane", "Cylinder"),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomPlane1 = Config.Bind("Per scope settings", "Plane1Radius", 0.011f,
+            CustomPlane1Radius = Config.Bind("Per scope settings", "Plane1Radius", 0.011f,
                 new ConfigDescription(
                     "Custom per-scope near radius in meters.",
                     new AcceptableValueRange<float>(0.001f, 0.1f),
@@ -674,21 +483,11 @@ namespace PiPDisabler
                     "Custom per-scope near preserve depth in meters.",
                     new AcceptableValueRange<float>(0f, 0.2f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomShowReticle = Config.Bind("Per scope settings", "ShowReticle", true,
-                new ConfigDescription(
-                    "Custom per-scope reticle visibility.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             CustomReticleBaseSize = Config.Bind("Per scope settings", "ReticleBaseSize", 0.030f,
                 new ConfigDescription(
                     "Custom per-scope reticle base diameter in meters.",
                     new AcceptableValueRange<float>(0f, 0.2f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            CustomRestoreOnUnscope = Config.Bind("Per scope settings", "RestoreOnUnscope", true,
-                new ConfigDescription(
-                    "Custom per-scope restore behavior when leaving scope.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             CustomExpandSearchToWeaponRoot = Config.Bind("Per scope settings", "ExpandSearchToWeaponRoot", true,
                 new ConfigDescription(
                     "Custom per-scope search root expansion to Weapon_root.",
@@ -702,19 +501,19 @@ namespace PiPDisabler
                 "A world-space quad at the lens position fading from transparent centre to black edge.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            VignetteOpacity = Config.Bind("Scope Effects", "Vignette Opacity", 0.39f,
+            VignetteOpacity = Config.Bind("Scope Effects", "Vignette Opacity", 0.78f,
                 new ConfigDescription(
                     "Maximum opacity of the lens vignette ring (0=invisible, 1=full black).",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            VignetteSizeMult = Config.Bind("Scope Effects", "Vignette Size Multiplier", 0.35f,
+            VignetteSizeMult = Config.Bind("Scope Effects", "Vignette Size Multiplier", 0.41f,
                 new ConfigDescription(
                     "Vignette quad diameter as a multiplier of ReticleBaseSize.\n" +
                     "1.0 = same size as reticle.  1.5 gives a visible border ring.\n" +
                     "Higher values (5-15) may be needed for high-magnification scopes.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            VignetteSoftness = Config.Bind("Scope Effects", "Vignette Softness", 0.51f,
+            VignetteSoftness = Config.Bind("Scope Effects", "Vignette Softness", 1f,
                 new ConfigDescription(
                     "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
                     new AcceptableValueRange<float>(0f, 1f),
@@ -736,18 +535,18 @@ namespace PiPDisabler
                     "Keep the scope shadow visible after leaving ADS until the FOV restore finishes, useful when FOV animation set to 0.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            ScopeShadowOpacity = Config.Bind("Scope Effects", "ScopeShadow Opacity", 0.75f,
+            ScopeShadowOpacity = Config.Bind("Scope Effects", "ScopeShadow Opacity", 0.82f,
                 new ConfigDescription(
                     "Maximum opacity of the scope shadow overlay.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            ScopeShadowRadius = Config.Bind("Scope Effects", "ScopeShadow Radius", 0.07859156f,
+            ScopeShadowRadius = Config.Bind("Scope Effects", "ScopeShadow Radius", 0.05f,
                 new ConfigDescription(
                     "Radius of the transparent centre window as a fraction of the half-screen (0.0-0.5).\n" +
                     "0.18 = window fills roughly 36% of screen width.  Increase for wider aperture.",
                     new AcceptableValueRange<float>(0.02f, 0.5f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            ScopeShadowSoftness = Config.Bind("Scope Effects", "ScopeShadow Softness", 0.08535211f,
+            ScopeShadowSoftness = Config.Bind("Scope Effects", "ScopeShadow Softness", 0.08f,
                 new ConfigDescription(
                     "Width of the gradient edge between the clear window and the black shadow (fraction of screen).\n" +
                     "0 = hard edge.  0.05-0.1 is a natural-looking falloff.",
@@ -791,53 +590,8 @@ namespace PiPDisabler
             ScopeWhitelistNames.SettingChanged += OnWhitelistSettingsChanged;
 
             LogInfo("PiP-Disabler 0.6.0 loaded.");
-            LogInfo($"  ModEnabled={ModEnabled.Value}  DisablePiP={DisablePiP.Value}  MakeLensesTransparent={MakeLensesTransparent.Value}");
-            LogInfo($"  WhitelistNames='{ScopeWhitelistNames.Value}'");
-            LogInfo($"  EnableZoom={EnableZoom.Value}");
-            LogInfo($"  AutoFov={AutoFovFromScope.Value}  DefaultZoom={DefaultZoom.Value}  FovAnimDur={FovAnimationDuration.Value}s");
-            LogInfo($"  EnableMeshSurgery={EnableMeshSurgery.Value}  CutMode={CutMode.Value}  CutLen={CutLength.Value}  NearPreserve={NearPreserveDepth.Value}  ShowReticle={ShowReticle.Value}");
         }
-
-        private static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => PerScopeMeshSurgerySettings.GetActiveOverride();
-
-        internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : PlaneOffsetMeters.Value;
-        internal static string GetPlaneNormalAxis() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneNormalAxis : PlaneNormalAxis.Value;
-        internal static float GetCutRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.CutRadius : CutRadius.Value;
-        internal static bool GetShowCutPlane() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutPlane : ShowCutPlane.Value;
-        internal static bool GetShowCutVolume() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowCutVolume : ShowCutVolume.Value;
-        internal static float GetCutVolumeOpacity() => ActiveScopeOverride != null ? ActiveScopeOverride.CutVolumeOpacity : CutVolumeOpacity.Value;
-        internal static string GetCutMode() => ActiveScopeOverride != null ? ActiveScopeOverride.CutMode : CutMode.Value;
-        internal static float GetCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.CylinderRadius : CylinderRadius.Value;
-        internal static float GetMidCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.MidCylinderRadius : MidCylinderRadius.Value;
-        internal static float GetMidCylinderPosition() => ActiveScopeOverride != null ? ActiveScopeOverride.MidCylinderPosition : MidCylinderPosition.Value;
-        internal static float GetFarCylinderRadius() => ActiveScopeOverride != null ? ActiveScopeOverride.FarCylinderRadius : FarCylinderRadius.Value;
-        internal static float GetPlane1OffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1OffsetMeters : Plane1OffsetMeters.Value;
-        internal static float GetPlane2Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Position : Plane2Position.Value;
-        internal static float GetPlane2PositionNormalized(float cutLength)
-        {
-            const float legacyReferenceCutLength = 0.755493f;
-            float p2LegacyNormalized = Mathf.Clamp01(GetPlane2Position());
-            float anchoredDepth = p2LegacyNormalized * legacyReferenceCutLength;
-            return cutLength > 1e-5f ? Mathf.Clamp01(anchoredDepth / cutLength) : 0f;
-        }
-        internal static float GetPlane2Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Radius : Plane2Radius.Value;
-        internal static float GetPlane3Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Position : Plane3Position.Value;
-        internal static float GetPlane3Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Radius : Plane3Radius.Value;
-        internal static float GetPlane4Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Position : Plane4Position.Value;
-        internal static float GetPlane4Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Radius : Plane4Radius.Value;
-        internal static float GetCutStartOffset() => ActiveScopeOverride != null ? ActiveScopeOverride.CutStartOffset : CutStartOffset.Value;
-        internal static float GetCutLength() => ActiveScopeOverride != null ? ActiveScopeOverride.CutLength : CutLength.Value;
-        internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : NearPreserveDepth.Value;
-        internal static bool GetShowReticle() => ActiveScopeOverride != null ? ActiveScopeOverride.ShowReticle : ShowReticle.Value;
-        internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : ReticleBaseSize.Value;
-        internal static bool GetRestoreOnUnscope() => ActiveScopeOverride != null ? ActiveScopeOverride.RestoreOnUnscope : RestoreOnUnscope.Value;
-        internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : ExpandSearchToWeaponRoot.Value;
-        internal static bool GetDebugShowHousingMask() => DebugShowHousingMask?.Value ?? false;
-        internal static bool GetDebugLogCutCandidates() => DebugLogCutCandidates?.Value ?? false;
-        internal static bool GetDebugMeshSurgeryLifecycle() => DebugMeshSurgeryLifecycle?.Value ?? false;
-        internal static bool GetDebugReticleAfterEverything() => DebugReticleAfterEverything?.Value ?? false;
-        internal static bool GetAutoSwitchReticleRenderForNvg() => AutoSwitchReticleRenderForNvg?.Value ?? false;
-
+              
         private void OnDestroy()
         {
             // Plugin unload or game exit — restore everything
@@ -851,9 +605,6 @@ namespace PiPDisabler
             ScopeWhitelistNames.SettingChanged -= OnWhitelistSettingsChanged;
         }
 
-        /// <summary>
-        /// Handles ModEnabled changes from ANY source (config manager, hotkey, external).
-        /// </summary>
         private static void OnModEnabledChanged(object sender, EventArgs e)
         {
             if (!ModEnabled.Value)
@@ -868,10 +619,6 @@ namespace PiPDisabler
             }
         }
 
-        /// <summary>
-        /// Handles EnableWeaponScaling toggle mid-session.
-        /// Restore immediately on disable; re-capture on enable while scoped.
-        /// </summary>
         private static void OnWeaponScalingToggled(object sender, EventArgs e)
         {
             if (!EnableWeaponScaling.Value)
@@ -887,8 +634,6 @@ namespace PiPDisabler
         private static void OnWhitelistSettingsChanged(object sender, EventArgs e)
         {
             if (!ModEnabled.Value) return;
-
-            // Re-evaluate bypass state immediately while scoped.
             if (ScopeLifecycle.IsScoped)
             {
                 ScopeLifecycle.ForceExit();
@@ -899,33 +644,12 @@ namespace PiPDisabler
 
         private void Update()
         {
-            // --- Global mod toggle (always active, even when mod is OFF) ---
             if (ModToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(ModToggleKey.Value))
             {
                 ModEnabled.Value = !ModEnabled.Value;
                 LogInfo($"[Global] Mod {(ModEnabled.Value ? "ENABLED" : "DISABLED")}");
-                // Cleanup/restore handled by OnModEnabledChanged via SettingChanged
             }
-
-            // When mod is disabled, skip ALL per-frame logic
             if (!ModEnabled.Value) return;
-
-            // --- Feature toggle keys ---
-            if (InputProxy.GetKeyDown(MeshSurgeryToggleKey.Value))
-            {
-                EnableMeshSurgery.Value = !EnableMeshSurgery.Value;
-                LogInfo($"Mesh surgery toggled: {EnableMeshSurgery.Value}");
-                if (!EnableMeshSurgery.Value)
-                    MeshSurgeryManager.RestoreAll();
-            }
-
-            if (InputProxy.GetKeyDown(DisablePiPToggleKey.Value))
-            {
-                DisablePiP.Value = !DisablePiP.Value;
-                LogInfo($"Disable PiP toggled: {DisablePiP.Value}");
-                if (!DisablePiP.Value)
-                    PiPDisabler.RestoreAllCameras();
-            }
 
             if (ScopeWhitelistToggleEntryKey.Value != KeyCode.None && InputProxy.GetKeyDown(ScopeWhitelistToggleEntryKey.Value))
             {
@@ -964,27 +688,8 @@ namespace PiPDisabler
                 }
             }
 
-            if (InputProxy.GetKeyDown(LensesTransparentToggleKey.Value))
-            {
-                MakeLensesTransparent.Value = !MakeLensesTransparent.Value;
-                LogInfo($"Lens transparency toggled: {MakeLensesTransparent.Value}");
-                if (!MakeLensesTransparent.Value)
-                    LensTransparency.RestoreAll();
-            }
-
-            if (ZoomToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(ZoomToggleKey.Value))
-            {
-                EnableZoom.Value = !EnableZoom.Value;
-                LogInfo($"Zoom toggled: {EnableZoom.Value}");
-            }
-
-            // --- Per-frame logic ---
             PiPDisabler.TickBaseOpticCamera();
-
-            // Safety-net: re-check scope state every frame in case we missed an event.
             ScopeLifecycle.CheckAndUpdate("Update");
-
-            // Per-frame maintenance (ensure lens hidden, update variable zoom, etc.)
             ScopeLifecycle.Tick();
         }
         internal static string GetCurrentLocationId()
@@ -1035,63 +740,5 @@ namespace PiPDisabler
                 MapManualLodBias[locationId] = entry;
             }
         }
-    }
-
-    internal static class InputProxy
-    {
-        private static System.Type _inputType;
-        private static System.Reflection.MethodInfo _getKeyDown;
-        private static System.Reflection.MethodInfo _getKey;
-        private static System.Reflection.PropertyInfo _mouseScrollDelta;
-
-        static InputProxy()
-        {
-            _inputType = System.Type.GetType("UnityEngine.Input, UnityEngine.InputLegacyModule")
-                      ?? System.Type.GetType("UnityEngine.Input, UnityEngine");
-            if (_inputType != null)
-            {
-                _getKeyDown = _inputType.GetMethod("GetKeyDown", new[] { typeof(KeyCode) });
-                _getKey = _inputType.GetMethod("GetKey", new[] { typeof(KeyCode) });
-                _mouseScrollDelta = _inputType.GetProperty("mouseScrollDelta",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-            }
-        }
-
-        public static bool GetKeyDown(KeyCode key)
-        {
-            try
-            {
-                if (_getKeyDown == null) return false;
-                return (bool)_getKeyDown.Invoke(null, new object[] { key });
-            }
-            catch { return false; }
-        }
-
-        /// <summary>Returns true while the key is held down.</summary>
-        public static bool GetKey(KeyCode key)
-        {
-            try
-            {
-                if (_getKey == null) return false;
-                return (bool)_getKey.Invoke(null, new object[] { key });
-            }
-            catch { return false; }
-        }
-
-        /// <summary>
-        /// Returns the Y component of Input.mouseScrollDelta.
-        /// Positive = scroll up, negative = scroll down.
-        /// </summary>
-        public static float GetScrollDelta()
-        {
-            try
-            {
-                if (_mouseScrollDelta == null) return 0f;
-                var vec = (Vector2)_mouseScrollDelta.GetValue(null);
-                return vec.y;
-            }
-            catch { return 0f; }
-        }
-
     }
 }

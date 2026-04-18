@@ -92,7 +92,6 @@ namespace PiPDisabler
         /// </summary>
         public static void ExtractReticle(OpticSight os)
         {
-            if (!PiPDisablerPlugin.GetShowReticle()) return;
             if (os == null) return;
 
             _savedMarkTex = null;
@@ -141,7 +140,6 @@ namespace PiPDisabler
         /// </summary>
         public static void Show(OpticSight os, float magnification = 1f)
         {
-            if (!PiPDisablerPlugin.GetShowReticle()) return;
             if (_savedMarkTex == null || os == null) return;
 
             try
@@ -154,10 +152,10 @@ namespace PiPDisabler
                 ApplyHorizontalFlip();
 
                 // Scale
-                float configBase = PiPDisablerPlugin.GetReticleBaseSize();
+                float configBase = PerScopeMeshSurgerySettings.GetReticleBaseSize();
                 _baseScale = (configBase > 0f)
                     ? configBase
-                    : PiPDisablerPlugin.GetCylinderRadius() * 2f;
+                    : PerScopeMeshSurgerySettings.GetPlane1Radius() * 2f;
                 if (_baseScale < 0.001f) _baseScale = 0.030f;
 
                 if (magnification < 1f) magnification = 1f;
@@ -194,7 +192,7 @@ namespace PiPDisabler
             if (Mathf.Abs(magnification - _lastMag) >= 0.01f)
                 _lastMag = magnification;
 
-            var mainCam = PiPDisablerPlugin.GetMainCamera();
+            var mainCam = Helpers.GetMainCamera();
             if (mainCam != null && mainCam != _attachedCamera)
                 AttachToCamera();
         }
@@ -283,7 +281,7 @@ namespace PiPDisabler
 
         private static void AttachToCamera()
         {
-            var mainCam = PiPDisablerPlugin.GetMainCamera();
+            var mainCam = Helpers.GetMainCamera();
             if (mainCam == null) return;
 
             if (_attachedCamera != null && _attachedCamera != mainCam)
@@ -336,10 +334,10 @@ namespace PiPDisabler
 
         private static CameraEvent GetReticleCameraEvent()
         {
-            if (PiPDisablerPlugin.GetDebugReticleAfterEverything())
+            if (PiPDisablerPlugin.DebugReticleAfterEverything.Value)
                 return CameraEvent.AfterEverything;
 
-            if (!PiPDisablerPlugin.GetAutoSwitchReticleRenderForNvg())
+            if (!PiPDisablerPlugin.AutoSwitchReticleRenderForNvg.Value)
                 return CameraEvent.AfterForwardAlpha;
 
             // EFT's NightVision effect writes this global as 1 while NVG are active.
@@ -518,8 +516,7 @@ namespace PiPDisabler
                 // ── Step 4: optional debug overlay — red tint where lens writes ─────
                 // Renders anywhere stencil == 1, i.e. every visible lens pixel.
                 // Enable via DebugShowHousingMask in BepInEx config.
-                if (PiPDisablerPlugin.GetDebugShowHousingMask()
-                    && _stencilDebugMat != null)
+                if (PiPDisablerPlugin.DebugShowHousingMask.Value && _stencilDebugMat != null)
                 {
                     _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
                 }
@@ -576,7 +573,7 @@ namespace PiPDisabler
         }
 
         private static Rect GetDisplayViewport(Camera cam)
-            => PiPDisablerPlugin.GetDisplayViewport(cam);
+            => Helpers.GetDisplayViewport(cam);
 
         /// <summary>
         /// Returns the aspect ratio for the currently attached command-buffer event.

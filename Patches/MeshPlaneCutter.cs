@@ -9,11 +9,6 @@ namespace PiPDisabler
     {
         public enum KeepSide { Positive, Negative }
 
-        /// <summary>
-        /// Creates a CPU-readable copy of a non-readable mesh by copying data
-        /// directly from the GPU vertex/index buffers.
-        /// Works in Unity 2021+ (EFT uses Unity 2021.x).
-        /// </summary>
         public static Mesh MakeReadableMeshCopy(Mesh nonReadableMesh)
         {
             if (nonReadableMesh == null) return null;
@@ -55,18 +50,6 @@ namespace PiPDisabler
             return meshCopy;
         }
 
-        /// <summary>
-        /// Cuts a mesh in-place: removes all triangles (and their vertices) that
-        /// lie on the discarded side of the plane. Handles edge-intersecting triangles
-        /// by clipping them to the plane.
-        ///
-        /// Returns true if any geometry survived, false if the mesh is now empty.
-        ///
-        /// The mesh MUST be CPU-readable (isReadable=true). Use MakeReadableMeshCopy first
-        /// if the source mesh is not readable.
-        ///
-        /// Does NOT instantiate any new Mesh objects — modifies the given mesh directly.
-        /// </summary>
         public static bool CutMeshDirect(
             Mesh mesh,
             Transform meshTransform,
@@ -77,7 +60,6 @@ namespace PiPDisabler
         {
             if (mesh == null) return false;
 
-            // Transform plane to mesh-local space
             Vector3 pL = meshTransform.InverseTransformPoint(planePointWorld);
             Vector3 nL = meshTransform.InverseTransformDirection(planeNormalWorld).normalized;
 
@@ -184,9 +166,9 @@ namespace PiPDisabler
                             outTris[s].Add(vAB);
                             outTris[s].Add(vAC);
                         }
-                        else // keptCount == 2
+                        else
                         {
-                            int a = !k[0] ? 0 : (!k[1] ? 1 : 2); // the discarded vertex
+                            int a = !k[0] ? 0 : (!k[1] ? 1 : 2);
                             int b = (a + 1) % 3;
                             int c = (a + 2) % 3;
 
@@ -207,12 +189,6 @@ namespace PiPDisabler
                 }
             }
 
-            // Check if anything survived
-            long triCount = 0;
-            for (int s = 0; s < subMeshCount; s++) triCount += outTris[s].Count;
-            if (triCount == 0) return false;
-
-            // Write results back into the SAME mesh
             mesh.Clear();
             mesh.SetVertices(outVerts);
             if (hasNormals)  mesh.SetNormals(outNorms);
@@ -229,24 +205,6 @@ namespace PiPDisabler
             return true;
         }
 
-        /// <summary>
-        /// Frustum/cone cut: removes all triangles inside a frustum (truncated cone)
-        /// defined by center, axis, near radius, far radius, and depth range.
-        ///
-        /// nearRadius = radius at startOffset (closest to camera)
-        /// farRadius  = radius at startOffset + length (farthest from camera)
-        ///   If nearRadius == farRadius → pure cylinder
-        ///   If different → cone/frustum shape
-        ///
-        /// midRadius > 0 enables a two-segment profile: near→mid, then mid→far
-        ///   midPosition = fractional position along the bore (0=near, 1=far)
-        ///   This allows hourglass (mid &lt; near/far) or bulge (mid &gt; near/far) shapes
-        ///
-        /// startOffset = distance along axis from center to start of cut (toward camera = positive)
-        /// length = depth of the cut volume
-        ///
-        /// keepInside=false → removes geometry inside the frustum (bore a hole)
-        /// </summary>
         public static bool CutMeshFrustum(
             Mesh mesh,
             Transform meshTransform,
@@ -266,13 +224,10 @@ namespace PiPDisabler
             float epsilon = 1e-5f)
         {
             if (mesh == null || nearRadius <= 0 || length <= 0) return false;
-            if (farRadius <= 0) farRadius = nearRadius; // default to cylinder
-
-            // Transform to mesh-local space
+            if (farRadius <= 0) farRadius = nearRadius;
             Vector3 cL = meshTransform.InverseTransformPoint(centerWorld);
             Vector3 aL = meshTransform.InverseTransformDirection(axisWorld).normalized;
 
-            // Account for non-uniform scale on radius
             Vector3 lossyScale = meshTransform.lossyScale;
             float avgScale = (Mathf.Abs(lossyScale.x) + Mathf.Abs(lossyScale.y) + Mathf.Abs(lossyScale.z)) / 3f;
             float localNearR = avgScale > 0.001f ? nearRadius / avgScale : nearRadius;
@@ -284,37 +239,11 @@ namespace PiPDisabler
             float localP3Pos = Mathf.Clamp01(plane3Position);
             float localP4Pos = Mathf.Clamp01(plane4Position);
             float localP3R = plane3Radius > 0f ? (avgScale > 0.001f ? plane3Radius / avgScale : plane3Radius) : 0f;
-            float localPreserve = nearPreserveDepth > 0f
-                ? (avgScale > 0.001f ? nearPreserveDepth / avgScale : nearPreserveDepth)
-                : 0f;
-
-            // Log the radius profile so we can verify mid-radius is being applied
-            if (midRadius > 0f)
-            {
-                PiPDisablerPlugin.LogVerbose(
-                    $"[MeshCutter] Radius profile for '{mesh.name}': " +
-                    $"localNear={localNearR:F5} localMid={localMidR:F5}@{localMidPos:F2} localFar={localFarR:F5} " +
-                    $"avgScale={avgScale:F4} localLen={localLen:F4}");
-                // Sample the profile at 5 points for visual verification
-                PiPDisablerPlugin.LogVerbose(
-                    $"[MeshCutter] Profile samples: " +
-                    $"t=0.0→r={RadiusAtT4(0f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +
-                    $"t=0.25→r={RadiusAtT4(0.25f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +
-                    $"t=0.5→r={RadiusAtT4(0.5f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +
-                    $"t=0.75→r={RadiusAtT4(0.75f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5} " +
-                    $"t=1.0→r={RadiusAtT4(1f, localNearR, localMidR, localMidPos, localP3R, localP3Pos, localFarR, localP4Pos):F5}");
-            }
-
-            // Capture values explicitly for the local function (avoid any closure ambiguity)
+            float localPreserve = nearPreserveDepth > 0f ? (avgScale > 0.001f ? nearPreserveDepth / avgScale : nearPreserveDepth) : 0f;
             float _cNearR = localNearR, _cFarR = localFarR, _cMidR = localMidR;
             float _cMidPos = localMidPos, _cP3R = localP3R, _cP3Pos = localP3Pos, _cP4Pos = localP4Pos;
             float _cStart = localStart, _cLen = localLen;
             float _cPreserve = localPreserve;
-
-            // Start point is offset along axis from center (toward camera = negative axis dir in most setups)
-            // We define: axial position 0 = center, positive = along planeNormal (away from camera)
-            // startOffset pushes start toward camera (positive = toward camera)
-            // So the cut region is from (-startOffset) to (-startOffset + length) along axis
 
             var verts = mesh.vertices;
             var norms = mesh.normals;
@@ -338,29 +267,20 @@ namespace PiPDisabler
             for (int s = 0; s < subMeshCount; s++)
                 outTris[s] = new List<int>(mesh.GetTriangles(s).Length);
 
-            // Test if vertex is inside the frustum
             bool IsInsideFrustum(Vector3 v)
             {
                 Vector3 diff = v - cL;
-                float axialDist = Vector3.Dot(diff, aL); // signed distance along axis
-
-                // Check depth bounds: cut region is from -_cStart to -_cStart + _cLen
+                float axialDist = Vector3.Dot(diff, aL);
                 float cutStart = -_cStart;
                 float cutEnd = cutStart + _cLen;
 
                 if (axialDist < cutStart - epsilon || axialDist > cutEnd + epsilon)
-                    return false; // Outside depth range
-
-                // Near preserve zone: geometry within this depth from the near plane
-                // is never cut — preserves the eyepiece housing closest to the camera.
+                    return false;
                 if (_cPreserve > 0f && axialDist < cutStart + _cPreserve)
                     return false;
-
-                // Interpolate radius based on axial position within the cut.
                 float t = (_cLen > epsilon) ? Mathf.Clamp01((axialDist - cutStart) / _cLen) : 0f;
                 float radiusAtDepth = RadiusAtT4(t, _cNearR, _cMidR, _cMidPos, _cP3R, _cP3Pos, _cFarR, _cP4Pos);
 
-                // Perpendicular distance from axis
                 Vector3 projected = axialDist * aL;
                 float perpDist = (diff - projected).magnitude;
 
@@ -394,11 +314,7 @@ namespace PiPDisabler
                     if (keepInside)
                         keepTri = in0 || in1 || in2; // keep if any vertex inside
                     else
-                        keepTri = !in0 && !in1 && !in2; // keep only if ALL vertices are outside
-                        // Note: aggressive removal — boundary triangles are removed entirely.
-                        // This creates a cleaner bore hole at the cost of slightly rougher edges,
-                        // which the scope vignette overlay effectively hides.
-
+                        keepTri = !in0 && !in1 && !in2;
                     if (keepTri)
                     {
                         outTris[s].Add(AddVertexFromOld(i0));
@@ -466,18 +382,11 @@ namespace PiPDisabler
             }
         }
 
-        /// <summary>
-        /// Compute radius at normalized position t (0=near, 1=far) using piecewise interpolation.
-        /// Shared by frustum/cylinder cut math paths.
-        /// </summary>
         public static float RadiusAtT(float t, float nearR, float midR, float midPos, float farR)
         {
             return RadiusAtT4(t, nearR, midR, midPos, 0f, midPos, farR, 1f);
         }
 
-        /// <summary>
-        /// Backward-compatible cylinder cut (delegates to frustum with equal radii, infinite depth).
-        /// </summary>
         public static bool CutMeshCylinder(
             Mesh mesh,
             Transform meshTransform,

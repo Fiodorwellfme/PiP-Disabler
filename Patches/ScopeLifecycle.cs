@@ -180,12 +180,6 @@ namespace PiPDisabler
                 _meshSurgeryResumeAfterTime = -1f;
                 if (PiPDisablerPlugin.EnableMeshSurgery.Value)
                 {
-                    if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[ScopeLifecycle][DEBUG] Mode-switch mesh surgery start: optic='{os.name}' " +
-                            $"template='{FovController.GetOpticTemplateId(os)}' frame={Time.frameCount}");
-                    }
                     MeshSurgeryManager.RestoreForScope(os.transform);
                     if (IsReloadActive())
                     {
@@ -204,11 +198,6 @@ namespace PiPDisabler
                             PiPDisablerPlugin.LogInfo(
                                 $"[ScopeLifecycle][DEBUG] Mode-switch mesh surgery produced zero cuts — " +
                                 $"scheduling retry. frame={Time.frameCount}");
-                            if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
-                            {
-                                PiPDisablerPlugin.LogInfo(
-                                    $"[ScopeLifecycle][DEBUG] Last mesh attempt snapshot: {MeshSurgeryManager.GetLastAttemptDebugSnapshot()}");
-                            }
                             _meshRetryAttemptsLeft = MeshRetryMaxAttempts;
                             _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
                         }
@@ -393,11 +382,6 @@ namespace PiPDisabler
                 }
                 else
                 {
-                    if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[ScopeLifecycle][DEBUG] Retry attempt failed snapshot: {MeshSurgeryManager.GetLastAttemptDebugSnapshot()}");
-                    }
                     _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
                     if (_meshRetryAttemptsLeft == 0)
                     {
@@ -890,12 +874,6 @@ namespace PiPDisabler
             _meshSurgeryResumeAfterTime = -1f;
             if (PiPDisablerPlugin.EnableMeshSurgery.Value)
             {
-                if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
-                {
-                    PiPDisablerPlugin.LogInfo(
-                        $"[ScopeLifecycle][DEBUG] Enter mesh surgery start: optic='{os.name}' " +
-                        $"template='{FovController.GetOpticTemplateId(os)}' frame={Time.frameCount}");
-                }
                 if (IsReloadActive())
                 {
                     PiPDisablerPlugin.LogInfo(
@@ -913,11 +891,6 @@ namespace PiPDisabler
                         PiPDisablerPlugin.LogInfo(
                             $"[ScopeLifecycle][DEBUG] Initial mesh surgery produced zero cuts — " +
                             $"scheduling retry (up to {MeshRetryMaxAttempts} attempts). frame={Time.frameCount}");
-                        if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
-                        {
-                            PiPDisablerPlugin.LogInfo(
-                                $"[ScopeLifecycle][DEBUG] Last mesh attempt snapshot: {MeshSurgeryManager.GetLastAttemptDebugSnapshot()}");
-                        }
                         _meshRetryAttemptsLeft = MeshRetryMaxAttempts;
                         _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
                     }
@@ -1117,7 +1090,7 @@ namespace PiPDisabler
         // ===== Other Helpers =====
 
         private static Player GetLocalPlayer()
-            => PiPDisablerPlugin.GetLocalPlayer();
+            => Helpers.GetLocalPlayer();
 
         private static bool IsReloadActive()
         {

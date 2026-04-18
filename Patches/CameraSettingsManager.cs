@@ -17,7 +17,7 @@ namespace PiPDisabler
             if (os == null)
                 return;
 
-            var cam = PiPDisablerPlugin.GetMainCamera();
+            var cam = Helpers.GetMainCamera();
             if (cam == null)
                 return;
 
@@ -92,7 +92,7 @@ namespace PiPDisabler
             QualitySettings.lodBias = _savedLodBias;
             QualitySettings.maximumLODLevel = _savedMaxLodLevel;
 
-            var cam = PiPDisablerPlugin.GetMainCamera();
+            var cam = Helpers.GetMainCamera();
             if (cam != null)
             {
                 cam.farClipPlane = _savedFarClip;
@@ -155,6 +155,6 @@ namespace PiPDisabler
         }
 
         private static bool IsOnSameMode(Transform a, Transform b)
-            => PiPDisablerPlugin.IsOnSameMode(a, b);
+            => Helpers.IsOnSameMode(a, b);
     }
 }

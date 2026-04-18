@@ -117,7 +117,7 @@ namespace PiPDisabler
             if (_shadowActive) RefreshShadowTexture();
 
             // Re-attach if camera changed
-            var mainCam = PiPDisablerPlugin.GetMainCamera();
+            var mainCam = Helpers.GetMainCamera();
             if (mainCam != null && mainCam != _attachedCamera)
                 AttachToCamera();
         }
@@ -175,7 +175,7 @@ namespace PiPDisabler
         /// </summary>
         private static void ReattachAfterReticle()
         {
-            var mainCam = PiPDisablerPlugin.GetMainCamera();
+            var mainCam = Helpers.GetMainCamera();
             if (mainCam == null) return;
 
             if (_attachedCamera != null && _attachedCamera != mainCam)
@@ -217,7 +217,7 @@ namespace PiPDisabler
 
         private static void AttachToCamera()
         {
-            var mainCam = PiPDisablerPlugin.GetMainCamera();
+            var mainCam = Helpers.GetMainCamera();
             if (mainCam == null) return;
 
             if (_attachedCamera != null && _attachedCamera != mainCam)
@@ -432,7 +432,7 @@ namespace PiPDisabler
             float opac = PiPDisablerPlugin.VignetteOpacity.Value;
             float mult = PiPDisablerPlugin.VignetteSizeMult.Value;
 
-            var cam = PiPDisablerPlugin.GetMainCamera();
+            var cam = Helpers.GetMainCamera();
             float aspect = GetActiveAspect(cam);
 
             if (Mathf.Abs(soft - _lastVigSoftness) < 0.001f &&
@@ -533,7 +533,7 @@ namespace PiPDisabler
             float soft   = PiPDisablerPlugin.ScopeShadowSoftness.Value;
             float opac   = PiPDisablerPlugin.ScopeShadowOpacity.Value;
 
-            var cam = PiPDisablerPlugin.GetMainCamera();
+            var cam = Helpers.GetMainCamera();
             Rect viewport = GetActiveViewport(cam);
             int texW = Mathf.Clamp(Mathf.RoundToInt(viewport.width), 64, 4096);
             int texH = Mathf.Clamp(Mathf.RoundToInt(viewport.height), 64, 4096);
@@ -585,7 +585,7 @@ namespace PiPDisabler
         }
 
         private static Rect GetDisplayViewport(Camera cam)
-            => PiPDisablerPlugin.GetDisplayViewport(cam);
+            => Helpers.GetDisplayViewport(cam);
 
         private static Rect GetSceneViewport(Camera cam)
         {

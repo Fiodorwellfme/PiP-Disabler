@@ -113,7 +113,7 @@ namespace PiPDisabler.Patches
             if (!PiPDisablerPlugin.ModEnabled.Value) return;
             if (__instance == null || eventArgs == null || eventArgs.Status != CommandStatus.Succeed) return;
 
-            var localPlayer = PiPDisablerPlugin.GetLocalPlayer();
+            var localPlayer = Helpers.GetLocalPlayer();
             if (!ReferenceEquals(__instance, localPlayer)) return;
 
             PiPDisablerPlugin.LogVerbose(

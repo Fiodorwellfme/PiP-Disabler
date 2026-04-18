@@ -5,17 +5,10 @@ using EFT.Animations;
 
 namespace PiPDisabler.Patches
 {
-    /// Fika ping system switches ping display system when it detects an optic scope being ADS.
-    /// Prefix-patch IsZoomedOpticAiming to return false when PiP Disabler is active
     internal static class FikaCompat
     {
         private static Harmony _harmony;
         private static bool _patched;
-
-        /// <summary>
-        /// Attempt to patch Fika's WorldToScreen.IsZoomedOpticAiming.
-        /// Safe to call even when Fika is not installed.
-        /// </summary>
         public static void Enable()
         {
             if (_patched) return;
@@ -55,9 +48,6 @@ namespace PiPDisabler.Patches
         private static bool IsZoomedOpticAimingPrefix(ref bool __result)
         {
             if (!PiPDisablerPlugin.ModEnabled.Value)
-                return true;
-
-            if (!PiPDisablerPlugin.DisablePiP.Value)
                 return true;
 
             if (!ScopeLifecycle.IsScoped)

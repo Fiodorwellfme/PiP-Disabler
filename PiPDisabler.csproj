@@ -12,6 +12,17 @@
 		<ReleaseDir>$(ProjectDir)Releases</ReleaseDir>
 		<ReleaseZip>$(ReleaseDir)\$(ModName).zip</ReleaseZip>
 	</PropertyGroup>
+	<ItemGroup>
+	  <Compile Remove="build\**" />
+	  <Compile Remove="images\**" />
+	  <Compile Remove="Releases\**" />
+	  <EmbeddedResource Remove="build\**" />
+	  <EmbeddedResource Remove="images\**" />
+	  <EmbeddedResource Remove="Releases\**" />
+	  <None Remove="build\**" />
+	  <None Remove="images\**" />
+	  <None Remove="Releases\**" />
+	</ItemGroup>
 
   <ItemGroup>
     <Reference Include="BepInEx">
@@ -63,16 +74,12 @@
 
 	<Target Name="PostBuild" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
 	<MakeDir Directories="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" />
-	<Copy SourceFiles="$(TargetPath)"
-		  DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" />
+	<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" />
 
 	<RemoveDir Directories="$(PackageStagingDir)" Condition="Exists('$(PackageStagingDir)')" />
 	<MakeDir Directories="$(PackagePluginDir)" />
-	<Copy SourceFiles="$(TargetPath)"
-		  DestinationFolder="$(PackagePluginDir)" />
-	<Copy SourceFiles="$(ProjectDir)custom_mesh_surgery_settings.json"
-		  DestinationFolder="$(PackagePluginDir)"
-		  Condition="Exists('$(ProjectDir)custom_mesh_surgery_settings.json')" />
+	<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PackagePluginDir)" />
+	<Copy SourceFiles="$(ProjectDir)custom_mesh_surgery_settings.json" DestinationFolder="$(PackagePluginDir)" Condition="Exists('$(ProjectDir)custom_mesh_surgery_settings.json')" />
 
 	<MakeDir Directories="$(ReleaseDir)" />
 	<Delete Files="$(ReleaseZip)" Condition="Exists('$(ReleaseZip)')" />
