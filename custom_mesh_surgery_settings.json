@@ -3,6 +3,7 @@
     {
       "ScopeKey": "scope_all_eotech_hhs_1",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.08098595,
@@ -20,6 +21,7 @@
     {
       "ScopeKey": "scope_all_elcan_specter_dr_1-4_fde",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.109154955,
@@ -37,12 +39,13 @@
     {
       "ScopeKey": "scope_all_monstrum_compact_prism_scope_2x32",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
-      "Plane2Position": 0.1138498,
-      "Plane2Radius": 0.0186338,
-      "Plane3Position": 0.395070434,
-      "Plane3Radius": 0.105164312,
+      "Plane2Position": 0.14201881,
+      "Plane2Radius": 0.0214507021,
+      "Plane3Position": 0.48896715,
+      "Plane3Radius": 0.141784042,
       "Plane4Position": 1.0,
       "Plane4Radius": 0.2,
       "CutStartOffset": 0.04084507,
@@ -54,6 +57,7 @@
     {
       "ScopeKey": "scope_all_elcan_specter_os4x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.1138498,
@@ -71,6 +75,7 @@
     {
       "ScopeKey": "scope_all_sig_bravo4_4x30",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.123239465,
@@ -88,6 +93,7 @@
     {
       "ScopeKey": "ACOG TA44",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.0997652858,
@@ -105,6 +111,7 @@
     {
       "ScopeKey": "Spectre 1_5-6",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -122,6 +129,7 @@
     {
       "ScopeKey": "scope_base_primary_arms_compact_prism_scope_2,5x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -139,6 +147,7 @@
     {
       "ScopeKey": "scope_all_swampfox_trihawk_prism_scope_3x30",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -156,6 +165,7 @@
     {
       "ScopeKey": "scope_all_leupold_mark4_hamr",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -173,6 +183,7 @@
     {
       "ScopeKey": "scope_aug_steyr_stg77_optic_1,5x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.008211267,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -190,6 +201,7 @@
     {
       "ScopeKey": "scope_aug_steyr_rail_optic_1,5x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00495774671,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -207,6 +219,7 @@
     {
       "ScopeKey": "scope_g36_hensoldt_hkv_single_optic_carry_handle_1,5x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.001,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -224,6 +237,7 @@
     {
       "ScopeKey": "scope_g36_hensoldt_hkv_carry_handle_3x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.001,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -241,6 +255,7 @@
     {
       "ScopeKey": "scope_ags_npz_pag17_2,7x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.1,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.123239465,
@@ -258,6 +273,7 @@
     {
       "ScopeKey": "scope_all_elcan_specter_dr_1-4",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -275,6 +291,7 @@
     {
       "ScopeKey": "Unity G33",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.006,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.14201881,
@@ -292,6 +309,7 @@
     {
       "ScopeKey": "scope_dovetail_npz_1p29_4x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.118544631,
@@ -309,6 +327,7 @@
     {
       "ScopeKey": "scope_dovetail_belomo_pso_1_4x24",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.118544631,
@@ -326,6 +345,7 @@
     {
       "ScopeKey": "scope_dovetail_belomo_pso_1m2_4x24",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.118544631,
@@ -343,23 +363,25 @@
     {
       "ScopeKey": "G33 Base",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.006,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.1138498,
       "Plane2Radius": 0.0214507021,
-      "Plane3Position": 0.55,
+      "Plane3Position": 0.395070434,
       "Plane3Radius": 0.132394373,
       "Plane4Position": 1.0,
       "Plane4Radius": 0.2,
       "CutStartOffset": 0.04084507,
       "CutLength": 2.0,
       "NearPreserveDepth": 0.02549295,
-      "ReticleBaseSize": 0.0149765247,
+      "ReticleBaseSize": 0.03,
       "ExpandSearchToWeaponRoot": true
     },
     {
       "ScopeKey": "scope_dovetail_belomo_pso_1m2_1_4x24",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.006,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.1420188,
@@ -377,6 +399,7 @@
     {
       "ScopeKey": "scope_base_progress_pu_3,5x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.0207605641,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.188967139,
@@ -394,6 +417,7 @@
     {
       "ScopeKey": "TA31 ACOG Black Red Chevron",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -411,6 +435,7 @@
     {
       "ScopeKey": "ACOG MGO 6x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -428,6 +453,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Red Horseshoe",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -445,6 +471,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Green Chevron",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -462,6 +489,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Red Crosshair",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -479,6 +507,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Red Chevron",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -496,6 +525,7 @@
     {
       "ScopeKey": "TA31 ACOG Black Amber Horseshoe",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -513,6 +543,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Amber 300blk",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -530,6 +561,7 @@
     {
       "ScopeKey": "TA31 ACOG Black Green 300blk",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -547,6 +579,7 @@
     {
       "ScopeKey": "TA31 ACOG Black Red Crosshair",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -564,6 +597,7 @@
     {
       "ScopeKey": "TA31 ACOG Black Green Chevron",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -581,6 +615,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Green Crosshair",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -598,6 +633,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Green Horseshoe",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -615,6 +651,7 @@
     {
       "ScopeKey": "New Black TA01",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00774647854,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -632,6 +669,7 @@
     {
       "ScopeKey": "TA31 ACOG Black Red Horseshoe",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -649,6 +687,7 @@
     {
       "ScopeKey": "New Tan TA01",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00774647854,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -666,6 +705,7 @@
     {
       "ScopeKey": "scope_base_trijicon_acog_ta11_3,5x35",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.006352112,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.09976529,
@@ -683,6 +723,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Amber Horseshoe",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -700,6 +741,7 @@
     {
       "ScopeKey": "TA31 ACOG Black Green Horseshoe",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -717,6 +759,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Green 300blk",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -734,6 +777,7 @@
     {
       "ScopeKey": "TA31 ACOG Tan Red 300blk",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -751,6 +795,7 @@
     {
       "ScopeKey": "TA31 ACOG Black Green Crosshair",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -768,6 +813,7 @@
     {
       "ScopeKey": "TA31 ACOG Black Amber 300blk",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00588732352,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -785,6 +831,7 @@
     {
       "ScopeKey": "Spitfire 5x",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.00774647854,
       "Plane1OffsetMeters": 0.001,
       "Plane2Position": 0.104460128,
@@ -802,6 +849,7 @@
     {
       "ScopeKey": "scope_all_eotech_hhs_1_tan",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.08098595,
@@ -819,6 +867,7 @@
     {
       "ScopeKey": "G33",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.0125774648,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.09037562,
@@ -836,6 +885,7 @@
     {
       "ScopeKey": "CGA5P Scope",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.011,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.104460128,
@@ -853,6 +903,7 @@
     {
       "ScopeKey": "scope_all_valday_ps320",
       "PlaneOffsetMeters": 0.001,
+      "CutRadius": 0.0,
       "Plane1Radius": 0.006,
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.14201881,

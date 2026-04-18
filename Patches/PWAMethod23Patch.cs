@@ -57,8 +57,8 @@ namespace PiPDisabler.Patches
                 return;
 
             bool modZoomEnabled =
-                PiPDisablerPlugin.ModEnabled.Value &&
-                PiPDisablerPlugin.EnableZoom.Value;
+                Settings.ModEnabled.Value &&
+                Settings.EnableZoom.Value;
 
             bool isAdsOptic = false;
             if (pwa != null && pwa.IsAiming && !pwa.Sprint)

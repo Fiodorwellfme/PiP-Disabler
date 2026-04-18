@@ -63,7 +63,7 @@ namespace PiPDisabler
 
 internal static void TickBaseOpticCamera()
         {
-            if (!PiPDisablerPlugin.DisablePiP.Value) return;
+            if (!Settings.DisablePiP.Value) return;
 
             // Any condition that should preserve vanilla PiP must restore and skip disabling.
             if (ShouldAllowVanillaPiP())
@@ -156,7 +156,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogVerbose(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[PiPDisabler] Vanilla optic cleanup failed: {ex.Message}");
             }
 
@@ -211,7 +211,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                         if (!_loggedBase)
                         {
                             _loggedBase = true;
-                            PiPDisablerPlugin.LogInfo(
+                            PiPDisablerPlugin.LogSource.LogInfo(
                                 $"[PiPDisabler] Found BaseOpticCamera: {n} (cameras: {_baseOpticCams.Count})");
                         }
                         break;
@@ -240,7 +240,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 if (ScopeLifecycle.IsNameBypassed(os))
                     return true;
 
-                if (!PiPDisablerPlugin.AutoDisableForVariableScopes.Value)
+                if (!Settings.AutoDisableForVariableScopes.Value)
                     return false;
 
                 if (FovController.IsOpticAdjustable(os))
@@ -267,13 +267,13 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                     if (f.FieldType == typeof(OpticSight))
                     {
                         _opticSightField = f;
-                        PiPDisablerPlugin.LogInfo(
+                        PiPDisablerPlugin.LogSource.LogInfo(
                             $"[PiPDisabler] Found OpticSight field on OpticComponentUpdater: '{f.Name}'");
                         break;
                     }
                 }
                 if (_opticSightField == null)
-                    PiPDisablerPlugin.LogWarn(
+                    PiPDisablerPlugin.LogSource.LogInfo(
                         "[PiPDisabler] Could not find any OpticSight field on OpticComponentUpdater!");
             }
             return _opticSightField;
@@ -353,8 +353,8 @@ _ignoreOnDisableFrame.Clear();
 
         private static bool ShouldAllowVanillaPiP()
         {
-            return !PiPDisablerPlugin.ModEnabled.Value
-                || !PiPDisablerPlugin.DisablePiP.Value
+            return !Settings.ModEnabled.Value
+                || !Settings.DisablePiP.Value
                 || ScopeLifecycle.IsModBypassedForCurrentScope
                 || ScopeLifecycle.IsLastOpticNameBypassed();
         }
@@ -367,8 +367,8 @@ _ignoreOnDisableFrame.Clear();
             [PatchPostfix]
             private static void Postfix(OpticComponentUpdater __instance)
             {
-                if (!PiPDisablerPlugin.ModEnabled.Value) return;
-                if (!PiPDisablerPlugin.DisablePiP.Value) return;
+                if (!Settings.ModEnabled.Value) return;
+                if (!Settings.DisablePiP.Value) return;
                 if (__instance == null) return;
                 if (ShouldSuppressPiPDisableForCurrentOptic(__instance)) return;
 
@@ -391,10 +391,10 @@ _ignoreOnDisableFrame.Clear();
             [PatchPrefix]
             private static bool Prefix(OpticComponentUpdater __instance)
             {
-                if (!PiPDisablerPlugin.ModEnabled.Value) return true;
+                if (!Settings.ModEnabled.Value) return true;
                 if (__instance == null) return true;
 
-                if (PiPDisablerPlugin.DisablePiP.Value)
+                if (Settings.DisablePiP.Value)
                 {
                     OpticCameraTransform = __instance.transform;
                     Debug_LastOpticCameraTransform = OpticCameraTransform;

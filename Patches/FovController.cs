@@ -9,7 +9,7 @@ namespace PiPDisabler
 {
     internal static class FovController
     {
-        public static float ZoomBaselineFov => PiPDisablerPlugin.BaselineFOV.Value;
+        public static float ZoomBaselineFov => Settings.BaselineFOV.Value;
         private static SightComponent _cachedSightComponent;
         private static OpticSight _cachedSightComponentForOptic;
         private static float _cachedMagnification;
@@ -40,8 +40,8 @@ namespace PiPDisabler
 
         public static float ComputeZoomedFov()
         {
-            if (!PiPDisablerPlugin.AutoFovFromScope.Value)
-                return PiPDisablerPlugin.ScopedFov.Value;
+            if (!Settings.AutoFovFromScope.Value)
+                return Settings.ScopedFov.Value;
 
             float magnification = GetEffectiveMagnification();
             if (magnification > 0.1f)
@@ -59,7 +59,7 @@ namespace PiPDisabler
                     string mapping = magnification <= 1.01f
                         ? $"(1x override={oneXTargetFov:F1}°)"
                         : $"(baseline={ZoomBaselineFov:F0}°)";
-                    PiPDisablerPlugin.LogInfo(
+                    PiPDisablerPlugin.LogSource.LogInfo(
                         $"[FovController] mag={magnification:F2}x → mainFov={resultFov:F1}° " +
                         $"{mapping} [{source}]");
                 }
@@ -67,7 +67,7 @@ namespace PiPDisabler
                 return resultFov;
             }
 
-            return PiPDisablerPlugin.ScopedFov.Value;
+            return Settings.ScopedFov.Value;
         }
 
         /// <summary>
@@ -204,7 +204,7 @@ namespace PiPDisabler
 
             _lastTemplateZoomLog = zoom;
             _lastTemplateZoomLogMode = mode;
-            PiPDisablerPlugin.LogVerbose(message);
+            PiPDisablerPlugin.LogSource.LogInfo(message);
         }
 
         /// <summary>
@@ -344,7 +344,7 @@ namespace PiPDisabler
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogVerbose(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[FovController] FindSightComponent exception: {ex.Message}");
             }
 
@@ -378,7 +378,7 @@ namespace PiPDisabler
                         {
                             _smvcType = t;
                             _sightModProp = prop;
-                            PiPDisablerPlugin.LogInfo(
+                            PiPDisablerPlugin.LogSource.LogInfo(
                                 $"[FovController] Found SightModVisualControllers: {t.FullName}, " +
                                 $"SightMod={prop.Name} ({prop.PropertyType.Name})");
                             return;
@@ -390,7 +390,7 @@ namespace PiPDisabler
 
             // Strategy 2: Scan assemblies for MonoBehaviour with a property whose
             // return type has GetCurrentOpticZoom method
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 "[FovController] SightModVisualControllers name lookup failed, scanning assemblies...");
 
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -406,7 +406,7 @@ namespace PiPDisabler
                         {
                             _smvcType = type;
                             _sightModProp = prop;
-                            PiPDisablerPlugin.LogInfo(
+                            PiPDisablerPlugin.LogSource.LogInfo(
                                 $"[FovController] Discovered SightModVisualControllers via scan: " +
                                 $"{type.FullName}, SightMod={prop.Name} ({prop.PropertyType.Name})");
                             return;
@@ -416,7 +416,7 @@ namespace PiPDisabler
                 catch { }
             }
 
-            PiPDisablerPlugin.LogWarn(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 "[FovController] SightModVisualControllers NOT found — template zoom unavailable");
         }
 

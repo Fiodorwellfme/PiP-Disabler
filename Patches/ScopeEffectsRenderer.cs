@@ -68,7 +68,7 @@ namespace PiPDisabler
         {
             EnsureStencilDebugMaterial();
 
-            if (PiPDisablerPlugin.VignetteEnabled.Value)
+            if (Settings.VignetteEnabled.Value)
             {
                 EnsureVignetteMeshAndMat();
                 RefreshVignetteTexture();
@@ -79,7 +79,7 @@ namespace PiPDisabler
                 _vigActive = false;
             }
 
-            if (PiPDisablerPlugin.ScopeShadowEnabled.Value)
+            if (Settings.ScopeShadowEnabled.Value)
             {
                 EnsureShadowMeshAndMat();
                 RefreshShadowTexture();
@@ -103,7 +103,7 @@ namespace PiPDisabler
             // it must execute AFTER that pass.
             ReattachAfterReticle();
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[ScopeEffects] Showing: vignette={_vigActive} shadow={_shadowActive} (CommandBuffer)");
         }
 
@@ -138,9 +138,9 @@ namespace PiPDisabler
 
             bool keepShadow =
                 allowShadowPersist &&
-                PiPDisablerPlugin.ModEnabled.Value &&
-                PiPDisablerPlugin.ScopeShadowEnabled.Value &&
-                PiPDisablerPlugin.ScopeShadowPersistOnUnscope.Value &&
+                Settings.ModEnabled.Value &&
+                Settings.ScopeShadowEnabled.Value &&
+                Settings.ScopeShadowPersistOnUnscope.Value &&
                 _shadowActive;
 
             if (keepShadow)
@@ -192,7 +192,7 @@ namespace PiPDisabler
                 mainCam.AddCommandBuffer(targetEvent, _cmdBuffer);
                 _attachedEvent = targetEvent;
 
-                PiPDisablerPlugin.LogVerbose(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[ScopeEffects] CommandBuffer reordered on '{mainCam.name}' at {_attachedEvent}");
                 return;
             }
@@ -211,7 +211,7 @@ namespace PiPDisabler
                 _preCullRegistered = true;
             }
 
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[ScopeEffects] CommandBuffer attached to '{mainCam.name}' at {_attachedEvent}");
         }
 
@@ -239,7 +239,7 @@ namespace PiPDisabler
                 _preCullRegistered = true;
             }
 
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[ScopeEffects] CommandBuffer attached to '{mainCam.name}' at {_attachedEvent}");
         }
 
@@ -371,7 +371,7 @@ namespace PiPDisabler
                     Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f));
 
                 // Consume the stencil ReticleRenderer already wrote this frame.
-                if (PiPDisablerPlugin.DebugShowScopeShadowMask.Value && _stencilDebugMat != null)
+                if (Settings.DebugShowScopeShadowMask.Value && _stencilDebugMat != null)
                     _cmdBuffer.DrawMesh(_shadowMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
             }
 
@@ -428,9 +428,9 @@ namespace PiPDisabler
         /// </summary>
         private static void RefreshVignetteTexture()
         {
-            float soft = PiPDisablerPlugin.VignetteSoftness.Value;
-            float opac = PiPDisablerPlugin.VignetteOpacity.Value;
-            float mult = PiPDisablerPlugin.VignetteSizeMult.Value;
+            float soft = Settings.VignetteSoftness.Value;
+            float opac = Settings.VignetteOpacity.Value;
+            float mult = Settings.VignetteSizeMult.Value;
 
             var cam = Helpers.GetMainCamera();
             float aspect = GetActiveAspect(cam);
@@ -529,9 +529,9 @@ namespace PiPDisabler
         /// </summary>
         private static void RefreshShadowTexture()
         {
-            float radius = PiPDisablerPlugin.ScopeShadowRadius.Value;
-            float soft   = PiPDisablerPlugin.ScopeShadowSoftness.Value;
-            float opac   = PiPDisablerPlugin.ScopeShadowOpacity.Value;
+            float radius = Settings.ScopeShadowRadius.Value;
+            float soft   = Settings.ScopeShadowSoftness.Value;
+            float opac   = Settings.ScopeShadowOpacity.Value;
 
             var cam = Helpers.GetMainCamera();
             Rect viewport = GetActiveViewport(cam);
@@ -580,7 +580,7 @@ namespace PiPDisabler
             _shadowTex.Apply();
             if (_shadowMat != null) _shadowMat.mainTexture = _shadowTex;
 
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[ScopeEffects] Shadow texture rebuilt: {texW}x{texH} aspect={aspect:F2} radius={radius} soft={soft}");
         }
 
@@ -628,8 +628,8 @@ namespace PiPDisabler
         private static bool ShouldKeepPersistedShadowVisible()
         {
             if (!_persistShadowUntilFovRestore) return false;
-            if (!PiPDisablerPlugin.ModEnabled.Value) return false;
-            if (!PiPDisablerPlugin.ScopeShadowEnabled.Value) return false;
+            if (!Settings.ModEnabled.Value) return false;
+            if (!Settings.ScopeShadowEnabled.Value) return false;
 
             bool hasActiveOptic = false;
             float currentFov = FovController.ZoomBaselineFov;

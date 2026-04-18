@@ -122,7 +122,7 @@ namespace PiPDisabler
                     _savedMarkTex.anisoLevel = 16;
                 }
 
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[Reticle] Extracted: _MarkTex={(_savedMarkTex != null ? _savedMarkTex.name : "null")} " +
                     $"({(_savedMarkTex != null ? $"{_savedMarkTex.width}x{_savedMarkTex.height}" : "?")}) " +
                     $"_MaskTex={(_savedMaskTex != null ? _savedMaskTex.name : "null")} " +
@@ -130,7 +130,7 @@ namespace PiPDisabler
             }
             catch (System.Exception e)
             {
-                PiPDisablerPlugin.LogError($"[Reticle] Extract failed: {e.Message}");
+                PiPDisablerPlugin.LogSource.LogInfo($"[Reticle] Extract failed: {e.Message}");
             }
         }
 
@@ -168,13 +168,13 @@ namespace PiPDisabler
                 _settled = true;
                 _alignmentActive = true;
 
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[Reticle] Showing: base={_baseScale:F4} mag={magnification:F1}x " +
                     $"(camera-aligned centered rendering)");
             }
             catch (System.Exception e)
             {
-                PiPDisablerPlugin.LogError($"[Reticle] Show failed: {e.Message}");
+                PiPDisablerPlugin.LogSource.LogInfo($"[Reticle] Show failed: {e.Message}");
             }
         }
 
@@ -265,7 +265,7 @@ namespace PiPDisabler
             if (entries != null)
                 _lensMaskEntries.AddRange(entries);
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[Reticle] Lens mask: {_lensMaskEntries.Count} entry(s) registered" +
                 $" stencilSupport={_hasStencilSupport}");
         }
@@ -303,7 +303,7 @@ namespace PiPDisabler
                 _preCullRegistered = true;
             }
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[Reticle] CommandBuffer attached to '{mainCam.name}' at {_attachedEvent}");
         }
 
@@ -334,10 +334,10 @@ namespace PiPDisabler
 
         private static CameraEvent GetReticleCameraEvent()
         {
-            if (PiPDisablerPlugin.DebugReticleAfterEverything.Value)
+            if (Settings.DebugReticleAfterEverything.Value)
                 return CameraEvent.AfterEverything;
 
-            if (!PiPDisablerPlugin.AutoSwitchReticleRenderForNvg.Value)
+            if (!Settings.AutoSwitchReticleRenderForNvg.Value)
                 return CameraEvent.AfterForwardAlpha;
 
             // EFT's NightVision effect writes this global as 1 while NVG are active.
@@ -360,7 +360,7 @@ namespace PiPDisabler
             _attachedCamera.AddCommandBuffer(desiredEvent, _cmdBuffer);
             _attachedEvent = desiredEvent;
 
-            PiPDisablerPlugin.LogInfo($"[Reticle] CommandBuffer moved to {_attachedEvent} (debug toggle)");
+            PiPDisablerPlugin.LogSource.LogInfo($"[Reticle] CommandBuffer moved to {_attachedEvent} (debug toggle)");
         }
 
         // ── onPreCull — camera alignment + rebuild CommandBuffer ─────────────
@@ -479,7 +479,7 @@ namespace PiPDisabler
                     if (entry.Renderer != null && entry.Renderer.gameObject.activeInHierarchy) activeCount++;
                 }
 
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[Reticle] Frame {_debugFrameCount + 1}/{DebugLogFrames}: " +
                     $"useStencil={useStencil} lensTotal={_lensMaskEntries.Count} " +
                     $"lensActive={activeCount} stencilSupport={_hasStencilSupport}");
@@ -516,7 +516,7 @@ namespace PiPDisabler
                 // ── Step 4: optional debug overlay — red tint where lens writes ─────
                 // Renders anywhere stencil == 1, i.e. every visible lens pixel.
                 // Enable via DebugShowHousingMask in BepInEx config.
-                if (PiPDisablerPlugin.DebugShowHousingMask.Value && _stencilDebugMat != null)
+                if (Settings.DebugShowHousingMask.Value && _stencilDebugMat != null)
                 {
                     _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
                 }
@@ -643,7 +643,7 @@ namespace PiPDisabler
                         Shader.Find("Particles/Additive") ??
                         Shader.Find("Legacy Shaders/Particles/Additive");
 
-                    PiPDisablerPlugin.LogWarn(
+                    PiPDisablerPlugin.LogSource.LogInfo(
                         "[Reticle] No alpha-blend shader found; falling back to Particles/Additive.");
                 }
 
@@ -665,7 +665,7 @@ namespace PiPDisabler
                     _reticleMat.SetFloat("_StencilWriteMask", 0f);   // don't write
                 }
 
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[Reticle] Created material (shader='{(alphaShader != null ? alphaShader.name : "null")}'" +
                     $" stencilSupport={_hasStencilSupport})");
 

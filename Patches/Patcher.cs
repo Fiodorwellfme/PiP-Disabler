@@ -39,7 +39,7 @@ namespace PiPDisabler.Patches
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
+                PiPDisablerPlugin.LogSource.LogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
             }
         }
     }

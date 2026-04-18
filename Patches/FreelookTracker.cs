@@ -74,7 +74,7 @@ namespace PiPDisabler
         /// </summary>
         public static void Init()
         {
-            PiPDisablerPlugin.LogInfo("[FreelookTracker] Init: MouseLookControl is public — direct access.");
+            PiPDisablerPlugin.LogSource.LogInfo("[FreelookTracker] Init: MouseLookControl is public — direct access.");
         }
 
         /// <summary>
@@ -128,7 +128,7 @@ namespace PiPDisabler
                 _fovBeforeFreelook = _lastAppliedScopedFov;
             }
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[FreelookTracker] Freelook START — cached FOV={_fovBeforeFreelook:F1}°, " +
                 "hiding reticle");
 
@@ -140,7 +140,7 @@ namespace PiPDisabler
         {
             float fovToRestore = _fovBeforeFreelook > 0.5f ? _fovBeforeFreelook : _lastAppliedScopedFov;
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[FreelookTracker] Freelook END — restoring FOV={fovToRestore:F1}°, showing reticle");
 
             // Directly restore the cached FOV (Update path).
@@ -151,7 +151,7 @@ namespace PiPDisabler
                 {
                     if (CameraClass.Exist && CameraClass.Instance != null)
                         CameraClass.Instance.SetFov(fovToRestore,
-                            PiPDisablerPlugin.FovAnimationDuration.Value, false);
+                            Settings.FovAnimationDuration.Value, false);
                 }
                 catch { }
             }
@@ -189,8 +189,8 @@ namespace PiPDisabler
             // Prefer the FOV snapshotted at freelook-enter; fall back to last mod-applied value.
             float fovToRestore = _fovBeforeFreelook > 0.5f ? _fovBeforeFreelook : _lastAppliedScopedFov;
 
-            if (PiPDisablerPlugin.ModEnabled.Value &&
-                PiPDisablerPlugin.EnableZoom.Value &&
+            if (Settings.ModEnabled.Value &&
+                Settings.EnableZoom.Value &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
                 fovToRestore > 0.5f)
@@ -201,7 +201,7 @@ namespace PiPDisabler
                 // Quick heuristic: if targetFov <= 35 and we have a cached value, use ours.
                 if (targetFov <= 35.5f)
                 {
-                    PiPDisablerPlugin.LogInfo(
+                    PiPDisablerPlugin.LogSource.LogInfo(
                         $"[FreelookTracker] Look interceptor: replacing FOV {targetFov:F1}° → " +
                         $"{fovToRestore:F1}° (pre-freelook snapshot)");
 
@@ -265,7 +265,7 @@ namespace PiPDisabler
                     yield return code;
                 }
 
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[PlayerLookPatch] Transpiler: replaced {replaced} SetFov callsite(s)");
             }
         }

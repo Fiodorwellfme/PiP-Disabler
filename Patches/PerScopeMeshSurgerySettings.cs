@@ -43,10 +43,10 @@ namespace PiPDisabler
 
         private static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => GetActiveOverride();
 
-        internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : PiPDisablerPlugin.PlaneOffsetMeters.Value;
-        internal static float GetPlane1Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1Radius : PiPDisablerPlugin.Plane1Radius.Value;
-        internal static float GetPlane1OffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1OffsetMeters : PiPDisablerPlugin.Plane1OffsetMeters.Value;
-        internal static float GetPlane2Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Position : PiPDisablerPlugin.Plane2Position.Value;
+        internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : Settings.PlaneOffsetMeters.Value;
+        internal static float GetPlane1Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1Radius : Settings.Plane1Radius.Value;
+        internal static float GetPlane1OffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1OffsetMeters : Settings.Plane1OffsetMeters.Value;
+        internal static float GetPlane2Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Position : Settings.Plane2Position.Value;
         internal static float GetPlane2PositionNormalized(float cutLength)
         {
             const float legacyReferenceCutLength = 0.755493f;
@@ -54,16 +54,16 @@ namespace PiPDisabler
             float anchoredDepth = p2LegacyNormalized * legacyReferenceCutLength;
             return cutLength > 1e-5f ? Mathf.Clamp01(anchoredDepth / cutLength) : 0f;
         }
-        internal static float GetPlane2Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Radius : PiPDisablerPlugin.Plane2Radius.Value;
-        internal static float GetPlane3Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Position : PiPDisablerPlugin.Plane3Position.Value;
-        internal static float GetPlane3Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Radius : PiPDisablerPlugin.Plane3Radius.Value;
-        internal static float GetPlane4Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Position : PiPDisablerPlugin.Plane4Position.Value;
-        internal static float GetPlane4Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Radius : PiPDisablerPlugin.Plane4Radius.Value;
-        internal static float GetCutStartOffset() => ActiveScopeOverride != null ? ActiveScopeOverride.CutStartOffset : PiPDisablerPlugin.CutStartOffset.Value;
-        internal static float GetCutLength() => ActiveScopeOverride != null ? ActiveScopeOverride.CutLength : PiPDisablerPlugin.CutLength.Value;
-        internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : PiPDisablerPlugin.NearPreserveDepth.Value;
-        internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : PiPDisablerPlugin.ReticleBaseSize.Value;
-        internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : PiPDisablerPlugin.ExpandSearchToWeaponRoot.Value;
+        internal static float GetPlane2Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Radius : Settings.Plane2Radius.Value;
+        internal static float GetPlane3Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Position : Settings.Plane3Position.Value;
+        internal static float GetPlane3Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Radius : Settings.Plane3Radius.Value;
+        internal static float GetPlane4Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Position : Settings.Plane4Position.Value;
+        internal static float GetPlane4Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Radius : Settings.Plane4Radius.Value;
+        internal static float GetCutStartOffset() => ActiveScopeOverride != null ? ActiveScopeOverride.CutStartOffset : Settings.CutStartOffset.Value;
+        internal static float GetCutLength() => ActiveScopeOverride != null ? ActiveScopeOverride.CutLength : Settings.CutLength.Value;
+        internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : Settings.NearPreserveDepth.Value;
+        internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : Settings.ReticleBaseSize.Value;
+        internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : Settings.ExpandSearchToWeaponRoot.Value;
 
 
         internal static void SetActiveScope(string scopeKey)
@@ -84,26 +84,26 @@ namespace PiPDisabler
 
             try
             {
-                PiPDisablerPlugin.CustomPlaneOffsetMeters.Value = entry.PlaneOffsetMeters;
-                PiPDisablerPlugin.CustomCutRadius.Value = entry.CutRadius;
-                PiPDisablerPlugin.CustomPlane1Radius.Value = entry.Plane1Radius;
-                PiPDisablerPlugin.CustomPlane1OffsetMeters.Value = entry.Plane1OffsetMeters;
-                PiPDisablerPlugin.CustomPlane2Position.Value = entry.Plane2Position;
-                PiPDisablerPlugin.CustomPlane2Radius.Value = entry.Plane2Radius;
-                PiPDisablerPlugin.CustomPlane3Position.Value = entry.Plane3Position;
-                PiPDisablerPlugin.CustomPlane3Radius.Value = entry.Plane3Radius;
-                PiPDisablerPlugin.CustomPlane4Position.Value = entry.Plane4Position;
-                PiPDisablerPlugin.CustomPlane4Radius.Value = entry.Plane4Radius;
-                PiPDisablerPlugin.CustomCutStartOffset.Value = entry.CutStartOffset;
-                PiPDisablerPlugin.CustomCutLength.Value = entry.CutLength;
-                PiPDisablerPlugin.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
-                PiPDisablerPlugin.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
-                PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
-                PiPDisablerPlugin.LogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
+                Settings.CustomPlaneOffsetMeters.Value = entry.PlaneOffsetMeters;
+                Settings.CustomCutRadius.Value = entry.CutRadius;
+                Settings.CustomPlane1Radius.Value = entry.Plane1Radius;
+                Settings.CustomPlane1OffsetMeters.Value = entry.Plane1OffsetMeters;
+                Settings.CustomPlane2Position.Value = entry.Plane2Position;
+                Settings.CustomPlane2Radius.Value = entry.Plane2Radius;
+                Settings.CustomPlane3Position.Value = entry.Plane3Position;
+                Settings.CustomPlane3Radius.Value = entry.Plane3Radius;
+                Settings.CustomPlane4Position.Value = entry.Plane4Position;
+                Settings.CustomPlane4Radius.Value = entry.Plane4Radius;
+                Settings.CustomCutStartOffset.Value = entry.CutStartOffset;
+                Settings.CustomCutLength.Value = entry.CutLength;
+                Settings.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
+                Settings.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
+                Settings.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
+                PiPDisablerPlugin.LogSource.LogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogWarn($"[CustomMeshSettings] Failed to sync Custom config entries from override: {ex.Message}");
+                PiPDisablerPlugin.LogSource.LogInfo($"[CustomMeshSettings] Failed to sync Custom config entries from override: {ex.Message}");
             }
         }
 
@@ -156,22 +156,21 @@ namespace PiPDisabler
                 _file.Entries.Add(target);
             }
 
-            target.PlaneOffsetMeters = PiPDisablerPlugin.CustomPlaneOffsetMeters.Value;
-            target.CutRadius = PiPDisablerPlugin.CustomCutRadius.Value;
-            target.Plane1Radius = PiPDisablerPlugin.CustomPlane1Radius.Value;
-            target.Plane1OffsetMeters = PiPDisablerPlugin.CustomPlane1OffsetMeters.Value;
-            target.Plane2Position = PiPDisablerPlugin.CustomPlane2Position.Value;
-            target.Plane2Radius = PiPDisablerPlugin.CustomPlane2Radius.Value;
-            target.Plane3Position = PiPDisablerPlugin.CustomPlane3Position.Value;
-            target.Plane3Radius = PiPDisablerPlugin.CustomPlane3Radius.Value;
-            target.Plane4Position = PiPDisablerPlugin.CustomPlane4Position.Value;
-            target.Plane4Radius = PiPDisablerPlugin.CustomPlane4Radius.Value;
-            target.CutStartOffset = PiPDisablerPlugin.CustomCutStartOffset.Value;
-            target.CutLength = PiPDisablerPlugin.CustomCutLength.Value;
-            target.NearPreserveDepth = PiPDisablerPlugin.CustomNearPreserveDepth.Value;
-            target.ReticleBaseSize = PiPDisablerPlugin.CustomReticleBaseSize.Value;
-            target.ExpandSearchToWeaponRoot = PiPDisablerPlugin.CustomExpandSearchToWeaponRoot.Value;
-
+            target.PlaneOffsetMeters = Settings.CustomPlaneOffsetMeters.Value;
+            target.CutRadius = Settings.CustomCutRadius.Value;
+            target.Plane1Radius = Settings.CustomPlane1Radius.Value;
+            target.Plane1OffsetMeters = Settings.CustomPlane1OffsetMeters.Value;
+            target.Plane2Position = Settings.CustomPlane2Position.Value;
+            target.Plane2Radius = Settings.CustomPlane2Radius.Value;
+            target.Plane3Position = Settings.CustomPlane3Position.Value;
+            target.Plane3Radius = Settings.CustomPlane3Radius.Value;
+            target.Plane4Position = Settings.CustomPlane4Position.Value;
+            target.Plane4Radius = Settings.CustomPlane4Radius.Value;
+            target.CutStartOffset = Settings.CustomCutStartOffset.Value;
+            target.CutLength = Settings.CustomCutLength.Value;
+            target.NearPreserveDepth = Settings.CustomNearPreserveDepth.Value;
+            target.ReticleBaseSize = Settings.CustomReticleBaseSize.Value;
+            target.ExpandSearchToWeaponRoot = Settings.CustomExpandSearchToWeaponRoot.Value;
             WriteToDisk();
             return true;
         }
@@ -219,7 +218,7 @@ namespace PiPDisabler
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogWarn($"[CustomMeshSettings] Failed to load settings json: {ex.Message}");
+                PiPDisablerPlugin.LogSource.LogInfo($"[CustomMeshSettings] Failed to load settings json: {ex.Message}");
                 _file = new ScopeMeshSurgerySettingsFile();
             }
         }
@@ -233,7 +232,7 @@ namespace PiPDisabler
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogError($"[CustomMeshSettings] Failed to save settings json: {ex.Message}");
+                PiPDisablerPlugin.LogSource.LogInfo($"[CustomMeshSettings] Failed to save settings json: {ex.Message}");
             }
         }
         private static string GetPluginRootDirectory()

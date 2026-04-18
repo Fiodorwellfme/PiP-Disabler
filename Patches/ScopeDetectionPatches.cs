@@ -18,11 +18,11 @@ namespace PiPDisabler.Patches
         private static void Postfix(OpticSight __instance)
         {
             // Always cache the enabled optic (so it's ready if mod is toggled on later)
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[Patch] OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"enabled={__instance?.enabled} frame={Time.frameCount}");
 
-            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            if (!Settings.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticEnabled(__instance);
         }
     }
@@ -35,11 +35,11 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix(OpticSight __instance)
         {
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[Patch] OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"frame={Time.frameCount}");
 
-            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            if (!Settings.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticDisabled(__instance);
         }
     }
@@ -52,9 +52,9 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix()
         {
-            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            if (!Settings.ModEnabled.Value) return;
 
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
             ScopeLifecycle.CheckAndUpdate("ChangeAimingMode");
             ScopeLifecycle.OnSetScopeMode();
@@ -81,7 +81,7 @@ namespace PiPDisabler.Patches
                     && m.GetParameters()[0].ParameterType.IsArray);
 
             if (method == null)
-                PiPDisablerPlugin.LogWarn("[Patch] SetScopeMode: target method not found");
+                PiPDisablerPlugin.LogSource.LogInfo("[Patch] SetScopeMode: target method not found");
 
             return method;
         }
@@ -89,9 +89,9 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix()
         {
-            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            if (!Settings.ModEnabled.Value) return;
 
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[Patch] SetScopeMode frame={Time.frameCount}");
             ScopeLifecycle.OnSetScopeMode();
         }
@@ -110,13 +110,13 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix(Player __instance, GEventArgs9 eventArgs)
         {
-            if (!PiPDisablerPlugin.ModEnabled.Value) return;
+            if (!Settings.ModEnabled.Value) return;
             if (__instance == null || eventArgs == null || eventArgs.Status != CommandStatus.Succeed) return;
 
             var localPlayer = Helpers.GetLocalPlayer();
             if (!ReferenceEquals(__instance, localPlayer)) return;
 
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[Patch] OnSetInHands frame={Time.frameCount} item='{eventArgs.Item?.TemplateId ?? "null"}'");
 
             if (ScopeLifecycle.IsScoped)

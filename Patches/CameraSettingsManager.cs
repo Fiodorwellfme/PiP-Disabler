@@ -31,7 +31,7 @@ namespace PiPDisabler
                 _savedMaxLodLevel = QualitySettings.maximumLODLevel;
                 _applied = true;
 
-                PiPDisablerPlugin.LogVerbose(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[CameraSettings] Saved: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0} maxLOD={_savedMaxLodLevel}");
             }
 
@@ -39,7 +39,7 @@ namespace PiPDisabler
             float scopeFarClip = 0f;
             if (TryGetScopeCameraData(os, out scopeFov, out scopeFarClip))
             {
-                PiPDisablerPlugin.LogVerbose(
+                PiPDisablerPlugin.LogSource.LogInfo(
                     $"[CameraSettings] ScopeCameraData: FOV={scopeFov:F2} FarClip={scopeFarClip:F0}");
             }
 
@@ -53,8 +53,8 @@ namespace PiPDisabler
                 : _savedLodBias * Mathf.Max(magnification, 1f);
             QualitySettings.lodBias = newLodBias;
 
-            int manualMaxLod = PiPDisablerPlugin.ManualMaximumLodLevel != null
-                ? PiPDisablerPlugin.ManualMaximumLodLevel.Value
+            int manualMaxLod = Settings.ManualMaximumLodLevel != null
+                ? Settings.ManualMaximumLodLevel.Value
                 : -1;
             int appliedMaxLod = manualMaxLod >= 0 ? manualMaxLod : 0;
             QualitySettings.maximumLODLevel = appliedMaxLod;
@@ -64,8 +64,8 @@ namespace PiPDisabler
 
             if (_savedCullDistances != null)
             {
-                float manualCullMultiplier = PiPDisablerPlugin.ManualCullingMultiplier != null
-                    ? PiPDisablerPlugin.ManualCullingMultiplier.Value
+                float manualCullMultiplier = Settings.ManualCullingMultiplier != null
+                    ? Settings.ManualCullingMultiplier.Value
                     : 0f;
                 float cullingMultiplier = manualCullMultiplier > 0f
                     ? manualCullMultiplier
@@ -80,7 +80,7 @@ namespace PiPDisabler
                 cam.layerCullDistances = newCull;
             }
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[CameraSettings] Applied: lodBias {_savedLodBias:F2}→{newLodBias:F2} (mag={magnification:F1}x) farClip={cam.farClipPlane:F0} maxLOD={appliedMaxLod}");
         }
 
@@ -100,7 +100,7 @@ namespace PiPDisabler
                     cam.layerCullDistances = _savedCullDistances;
             }
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.LogSource.LogInfo(
                 $"[CameraSettings] Restored: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0} maxLOD={_savedMaxLodLevel}");
 
             _applied = false;
