@@ -67,10 +67,6 @@ namespace PiPDisabler
         {
             if (os == null) return;
 
-            bool shouldHide = Settings.MakeLensesTransparent.Value
-                              || Settings.DisablePiP.Value;
-            if (!shouldHide) return;
-
             Transform searchRoot = FindScopeSearchRoot(os.transform);
 
             // Always dump hierarchy on first enter
@@ -561,7 +557,7 @@ namespace PiPDisabler
         private static bool _dumpedOnce;
         private static void DumpHierarchy(Transform root)
         {
-            if (_dumpedOnce && !Settings.VerboseLogging.Value)
+            if (_dumpedOnce)
                 return;
             _dumpedOnce = true;
 

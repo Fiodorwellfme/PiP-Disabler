@@ -14,14 +14,13 @@ namespace PiPDisabler
         public static ConfigEntry<bool> AutoSwitchReticleRenderForNvg;
 
         // --- General ---
-        public static ConfigEntry<bool> DisablePiP;
         public static ConfigEntry<bool> AutoDisableForVariableScopes;
         public static ConfigEntry<string> AutoBypassNameContains;
         public static ConfigEntry<string> ScopeWhitelistNames;
         public static ConfigEntry<KeyCode> ScopeWhitelistToggleEntryKey;
-        public static ConfigEntry<KeyCode> DisablePiPToggleKey;
-        public static ConfigEntry<bool> MakeLensesTransparent;
-        public static ConfigEntry<KeyCode> LensesTransparentToggleKey;
+
+        // --- Optimization ---
+        public static ConfigEntry<float> AutoLodBiasMultiplier;
 
         // --- Mesh Surgery ---
         public static ConfigEntry<bool> EnableMeshSurgery;
@@ -94,25 +93,23 @@ namespace PiPDisabler
         public static Dictionary<string, ConfigEntry<float>> MapManualLodBias;
 
         // --- Debug ---
-        public static ConfigEntry<bool> VerboseLogging;
-        public static ConfigEntry<bool> DebugLogCutCandidates;
-        public static ConfigEntry<bool> DebugMeshSurgeryLifecycle;
         public static ConfigEntry<bool> DebugReticleAfterEverything;
+
 
         public static void Init(ConfigFile config)
         {
             // --- 0. Global ---
-            ModEnabled = config.Bind("Global", "ModEnabled", true,
+            ModEnabled = config.Bind("Global", "Mod Enabled", true,
                 new ConfigDescription(
                     "Master ON/OFF switch for the entire mod.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false, Order = 2 }));
-            ModToggleKey = config.Bind("Global", "ModToggleKey", KeyCode.None,
+            ModToggleKey = config.Bind("Global", "Mod Toggle Key", KeyCode.None,
                 new ConfigDescription(
                     "Toggle key for master mod enable/disable.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false, Order = 1 }));
-            AutoSwitchReticleRenderForNvg = config.Bind("General", "AutoSwitchReticleRenderForNvg", true,
+            AutoSwitchReticleRenderForNvg = config.Bind("General", "Auto Switch Reticle Render For NVG", true,
                 new ConfigDescription(
                     "Automatically switch reticle CommandBuffer event based on NVG state.\n" +
                 "ON: use AfterForwardAlpha while NVG are active and AfterEverything otherwise.\n" +
@@ -121,52 +118,30 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = true, Order = 0 }));
 
             // --- General ---
-            DisablePiP = config.Bind("General", "DisablePiP", true,
-                new ConfigDescription(
-                    "Disable Picture-in-Picture optic rendering (No-PiP mode). " +
-                "Core feature — gives identical perf between hip-fire and ADS.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            AutoDisableForVariableScopes = config.Bind("General", "AutoDisable", true,
+            AutoDisableForVariableScopes = config.Bind("General", "Auto Disable For Variable Scopes", true,
                 new ConfigDescription(
                     "Automatically disable all mod effects while scoped with unsupported scopes",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            AutoBypassNameContains = config.Bind("General", "AutoBypassNameContains", "npz, PU, vomz, d-evo",
+            AutoBypassNameContains = config.Bind("General", "Auto Bypass Name Contains", "npz, PU, vomz, d-evo",
                 new ConfigDescription(
                     "Comma-separated list of substrings. Any scope whose object name or scope key contains one of these ",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            ScopeWhitelistNames = config.Bind("General", "ScopeWhitelistNames", "",
+            ScopeWhitelistNames = config.Bind("General", "Scope Whitelist Names", "",
                 new ConfigDescription(
                     "Comma/semicolon/newline separated list of allowed scope keys.\n" +
                 "Primary key is derived from the object under mod_scope that does not contain mount (case-insensitive).\n" +
                 "Fallbacks: template _name, template _id, then optic object name. Empty list = whitelist ignored.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            ScopeWhitelistToggleEntryKey = config.Bind("General", "ScopeWhitelistToggleEntryKey", KeyCode.None,
+            ScopeWhitelistToggleEntryKey = config.Bind("General", "Scope Whitelist Toggle Entry Key", KeyCode.None,
                 new ConfigDescription(
                     "When pressed while scoped, add/remove the current scope key in ScopeWhitelistNames (derived from mod_scope non-mount object).",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            DisablePiPToggleKey = config.Bind("General", "DisablePiPToggleKey", KeyCode.None,
-                new ConfigDescription(
-                    "Toggle key for PiP disable.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-
-            MakeLensesTransparent = config.Bind("General", "MakeLensesTransparent", true,
-                new ConfigDescription(
-                    "Hide lens surfaces (linza/backLens) while scoped so you see through the tube.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            LensesTransparentToggleKey = config.Bind("General", "LensesTransparentToggleKey", KeyCode.None,
-                new ConfigDescription(
-                    "Toggle key for lens transparency.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             // --- Weapon Scaling ---
-            EnableWeaponScaling = config.Bind("General", "EnableWeaponScaling", true,
+            EnableWeaponScaling = config.Bind("General", "Enable Weapon Scaling", true,
                 new ConfigDescription(
                     "Compensate weapon/arms model scale across magnification levels.\n" +
                 "Without this, zooming in (lower FOV) makes the weapon appear larger on screen.\n" +
@@ -174,13 +149,13 @@ namespace PiPDisabler
                 "always occupies the same screen space at every magnification level.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            BaselineWeaponScale = config.Bind("General", "BaselineWeaponScale", 0.8873239f,
+            BaselineWeaponScale = config.Bind("General", "Baseline Weapon Scale", 0.8873239f,
                 new ConfigDescription(
                     "Base weapon scale applied at all FOV values before compensation.\n" +
                     "1.00 = default EFT visual scale.",
                     new AcceptableValueRange<float>(0.00f, 2.00f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            WeaponScaleStrength = config.Bind("General", "WeaponScaleStrength", 0.2723005f,
+            WeaponScaleStrength = config.Bind("General", "Weapon Scale Strength", 0.2723005f,
                 new ConfigDescription(
                     "Blends between no compensation and full inverse-FOV compensation.\n" +
                     "0.00 = no compensation, 1.00 = full compensation, values outside [0,1] over/under-compensate.",
@@ -188,54 +163,39 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
 
             // --- Zoom ---
-            EnableZoom = config.Bind("General", "EnableZoom", true,
+            EnableZoom = config.Bind("General", "Enable Zoom", true,
                 new ConfigDescription(
                     "Enable scope magnification via FOV zoom.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            DefaultZoom = config.Bind("General", "DefaultZoom", 4f,
+            DefaultZoom = config.Bind("General", "Default Zoom", 4f,
                 new ConfigDescription(
                     "Default magnification when auto-detection fails (e.g. fixed scopes without zoom data).",
                     new AcceptableValueRange<float>(1f, 16f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            BaselineFOV = config.Bind("General", "BaselineFOV", 50f,
+            BaselineFOV = config.Bind("General", "Baseline FOV", 50f,
                 new ConfigDescription(
                     "What to use when calculating magnified FOV (if set to 50 then 2x will be 25°).\n" +
                     "Be aware that 1x is always forced to 35°.",
                     new AcceptableValueRange<float>(20f, 50f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
-            AutoFovFromScope = config.Bind("General", "AutoFovFromScope", true, //To remove
-                new ConfigDescription(
-                    "Auto-detect magnification from the scope's zoom data (ScopeZoomHandler). " +
-                "Works for variable-zoom scopes. Falls back to DefaultZoom for fixed scopes.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            ScopedFov = config.Bind("General", "ScopedFov", 15f,  //To remove
-                new ConfigDescription(
-                    "FOV (degrees) for FOV zoom fallback mode. Lower = more zoom. " +
-                    "Used for FOV zoom.",
-                    new AcceptableValueRange<float>(5f, 75f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            FovAnimationDuration = config.Bind("General", "FovAnimationDuration", 0.15f,
+            FovAnimationDuration = config.Bind("General", "FOV Animation Duration", 0.15f,
                 new ConfigDescription(
                     "Duration of the FOV transitions during magnification changes.",
                     new AcceptableValueRange<float>(0f, 10f),
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
 
-            ManualLodBias = config.Bind("Optimization", "ManualLodBias", 4.0f,  //Should be gated behind a toggle, otherwise default to ScopeCameraData
+            ManualLodBias = config.Bind("Optimization", "Manual LOD Bias", 0f,
                 new ConfigDescription(
                     "Manual LOD bias while scoped.\n" +
-                    "0 = auto (baseLodBias * magnification).\n" +
-                    ">0 = force this exact value (e.g. 4.0).",
+                    "0 = auto (Magnification * Auto LOD bias multiplier).",
                     new AcceptableValueRange<float>(0f, 20f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            ManualMaximumLodLevel = config.Bind("Optimization", "ManualMaximumLodLevel", -1, //To remove, useless
+                    new ConfigurationManagerAttributes { IsAdvanced = false }));
+            AutoLodBiasMultiplier = config.Bind("Optimization", "Auto LOD bias multiplier", 2f,
                 new ConfigDescription(
-                    "Manual QualitySettings.maximumLODLevel while scoped.\n" +
-                    "-1 = auto (force 0 / highest detail).\n" +
-                    ">=0 = force this exact max LOD level.",
-                    new AcceptableValueRange<int>(-1, 8),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
+                    "Self explanatory",
+                    new AcceptableValueRange<float>(0.01f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false }));
             ManualCullingMultiplier = config.Bind("Optimization", "ManualCullingMultiplier", 0.8f,
                 new ConfigDescription(
                     "Manual multiplier for Camera.layerCullDistances while scoped.\n" +
@@ -243,7 +203,6 @@ namespace PiPDisabler
                     ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
                     new AcceptableValueRange<float>(0f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            MapManualLodBias = new Dictionary<string, ConfigEntry<float>>(StringComparer.OrdinalIgnoreCase);
 
             // --- Mesh Surgery (ON by default, Cylinder mode) --- //Needs global cleanup, config name standardization.
             EnableMeshSurgery = config.Bind("Global Mesh Surgery settings", "EnableMeshSurgery", true,
@@ -388,11 +347,6 @@ namespace PiPDisabler
                     "Custom per-scope plane offset applied along plane normal (meters).",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true }));
-            CustomCutRadius = config.Bind("Per scope settings", "CutRadius", 0f,
-                new ConfigDescription(
-                    "Custom per-scope max cut distance in meters (0 = unlimited).",
-                    new AcceptableValueRange<float>(0f, 1f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             CustomPlane1Radius = config.Bind("Per scope settings", "Plane1Radius", 0.011f,
                 new ConfigDescription(
                     "Custom per-scope near radius in meters.",
@@ -519,22 +473,6 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = false }));
 
             // --- Debug ---
-            VerboseLogging = config.Bind("Diagnostics", "VerboseLogging", false,
-                new ConfigDescription(
-                    "Enable detailed logging. Turn on to diagnose lens/zoom issues.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false }));
-            DebugLogCutCandidates = config.Bind("Diagnostics", "DebugLogCutCandidates", false,
-                new ConfigDescription(
-                    "When enabled, logs every mesh candidate found by mesh surgery (path, mesh name, vertices, active state), " +
-                "plus per-candidate radius checks. Useful to diagnose attachments that are not being cut.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-            DebugMeshSurgeryLifecycle = config.Bind("Diagnostics", "DebugMeshSurgeryLifecycle", false,
-                new ConfigDescription(
-                    "When enabled, logs detailed scope-enter/mode-switch mesh-surgery context and last cut attempt snapshot.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
             DebugReticleAfterEverything = config.Bind("General", "Draw reticle after everything", false,
                 new ConfigDescription(
                     "When enabled, reticle is always clear but doesn't get tinted by NVGs",

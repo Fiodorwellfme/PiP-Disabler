@@ -130,53 +130,5 @@ namespace PiPDisabler
             ScopeLifecycle.CheckAndUpdate("Update");
             ScopeLifecycle.Tick();
         }
-        internal static string GetCurrentLocationId()
-        {
-            try
-            {
-                var gw = Singleton<GameWorld>.Instance;
-                return gw != null ? gw.LocationId : null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        internal static float GetManualLodBiasForCurrentMap()
-        {
-            float fallback = Settings.ManualLodBias != null ? Settings.ManualLodBias.Value : 0f;
-            string locationId = GetCurrentLocationId();
-            if (string.IsNullOrEmpty(locationId) || Settings.MapManualLodBias == null)
-                return fallback;
-
-            ConfigEntry<float> entry;
-            if (Settings.MapManualLodBias.TryGetValue(locationId, out entry) && entry != null)
-                return entry.Value;
-
-            return fallback;
-        }
-
-        private void BindPerMapLodBias(string configKeySuffix, string mapDisplayName, params string[] locationIds)
-        {
-            if (locationIds == null || locationIds.Length == 0 || string.IsNullOrWhiteSpace(configKeySuffix))
-                return;
-
-            var entry = Config.Bind("General Per-Map", $"ManualLodBias_{configKeySuffix}", Settings.ManualLodBias.Value,
-                new ConfigDescription(
-                    $"Manual LOD bias override while scoped on map '{mapDisplayName}'.\n" +
-                    "0 = auto (baseLodBias * magnification).\n" +
-                    ">0 = force this exact value (e.g. 4.0).",
-                    new AcceptableValueRange<float>(0f, 20f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true }));
-
-            for (int i = 0; i < locationIds.Length; i++)
-            {
-                string locationId = locationIds[i];
-                if (string.IsNullOrWhiteSpace(locationId))
-                    continue;
-                Settings.MapManualLodBias[locationId] = entry;
-            }
-        }
     }
 }

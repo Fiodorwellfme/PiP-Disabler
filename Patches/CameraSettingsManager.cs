@@ -9,7 +9,6 @@ namespace PiPDisabler
         private static float _savedLodBias;
         private static float _savedFarClip;
         private static float[] _savedCullDistances;
-        private static int _savedMaxLodLevel;
         private static bool _applied;
 
         public static void ApplyForOptic(OpticSight os)
@@ -28,11 +27,10 @@ namespace PiPDisabler
                 _savedCullDistances = cam.layerCullDistances != null
                     ? (float[])cam.layerCullDistances.Clone()
                     : null;
-                _savedMaxLodLevel = QualitySettings.maximumLODLevel;
                 _applied = true;
 
                 PiPDisablerPlugin.LogSource.LogInfo(
-                    $"[CameraSettings] Saved: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0} maxLOD={_savedMaxLodLevel}");
+                    $"[CameraSettings] Saved: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0}");
             }
 
             float scopeFov = 0f;
@@ -47,17 +45,16 @@ namespace PiPDisabler
             if (magnification < 0.1f)
                 magnification = scopeFov > 0.1f ? 35f / scopeFov : 1f;
 
-            float manualLodBias = PiPDisablerPlugin.GetManualLodBiasForCurrentMap();
+            float manualLodBias = Settings.ManualLodBias.Value;
+            if (manualLodBias == 0f)
+            {
+                manualLodBias = FovController.GetEffectiveMagnificationUncached() * Settings.AutoLodBiasMultiplier.Value;
+                PiPDisablerPlugin.LogSource.LogInfo( $"[CameraSettings] LODbias auto set to {manualLodBias:F2}");
+            }
             float newLodBias = manualLodBias > 0f
                 ? manualLodBias
                 : _savedLodBias * Mathf.Max(magnification, 1f);
             QualitySettings.lodBias = newLodBias;
-
-            int manualMaxLod = Settings.ManualMaximumLodLevel != null
-                ? Settings.ManualMaximumLodLevel.Value
-                : -1;
-            int appliedMaxLod = manualMaxLod >= 0 ? manualMaxLod : 0;
-            QualitySettings.maximumLODLevel = appliedMaxLod;
 
             if (scopeFarClip > cam.farClipPlane)
                 cam.farClipPlane = scopeFarClip;
@@ -81,7 +78,7 @@ namespace PiPDisabler
             }
 
             PiPDisablerPlugin.LogSource.LogInfo(
-                $"[CameraSettings] Applied: lodBias {_savedLodBias:F2}→{newLodBias:F2} (mag={magnification:F1}x) farClip={cam.farClipPlane:F0} maxLOD={appliedMaxLod}");
+                $"[CameraSettings] Applied: lodBias {_savedLodBias:F2}→{newLodBias:F2} (mag={magnification:F1}x) farClip={cam.farClipPlane:F0}");
         }
 
         public static void Restore()
@@ -90,7 +87,6 @@ namespace PiPDisabler
                 return;
 
             QualitySettings.lodBias = _savedLodBias;
-            QualitySettings.maximumLODLevel = _savedMaxLodLevel;
 
             var cam = Helpers.GetMainCamera();
             if (cam != null)
@@ -101,7 +97,7 @@ namespace PiPDisabler
             }
 
             PiPDisablerPlugin.LogSource.LogInfo(
-                $"[CameraSettings] Restored: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0} maxLOD={_savedMaxLodLevel}");
+                $"[CameraSettings] Restored: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0}");
 
             _applied = false;
         }

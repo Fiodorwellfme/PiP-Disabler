@@ -40,9 +40,6 @@ namespace PiPDisabler
 
         public static float ComputeZoomedFov()
         {
-            if (!Settings.AutoFovFromScope.Value)
-                return Settings.ScopedFov.Value;
-
             float magnification = GetEffectiveMagnification();
             if (magnification > 0.1f)
             {
@@ -89,7 +86,7 @@ namespace PiPDisabler
             return result;
         }
 
-        private static float GetEffectiveMagnificationUncached()
+        public static float GetEffectiveMagnificationUncached()
         {
             float templateMag = GetTemplateZoom();
             return templateMag;
@@ -193,7 +190,7 @@ namespace PiPDisabler
                 return currentZoom;
             }
 
-            return 0f; // <- missing path
+            return 0f;
         }
 
         private static void LogTemplateZoomVerbose(float zoom, string message, string mode)

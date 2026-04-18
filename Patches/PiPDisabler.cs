@@ -63,8 +63,6 @@ namespace PiPDisabler
 
 internal static void TickBaseOpticCamera()
         {
-            if (!Settings.DisablePiP.Value) return;
-
             // Any condition that should preserve vanilla PiP must restore and skip disabling.
             if (ShouldAllowVanillaPiP())
             {
@@ -353,10 +351,7 @@ _ignoreOnDisableFrame.Clear();
 
         private static bool ShouldAllowVanillaPiP()
         {
-            return !Settings.ModEnabled.Value
-                || !Settings.DisablePiP.Value
-                || ScopeLifecycle.IsModBypassedForCurrentScope
-                || ScopeLifecycle.IsLastOpticNameBypassed();
+            return !Settings.ModEnabled.Value || ScopeLifecycle.IsModBypassedForCurrentScope || ScopeLifecycle.IsLastOpticNameBypassed();
         }
 
         internal sealed class OpticComponentUpdaterCopyComponentFromOptic_DisablePiP : ModulePatch
@@ -368,7 +363,6 @@ _ignoreOnDisableFrame.Clear();
             private static void Postfix(OpticComponentUpdater __instance)
             {
                 if (!Settings.ModEnabled.Value) return;
-                if (!Settings.DisablePiP.Value) return;
                 if (__instance == null) return;
                 if (ShouldSuppressPiPDisableForCurrentOptic(__instance)) return;
 
@@ -393,19 +387,15 @@ _ignoreOnDisableFrame.Clear();
             {
                 if (!Settings.ModEnabled.Value) return true;
                 if (__instance == null) return true;
+                OpticCameraTransform = __instance.transform;
+                Debug_LastOpticCameraTransform = OpticCameraTransform;
+                Debug_LastOpticCameraSetBy = __instance.name;
+                Debug_LastOpticCameraSetFrame = Time.frameCount;
 
-                if (Settings.DisablePiP.Value)
+                if (!ShouldSuppressPiPDisableForCurrentOptic(__instance))
                 {
-                    OpticCameraTransform = __instance.transform;
-                    Debug_LastOpticCameraTransform = OpticCameraTransform;
-                    Debug_LastOpticCameraSetBy = __instance.name;
-                    Debug_LastOpticCameraSetFrame = Time.frameCount;
-
-                    if (!ShouldSuppressPiPDisableForCurrentOptic(__instance))
-                    {
-                        var cam = __instance.GetComponent<Camera>();
-                        ForceDisable(cam);
-                    }
+                    var cam = __instance.GetComponent<Camera>();
+                    ForceDisable(cam);
                 }
 
                 return true;
