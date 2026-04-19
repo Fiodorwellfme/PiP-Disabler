@@ -1,8 +1,9 @@
-using System;
-using System.Collections.Generic;
 using EFT;
 using EFT.Animations;
 using EFT.CameraControl;
+using HarmonyLib;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace PiPDisabler
@@ -38,16 +39,7 @@ namespace PiPDisabler
         private static OpticSight _lastEnabledOptic; // cache from OnEnable
         private static bool _modBypassedForCurrentScope;
         private static bool _restoreOneXFovOnScopeExit;
-
-        // Mesh surgery retry: when the initial cut on scope enter produces zero
-        // entries (GPU buffers not ready, transforms not settled), retry on
-        // subsequent frames until it succeeds or we hit the attempt limit.
-        private static int _meshRetryAttemptsLeft;
-        private static int _meshRetryNextFrame;
-        private const int MeshRetryMaxAttempts = 10;
-        private const int MeshRetryFrameInterval = 3;
         private static bool _meshSurgerySuppressedByReload;
-        private static float _meshSurgeryResumeAfterTime = -1f;
         private static bool _reticleSuppressedByReload;
 
         // Post-exit FOV restore: suppresses EFT's method_23 SetFov calls while our
@@ -175,34 +167,21 @@ namespace PiPDisabler
                 FovController.OnModeSwitch();
 
                 // RESTORE all meshes first, then re-cut with new mode's plane position.
-                _meshRetryAttemptsLeft = 0;
                 _meshSurgerySuppressedByReload = false;
-                _meshSurgeryResumeAfterTime = -1f;
-                if (Settings.EnableMeshSurgery.Value)
+                MeshSurgeryManager.RestoreForScope(os.transform);
+                if (IsReloadActive())
                 {
-                    MeshSurgeryManager.RestoreForScope(os.transform);
-                    if (IsReloadActive())
-                    {
-                        PiPDisablerPlugin.LogSource.LogInfo(
-                            $"[ScopeLifecycle] Skipping mode-switch mesh surgery because reload is active. frame={Time.frameCount}");
-                        LensTransparency.RestoreAll();
-                        SuppressReticleForReload();
-                        _meshSurgerySuppressedByReload = true;
-                    }
-                    else
-                    {
-                        MeshSurgeryManager.ApplyForOptic(os);
-
-                        if (!MeshSurgeryManager.HasSuccessfulCut())
-                        {
-                            PiPDisablerPlugin.LogSource.LogInfo(
-                                $"[ScopeLifecycle][DEBUG] Mode-switch mesh surgery produced zero cuts — " +
-                                $"scheduling retry. frame={Time.frameCount}");
-                            _meshRetryAttemptsLeft = MeshRetryMaxAttempts;
-                            _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
-                        }
-                    }
+                    PiPDisablerPlugin.LogSource.LogInfo(
+                        $"[ScopeLifecycle] Skipping mode-switch mesh surgery because reload is active. frame={Time.frameCount}");
+                    LensTransparency.RestoreAll();
+                    SuppressReticleForReload();
+                    _meshSurgerySuppressedByReload = true;
                 }
+                else
+                {
+                    MeshSurgeryManager.ApplyForOptic(os);
+                }
+
 
                 // Re-apply camera settings for the new mode's FOV
                 CameraSettingsManager.ApplyForOptic(os);
@@ -357,48 +336,12 @@ namespace PiPDisabler
             // Keep lens transparent if EFT restores the original materials
             LensTransparency.EnsureHidden();
 
-            // ── Mesh surgery retry ─────────────────────────────────────────
-            // If the initial cut on scope enter produced zero entries (GPU buffers
-            // weren't uploaded yet, or transforms hadn't settled), retry here.
-            if (_meshRetryAttemptsLeft > 0
-                && Settings.EnableMeshSurgery.Value
-                && _activeOptic != null
-                && !_meshSurgerySuppressedByReload
-                && Time.frameCount >= _meshRetryNextFrame)
-            {
-                _meshRetryAttemptsLeft--;
-                PiPDisablerPlugin.LogSource.LogInfo(
-                    $"[ScopeLifecycle][DEBUG] Mesh surgery retry attempt " +
-                    $"({MeshRetryMaxAttempts - _meshRetryAttemptsLeft}/{MeshRetryMaxAttempts}) " +
-                    $"frame={Time.frameCount}");
-
-                bool success = MeshSurgeryManager.RetryPendingCut(_activeOptic);
-                if (success)
-                {
-                    PiPDisablerPlugin.LogSource.LogInfo(
-                        $"[ScopeLifecycle] Mesh surgery retry SUCCEEDED on attempt " +
-                        $"{MeshRetryMaxAttempts - _meshRetryAttemptsLeft}. frame={Time.frameCount}");
-                    _meshRetryAttemptsLeft = 0;
-                }
-                else
-                {
-                    _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
-                    if (_meshRetryAttemptsLeft == 0)
-                    {
-                        PiPDisablerPlugin.LogSource.LogInfo(
-                            $"[ScopeLifecycle] Mesh surgery retry EXHAUSTED all {MeshRetryMaxAttempts} attempts. " +
-                            $"frame={Time.frameCount}");
-                    }
-                }
-            }
-
-            if (Settings.EnableMeshSurgery.Value && _activeOptic != null)
+            
+            if ( _activeOptic != null)
             {
                 bool reloadActive = IsReloadActive();
-                if (reloadActive)
+                if (reloadActive && Settings.BypassDuringReload.Value)
                 {
-                    _meshRetryAttemptsLeft = 0;
-                    _meshSurgeryResumeAfterTime = -1f;
                     SuppressReticleForReload();
                     if (!_meshSurgerySuppressedByReload)
                     {
@@ -411,26 +354,11 @@ namespace PiPDisabler
                 }
                 else if (_meshSurgerySuppressedByReload)
                 {
-                    if (_meshSurgeryResumeAfterTime < 0f)
-                    {
-                        _meshSurgeryResumeAfterTime = Time.realtimeSinceStartup +
-                            Mathf.Max(0f, Settings.ReloadMeshResumeDelaySeconds.Value);
-                    }
-                    if (Time.realtimeSinceStartup >= _meshSurgeryResumeAfterTime)
-                    {
-                        _meshSurgerySuppressedByReload = false;
-                        _meshSurgeryResumeAfterTime = -1f;
-                        MeshSurgeryManager.ApplyForOptic(_activeOptic);
-                        LensTransparency.HideAllLensSurfaces(_activeOptic);
-                        ResumeReticleAfterReload();
-                        if (!MeshSurgeryManager.HasSuccessfulCut())
-                        {
-                            _meshRetryAttemptsLeft = MeshRetryMaxAttempts;
-                            _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
-                        }
-                        PiPDisablerPlugin.LogSource.LogInfo(
-                            $"[ScopeLifecycle] Mesh surgery resumed after reload. frame={Time.frameCount}");
-                    }
+                    _meshSurgerySuppressedByReload = false;
+                    MeshSurgeryManager.ApplyForOptic(_activeOptic);
+                    LensTransparency.HideAllLensSurfaces(_activeOptic);
+                    ResumeReticleAfterReload();
+                    PiPDisablerPlugin.LogSource.LogInfo($"[ScopeLifecycle] Mesh surgery resumed after reload. frame={Time.frameCount}");
                 }
             }
 
@@ -455,9 +383,7 @@ namespace PiPDisabler
         /// </summary>
         public static void ForceExit()
         {
-            _meshRetryAttemptsLeft = 0;
             _meshSurgerySuppressedByReload = false;
-            _meshSurgeryResumeAfterTime = -1f;
             _reticleSuppressedByReload = false;
             FreelookTracker.Reset();
             if (_isScoped)
@@ -869,32 +795,18 @@ namespace PiPDisabler
             ScopeEffectsRenderer.Show();
 
             // 5. Mesh surgery (once) — if it fails (zero entries), Tick() will retry
-            _meshRetryAttemptsLeft = 0;
             _meshSurgerySuppressedByReload = false;
-            _meshSurgeryResumeAfterTime = -1f;
-            if (Settings.EnableMeshSurgery.Value)
+            if (IsReloadActive())
             {
-                if (IsReloadActive())
-                {
-                    PiPDisablerPlugin.LogSource.LogInfo(
-                        $"[ScopeLifecycle] Skipping initial mesh surgery because reload is active. frame={Time.frameCount}");
-                    LensTransparency.RestoreAll();
-                    SuppressReticleForReload();
-                    _meshSurgerySuppressedByReload = true;
-                }
-                else
-                {
-                    MeshSurgeryManager.ApplyForOptic(os);
-
-                    if (!MeshSurgeryManager.HasSuccessfulCut())
-                    {
-                        PiPDisablerPlugin.LogSource.LogInfo(
-                            $"[ScopeLifecycle][DEBUG] Initial mesh surgery produced zero cuts — " +
-                            $"scheduling retry (up to {MeshRetryMaxAttempts} attempts). frame={Time.frameCount}");
-                        _meshRetryAttemptsLeft = MeshRetryMaxAttempts;
-                        _meshRetryNextFrame = Time.frameCount + MeshRetryFrameInterval;
-                    }
-                }
+                PiPDisablerPlugin.LogSource.LogInfo(
+                    $"[ScopeLifecycle] Skipping initial mesh surgery because reload is active. frame={Time.frameCount}");
+                LensTransparency.RestoreAll();
+                SuppressReticleForReload();
+                _meshSurgerySuppressedByReload = true;
+            }
+            else
+            {
+                MeshSurgeryManager.ApplyForOptic(os);
             }
 
             // 6. Swap main camera LOD/culling settings with scope camera settings
@@ -916,9 +828,7 @@ namespace PiPDisabler
         {
             if (!_isScoped) return;
 
-            _meshRetryAttemptsLeft = 0;
             _meshSurgerySuppressedByReload = false;
-            _meshSurgeryResumeAfterTime = -1f;
             _reticleSuppressedByReload = false;
 
             // Reset freelook tracking so stale state doesn't persist into next scope
@@ -1004,7 +914,6 @@ namespace PiPDisabler
             try
             {
                 if (_modBypassedForCurrentScope) return;
-                if (!Settings.EnableZoom.Value) return;
                 if (!CameraClass.Exist) return;
 
                 float zoomBaseFov = FovController.ZoomBaselineFov;
@@ -1095,8 +1004,12 @@ namespace PiPDisabler
         private static bool IsReloadActive()
         {
             var player = GetLocalPlayer();
-            var firearmController = player?.HandsController as Player.FirearmController;
-            return firearmController != null && firearmController.IsInReloadOperation();
+            var pwa = player.ProceduralWeaponAnimation;
+            var field = AccessTools.Field(typeof(ProceduralWeaponAnimation), "_tacticalReload");
+            var blender = field.GetValue(pwa);
+            var valueProp = AccessTools.Property(blender.GetType(), "Value");
+            float blendValue = (float)valueProp.GetValue(blender, null);
+            return blendValue > (Mathf.Epsilon + Settings.ReloadBypassModifier.Value);
         }
 
         private static void SuppressReticleForReload()

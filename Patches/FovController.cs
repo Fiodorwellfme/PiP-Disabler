@@ -41,30 +41,25 @@ namespace PiPDisabler
         public static float ComputeZoomedFov()
         {
             float magnification = GetEffectiveMagnification();
-            if (magnification > 0.1f)
+            float oneXTargetFov = GetOneXTargetFov();
+            float resultFov = magnification <= 1.01f
+                ? oneXTargetFov
+                : MagnificationToFov(magnification, ZoomBaselineFov);
+
+            // Log on change
+            string source = _lastLoggedSource ?? "?";
+            if (Mathf.Abs(magnification - _lastLoggedMag) > 0.01f)
             {
-                float oneXTargetFov = GetOneXTargetFov();
-                float resultFov = magnification <= 1.01f
-                    ? oneXTargetFov
-                    : MagnificationToFov(magnification, ZoomBaselineFov);
-
-                // Log on change
-                string source = _lastLoggedSource ?? "?";
-                if (Mathf.Abs(magnification - _lastLoggedMag) > 0.01f)
-                {
-                    _lastLoggedMag = magnification;
-                    string mapping = magnification <= 1.01f
-                        ? $"(1x override={oneXTargetFov:F1}°)"
-                        : $"(baseline={ZoomBaselineFov:F0}°)";
-                    PiPDisablerPlugin.LogSource.LogInfo(
-                        $"[FovController] mag={magnification:F2}x → mainFov={resultFov:F1}° " +
-                        $"{mapping} [{source}]");
-                }
-
-                return resultFov;
+                _lastLoggedMag = magnification;
+                string mapping = magnification <= 1.01f
+                    ? $"(1x override={oneXTargetFov:F1}°)"
+                    : $"(baseline={ZoomBaselineFov:F0}°)";
+                PiPDisablerPlugin.LogSource.LogInfo(
+                    $"[FovController] mag={magnification:F2}x → mainFov={resultFov:F1}° " +
+                    $"{mapping} [{source}]");
             }
 
-            return Settings.ScopedFov.Value;
+            return resultFov;
         }
 
         /// <summary>

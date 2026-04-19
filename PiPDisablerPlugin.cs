@@ -24,7 +24,6 @@ namespace PiPDisabler
             ScopeLifecycle.Init();
             FreelookTracker.Init();
             Settings.ModEnabled.SettingChanged += OnModEnabledChanged;
-            Settings.EnableWeaponScaling.SettingChanged += OnWeaponScalingToggled;
             Settings.ScopeWhitelistNames.SettingChanged += OnWhitelistSettingsChanged;
 
             LogSource.LogInfo("PiP-Disabler 0.6.0 loaded.");
@@ -39,7 +38,6 @@ namespace PiPDisabler
             PiPDisabler.RestoreAllCameras();
 
             Settings.ModEnabled.SettingChanged -= OnModEnabledChanged;
-            Settings.EnableWeaponScaling.SettingChanged -= OnWeaponScalingToggled;
             Settings.ScopeWhitelistNames.SettingChanged -= OnWhitelistSettingsChanged;
         }
 
@@ -54,18 +52,6 @@ namespace PiPDisabler
             else
             {
                 ScopeLifecycle.SyncState();
-            }
-        }
-
-        private static void OnWeaponScalingToggled(object sender, EventArgs e)
-        {
-            if (!Settings.EnableWeaponScaling.Value)
-            {
-                Patches.WeaponScalingPatch.RestoreScale();
-            }
-            else if (ScopeLifecycle.IsScoped)
-            {
-                Patches.WeaponScalingPatch.CaptureBaseState();
             }
         }
 

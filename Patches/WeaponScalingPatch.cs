@@ -21,7 +21,6 @@ namespace PiPDisabler.Patches
         }
         public static void CaptureBaseState()
         {
-            if (!Settings.EnableWeaponScaling.Value) return;
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) { _isActive = false; return; }
             _isActive = true;
@@ -29,7 +28,6 @@ namespace PiPDisabler.Patches
         public static void UpdateScale()
         {
             if (!_isActive) return;
-            if (!Settings.EnableWeaponScaling.Value) return;
             var player = GetMainPlayer();
             if (player == null) return;
             if (!CameraClass.Exist) return;
@@ -105,7 +103,6 @@ namespace PiPDisabler.Patches
         private static void Postfix(Player __instance)
         {
             if (!__instance.IsYourPlayer) return;
-            if (!Settings.EnableWeaponScaling.Value) return;
             if (!ScopeLifecycle.IsScoped) return;
             if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
             if (!_isActive) return;

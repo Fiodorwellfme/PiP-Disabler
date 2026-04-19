@@ -190,7 +190,6 @@ namespace PiPDisabler
             float fovToRestore = _fovBeforeFreelook > 0.5f ? _fovBeforeFreelook : _lastAppliedScopedFov;
 
             if (Settings.ModEnabled.Value &&
-                Settings.EnableZoom.Value &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
                 fovToRestore > 0.5f)
