@@ -12,7 +12,6 @@ namespace PiPDisabler
         // --- 0. Global ---
         public static ConfigEntry<bool> ModEnabled;
         public static ConfigEntry<KeyCode> ModToggleKey;
-        public static ConfigEntry<bool> AutoSwitchReticleRenderForNvg;
 
         // --- General ---
         public static ConfigEntry<bool> AutoDisableForVariableScopes;
@@ -100,13 +99,6 @@ namespace PiPDisabler
                     "Toggle key for master mod enable/disable.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false})));
-            ConfigEntries.Add(AutoSwitchReticleRenderForNvg = config.Bind("General", "Auto Switch Reticle Render For NVG", true,
-                new ConfigDescription(
-                    "Automatically switch reticle CommandBuffer event based on NVG state.\n" +
-                "ON: use AfterForwardAlpha while NVG are active and AfterEverything otherwise.\n" +
-                "OFF: keep the normal path (AfterForwardAlpha) unless debug override is enabled.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true})));
 
             // --- General ---
             ConfigEntries.Add(AutoDisableForVariableScopes = config.Bind("General", "Auto Disable For Variable Scopes", true,
@@ -134,13 +126,13 @@ namespace PiPDisabler
             // --- Weapon Scaling ---
             ConfigEntries.Add(BaselineWeaponScale = config.Bind("General", "Baseline Weapon Scale", 0.8873239f,
                 new ConfigDescription(
-                    "Base weapon scale applied at all FOV values before compensation.\n" +
+                    "NOT WORKING CURRENTLY. Base weapon scale applied at all FOV values before compensation.\n" +
                     "1.00 = default EFT visual scale.",
                     new AcceptableValueRange<float>(0.00f, 2.00f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(WeaponScaleStrength = config.Bind("General", "Weapon Scale Strength", 0.2723005f,
                 new ConfigDescription(
-                    "Blends between no compensation and full inverse-FOV compensation.\n" +
+                    "NOT WORKING CURRENTLY. Blends between no compensation and full inverse-FOV compensation.\n" +
                     "0.00 = no compensation, 1.00 = full compensation, values outside [0,1] over/under-compensate.",
                     new AcceptableValueRange<float>(-2.00f, 2.00f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
@@ -162,9 +154,9 @@ namespace PiPDisabler
                     "Bypass the mod while reloading",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(ReloadBypassModifier = config.Bind("General", "Reload Bypass Modifier", 0.7f,
+            ConfigEntries.Add(ReloadBypassModifier = config.Bind("General", "Reload Bypass Modifier", 0.2f,
                 new ConfigDescription(
-                    "Changes the duration of the reload bypass",
+                    "Changes the duration of the reload bypass, higher values lower the duration.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
             ConfigEntries.Add(ManualLodBias = config.Bind("Optimization", "Manual LOD Bias", 0f,
@@ -191,15 +183,6 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Offset applied along plane normal (meters).",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(PlaneNormalAxis = config.Bind("Global Mesh Surgery settings", "PlaneNormalAxis", "-Y", //Should be hard set to -Y
-                new ConfigDescription(
-                    "Which local axis to use as the cut plane normal.\n" +
-                    "Auto = use backLens.forward (game default).\n" +
-                    "X/Y/Z = force that local axis as the plane normal.\n" +
-                    "-X/-Y/-Z = force the negative of that axis.\n" +
-                    "If the cut is horizontal when it should be vertical, try Z or Y.",
-                    new AcceptableValueList<string>("Auto", "X", "Y", "Z", "-X", "-Y", "-Z"),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(Plane1Radius = config.Bind("Global Mesh Surgery settings", "Plane1Radius", 0.011f,
                 new ConfigDescription(
@@ -267,12 +250,9 @@ namespace PiPDisabler
                     "0 = disabled (cut starts at the near plane — removes everything).",
                     new AcceptableValueRange<float>(0f, 0.15f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(ReticleBaseSize = config.Bind("Global Mesh Surgery settings", "ReticleBaseSize", 0.030f,
+            ConfigEntries.Add(ReticleBaseSize = config.Bind("Global Mesh Surgery settings", "Reticle Base Size", 0.030f,
                 new ConfigDescription(
-                    "Physical diameter (meters) of the reticle quad at 1x magnification.\n" +
-                    "The quad is scaled by 1/magnification so screen-pixel coverage stays constant\n" +
-                    "across all zoom levels.  Typical scope lens diameter is 0.02-0.04 m.\n" +
-                    "Set to 0 to fall back to the legacy CylinderRadius x2 value.",
+                    "Size of the reticle",
                     new AcceptableValueRange<float>(0f, 0.2f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(ExpandSearchToWeaponRoot = config.Bind("Global Mesh Surgery settings", "ExpandSearchToWeaponRoot", true, //Needs to be hardset
@@ -383,8 +363,7 @@ namespace PiPDisabler
             // --- Scope Effects ---
             ConfigEntries.Add(VignetteEnabled = config.Bind("Scope Effects", "Vignette", false,
                 new ConfigDescription(
-                    "Render a circular vignette ring around the scope aperture.\n" +
-                "A world-space quad at the lens position fading from transparent centre to black edge.",
+                    "Render a circular vignette ring around the scope aperture.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(VignetteOpacity = config.Bind("Scope Effects", "Vignette Opacity", 0.78f,
@@ -394,9 +373,7 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(VignetteSizeMult = config.Bind("Scope Effects", "Vignette Size Multiplier", 0.41f,
                 new ConfigDescription(
-                    "Vignette quad diameter as a multiplier of ReticleBaseSize.\n" +
-                    "1.0 = same size as reticle.  1.5 gives a visible border ring.\n" +
-                    "Higher values (5-15) may be needed for high-magnification scopes.",
+                    "Vignette quad diameter as a multiplier of Reticle Base Size.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(VignetteSoftness = config.Bind("Scope Effects", "Vignette Softness", 1f,
@@ -407,8 +384,7 @@ namespace PiPDisabler
 
             ConfigEntries.Add(ScopeShadowEnabled = config.Bind("Scope Effects", "ScopeShadow", false,
                 new ConfigDescription(
-                    "Overlay a fullscreen scope-tube shadow: black everywhere except a transparent\n" +
-                "circular window in the centre.  Simulates looking down a scope tube.",
+                    "Overlay a fullscreen scope-tube shadow: black everywhere except a transparent hole where the lens is.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(DebugShowScopeShadowMask = config.Bind("Scope Effects", "DebugShowScopeShadowMask", false,
@@ -428,14 +404,12 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(ScopeShadowRadius = config.Bind("Scope Effects", "ScopeShadow Radius", 0.05f,
                 new ConfigDescription(
-                    "Radius of the transparent centre window as a fraction of the half-screen (0.0-0.5).\n" +
-                    "0.18 = window fills roughly 36% of screen width.  Increase for wider aperture.",
+                    "Radius of the transparent part",
                     new AcceptableValueRange<float>(0.02f, 0.5f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(ScopeShadowSoftness = config.Bind("Scope Effects", "ScopeShadow Softness", 0.08f,
                 new ConfigDescription(
-                    "Width of the gradient edge between the clear window and the black shadow (fraction of screen).\n" +
-                    "0 = hard edge.  0.05-0.1 is a natural-looking falloff.",
+                    "Width of the gradient",
                     new AcceptableValueRange<float>(0f, 0.3f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
 

@@ -347,6 +347,7 @@ namespace PiPDisabler
                     {
                         MeshSurgeryManager.RestoreForScope(_activeOptic.transform);
                         LensTransparency.RestoreAll();
+                        ScopeEffectsRenderer.Hide();
                         _meshSurgerySuppressedByReload = true;
                         PiPDisablerPlugin.LogSource.LogInfo(
                             $"[ScopeLifecycle] Mesh surgery suspended during reload. frame={Time.frameCount}");
@@ -358,6 +359,7 @@ namespace PiPDisabler
                     MeshSurgeryManager.ApplyForOptic(_activeOptic);
                     LensTransparency.HideAllLensSurfaces(_activeOptic);
                     ResumeReticleAfterReload();
+                    ScopeEffectsRenderer.Show();
                     PiPDisablerPlugin.LogSource.LogInfo($"[ScopeLifecycle] Mesh surgery resumed after reload. frame={Time.frameCount}");
                 }
             }

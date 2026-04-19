@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace PiPDisabler
 {
-    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.7.0")]
+    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.7.1")]
     public sealed class PiPDisablerPlugin : BaseUnityPlugin
     {
         public static ManualLogSource LogSource;
@@ -18,16 +18,15 @@ namespace PiPDisabler
         {
             Instance = this;
             LogSource = Logger;
-            LogSource.LogInfo("plugin loaded!");
+            LogSource.LogInfo("PiP-Disabler 0.7.1 loaded.");
             Settings.Init(Config);
             Patches.Patcher.Enable();
             ScopeLifecycle.Init();
             FreelookTracker.Init();
             Settings.ModEnabled.SettingChanged += OnModEnabledChanged;
             Settings.ScopeWhitelistNames.SettingChanged += OnWhitelistSettingsChanged;
-
-            LogSource.LogInfo("PiP-Disabler 0.6.0 loaded.");
         }
+
               
         private void OnDestroy()
         {
