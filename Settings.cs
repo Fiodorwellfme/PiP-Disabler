@@ -162,7 +162,7 @@ namespace PiPDisabler
                     "Bypass the mod while reloading",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(ReloadBypassModifier = config.Bind("General", "Reload Bypass Modifier", 0.2f,
+            ConfigEntries.Add(ReloadBypassModifier = config.Bind("General", "Reload Bypass Modifier", 0.7f,
                 new ConfigDescription(
                     "Changes the duration of the reload bypass",
                     new AcceptableValueRange<float>(0f, 1f),
