@@ -14,7 +14,7 @@
       "CutStartOffset": 0.04084507,
       "CutLength": 2.0,
       "NearPreserveDepth": 0.02549295,
-      "ReticleBaseSize": 0.0206103288,
+      "ReticleBaseSize": 0.0225352142,
       "ExpandSearchToWeaponRoot": true
     },
     {
@@ -24,8 +24,8 @@
       "Plane1OffsetMeters": 0.0,
       "Plane2Position": 0.109154955,
       "Plane2Radius": 0.0187793449,
-      "Plane3Position": 0.0241784174,
-      "Plane3Radius": 0.2,
+      "Plane3Position": 0.1931925,
+      "Plane3Radius": 0.115492962,
       "Plane4Position": 1.0,
       "Plane4Radius": 0.2,
       "CutStartOffset": 0.04084507,
