@@ -10,6 +10,9 @@ using UnityEngine;
 namespace PiPDisabler
 {
     [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.7.1")]
+    [BepInDependency("com.fontaine.fovfix", BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency("com.Shibatsu.DynamicExternalResolution", BepInDependency.DependencyFlags.SoftDependency)]
+
     public sealed class PiPDisablerPlugin : BaseUnityPlugin
     {
         public static ManualLogSource LogSource;
