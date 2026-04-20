@@ -38,13 +38,13 @@ namespace PiPDisabler.Patches
             if (!Settings.ModEnabled.Value)
                 return true;
 
-            if (ScopeLifecycle.IsModBypassedForCurrentScope)
+            if (ScopeLifecycle.IsCurrentOrPendingOpticBypassed() || ScopeLifecycle.IsLastOpticNameBypassed())
             {
-                PiPDisablerPlugin.LogSource.LogInfo("[DERPCompat] ShouldAllowDerpForCurrentOptic");
+                PiPDisablerPlugin.LogSource.LogInfo("[DERPCompat] Allowing DERP.");
                 return true;
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo("[DERPCompat] All false");
+            PiPDisablerPlugin.LogSource.LogInfo("[DERPCompat] No DERP today");
             return false;
         }
     }

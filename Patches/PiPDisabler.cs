@@ -50,7 +50,7 @@ namespace PiPDisabler
         internal static string Debug_LastOpticCameraSetBy;
         internal static int Debug_LastOpticCameraSetFrame;
 
-        
+
         // Track OpticSight.enabled state so we can disable it while scoped and restore on un-scope.
         private static readonly Dictionary<OpticSight, bool> _opticOrigEnabled =
             new Dictionary<OpticSight, bool>(32);
@@ -61,7 +61,7 @@ namespace PiPDisabler
 
         private static bool _allowForcedLensFade;
 
-internal static void TickBaseOpticCamera()
+        internal static void TickBaseOpticCamera()
         {
             // Any condition that should preserve vanilla PiP must restore and skip disabling.
             if (ShouldAllowVanillaPiP())
@@ -87,58 +87,58 @@ internal static void TickBaseOpticCamera()
         }
 
 
-internal static void SetOpticSightEnabled(OpticSight os, bool enabled)
-{
-    if (os == null) return;
-
-    try
-    {
-        if (!enabled)
+        internal static void SetOpticSightEnabled(OpticSight os, bool enabled)
         {
-            // Store baseline once, then force-disable.
-            if (!_opticOrigEnabled.ContainsKey(os))
-                _opticOrigEnabled[os] = os.enabled;
+            if (os == null) return;
 
-            _ignoreOnDisableFrame[os] = Time.frameCount;
-            if (os.enabled) os.enabled = false;
-        }
-        else
-        {
-            if (_opticOrigEnabled.TryGetValue(os, out var wasEnabled))
+            try
             {
-                // Restore to baseline (do not force-enable if baseline was disabled).
-                if (wasEnabled && !os.enabled)
-                    os.enabled = true;
+                if (!enabled)
+                {
+                    // Store baseline once, then force-disable.
+                    if (!_opticOrigEnabled.ContainsKey(os))
+                        _opticOrigEnabled[os] = os.enabled;
 
-                _opticOrigEnabled.Remove(os);
+                    _ignoreOnDisableFrame[os] = Time.frameCount;
+                    if (os.enabled) os.enabled = false;
+                }
+                else
+                {
+                    if (_opticOrigEnabled.TryGetValue(os, out var wasEnabled))
+                    {
+                        // Restore to baseline (do not force-enable if baseline was disabled).
+                        if (wasEnabled && !os.enabled)
+                            os.enabled = true;
+
+                        _opticOrigEnabled.Remove(os);
+                    }
+
+                    _ignoreOnDisableFrame.Remove(os);
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        internal static bool ShouldIgnoreOnDisable(OpticSight os)
+        {
+            if (os == null) return false;
+
+            if (_ignoreOnDisableFrame.TryGetValue(os, out var f))
+            {
+                if (f == Time.frameCount)
+                {
+                    // One-shot suppression (only for the OnDisable we just triggered).
+                    _ignoreOnDisableFrame.Remove(os);
+                    return true;
+                }
+
+                // Stale entry (e.g. scene change) -> clear.
+                if (Time.frameCount - f > 10)
+                    _ignoreOnDisableFrame.Remove(os);
             }
 
-            _ignoreOnDisableFrame.Remove(os);
+            return false;
         }
-    }
-    catch { /* ignore */ }
-}
-
-internal static bool ShouldIgnoreOnDisable(OpticSight os)
-{
-    if (os == null) return false;
-
-    if (_ignoreOnDisableFrame.TryGetValue(os, out var f))
-    {
-        if (f == Time.frameCount)
-        {
-            // One-shot suppression (only for the OnDisable we just triggered).
-            _ignoreOnDisableFrame.Remove(os);
-            return true;
-        }
-
-        // Stale entry (e.g. scene change) -> clear.
-        if (Time.frameCount - f > 10)
-            _ignoreOnDisableFrame.Remove(os);
-    }
-
-    return false;
-}
 
         internal static void CleanupVanillaOpticState(OpticSight opticSight)
         {
@@ -292,21 +292,21 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 catch { /* ignore */ }
             }
 
-// Restore OpticSight.enabled states we changed.
-try
-{
-    foreach (var kv in _opticOrigEnabled)
-    {
-        var os = kv.Key;
-        if (os == null) continue;
-        if (kv.Value && !os.enabled)
-            os.enabled = true;
-    }
-}
-catch { /* ignore */ }
+            // Restore OpticSight.enabled states we changed.
+            try
+            {
+                foreach (var kv in _opticOrigEnabled)
+                {
+                    var os = kv.Key;
+                    if (os == null) continue;
+                    if (kv.Value && !os.enabled)
+                        os.enabled = true;
+                }
+            }
+            catch { /* ignore */ }
 
-_opticOrigEnabled.Clear();
-_ignoreOnDisableFrame.Clear();
+            _opticOrigEnabled.Clear();
+            _ignoreOnDisableFrame.Clear();
 
             _cams.Clear();
 
@@ -351,7 +351,9 @@ _ignoreOnDisableFrame.Clear();
 
         private static bool ShouldAllowVanillaPiP()
         {
-            return !Settings.ModEnabled.Value || ScopeLifecycle.IsModBypassedForCurrentScope || ScopeLifecycle.IsLastOpticNameBypassed();
+            return !Settings.ModEnabled.Value
+                || ScopeLifecycle.IsCurrentOrPendingOpticBypassed()
+                || ScopeLifecycle.IsLastOpticNameBypassed();
         }
 
         internal sealed class OpticComponentUpdaterCopyComponentFromOptic_DisablePiP : ModulePatch
