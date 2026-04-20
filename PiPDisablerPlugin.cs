@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace PiPDisabler
 {
-    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.8.1")]
+    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.8.2")]
     [BepInDependency("com.fontaine.fovfix", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.Shibatsu.DynamicExternalResolution", BepInDependency.DependencyFlags.SoftDependency)]
 
@@ -21,7 +21,7 @@ namespace PiPDisabler
         {
             Instance = this;
             LogSource = Logger;
-            LogSource.LogInfo("PiP-Disabler 0.8.1 loaded.");
+            LogSource.LogInfo("PiP-Disabler 0.8.2 loaded.");
             Settings.Init(Config);
             Patches.Patcher.Enable();
             ScopeLifecycle.Init();

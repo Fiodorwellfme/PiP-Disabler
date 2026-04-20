@@ -21,6 +21,7 @@ namespace PiPDisabler
 
         // --- Optimization ---
         public static ConfigEntry<float> AutoLodBiasMultiplier;
+        public static ConfigEntry<bool> KeepScopedLodBiasUntilInventory;
 
         // --- Mesh Surgery ---
         public static ConfigEntry<float> ReloadBypassModifier;
@@ -158,6 +159,12 @@ namespace PiPDisabler
                     "Changes the duration of the reload bypass, higher values lower the duration.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(KeepScopedLodBiasUntilInventory = config.Bind("Optimization", "Keep scoped LOD Bias until inventory is opened", false,
+                new ConfigDescription(
+                    "When enabled, the scoped LOD bias stays active after leaving the scope and is only restored when opening inventory/loot or after a successful inventory item transfer.\n" +
+                    "When disabled, LOD bias is restored immediately on scope exit.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(ManualLodBias = config.Bind("Optimization", "Manual LOD Bias", 0f,
                 new ConfigDescription(
                     "Manual LOD bias while scoped.\n" +

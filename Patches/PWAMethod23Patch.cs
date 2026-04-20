@@ -80,14 +80,10 @@ namespace PiPDisabler.Patches
                 {
                     if (FovController.HasFovChanged(zoomedFov))
                     {
-                        // FOV changed enough — restart lerp to new target.
                         FovController.TrackAppliedFov(zoomedFov);
                         FreelookTracker.CacheAppliedFov(zoomedFov);
-                        // Keep the game's original duration so ADS/unADS speed is unaffected
                         cameraClass.SetFov(zoomedFov, duration, false);
                     }
-                    // Whether or not we called SetFov, suppress EFT's original call
-                    // so the lerp coroutine can run undisturbed to the target.
                     return;
                 }
             }
@@ -109,7 +105,7 @@ namespace PiPDisabler.Patches
             {
                 float restoreFov = ScopeLifecycle.PostExitRestoreFov;
                 if (Mathf.Abs(targetFov - restoreFov) > FovController.FovChangeThreshold)
-                    return; // Let the restore coroutine run undisturbed
+                    return;
             }
 
             cameraClass.SetFov(targetFov, duration, force);

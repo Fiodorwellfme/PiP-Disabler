@@ -10,6 +10,7 @@ namespace PiPDisabler
         private static float _savedFarClip;
         private static float[] _savedCullDistances;
         private static bool _applied;
+        private static bool _pendingRestore;
 
         public static void ApplyForOptic(OpticSight os)
         {
@@ -28,19 +29,10 @@ namespace PiPDisabler
                     ? (float[])cam.layerCullDistances.Clone()
                     : null;
                 _applied = true;
-
-                PiPDisablerPlugin.LogSource.LogInfo(
-                    $"[CameraSettings] Saved: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0}");
             }
 
             float scopeFov = 0f;
             float scopeFarClip = 0f;
-            if (TryGetScopeCameraData(os, out scopeFov, out scopeFarClip))
-            {
-                PiPDisablerPlugin.LogSource.LogInfo(
-                    $"[CameraSettings] ScopeCameraData: FOV={scopeFov:F2} FarClip={scopeFarClip:F0}");
-            }
-
             float magnification = FovController.GetEffectiveMagnification();
             if (magnification < 0.1f)
                 magnification = scopeFov > 0.1f ? 35f / scopeFov : 1f;
@@ -49,7 +41,6 @@ namespace PiPDisabler
             if (manualLodBias == 0f)
             {
                 manualLodBias = FovController.GetEffectiveMagnificationUncached() * Settings.AutoLodBiasMultiplier.Value;
-                PiPDisablerPlugin.LogSource.LogInfo( $"[CameraSettings] LODbias auto set to {manualLodBias:F2}");
             }
             float newLodBias = manualLodBias > 0f
                 ? manualLodBias
@@ -76,12 +67,32 @@ namespace PiPDisabler
                 }
                 cam.layerCullDistances = newCull;
             }
-
-            PiPDisablerPlugin.LogSource.LogInfo(
-                $"[CameraSettings] Applied: lodBias {_savedLodBias:F2}→{newLodBias:F2} (mag={magnification:F1}x) farClip={cam.farClipPlane:F0}");
         }
 
         public static void Restore()
+        {
+            if (!_applied)
+                return;
+
+            if (Settings.KeepScopedLodBiasUntilInventory.Value)
+            {
+                _pendingRestore = true;
+                return;
+            }
+
+            PerformRestore();
+        }
+
+        public static void RestoreIfPending()
+        {
+            if (!_pendingRestore)
+                return;
+
+            _pendingRestore = false;
+            PerformRestore();
+        }
+
+        private static void PerformRestore()
         {
             if (!_applied)
                 return;
@@ -95,10 +106,6 @@ namespace PiPDisabler
                 if (_savedCullDistances != null)
                     cam.layerCullDistances = _savedCullDistances;
             }
-
-            PiPDisablerPlugin.LogSource.LogInfo(
-                $"[CameraSettings] Restored: lodBias={_savedLodBias:F2} farClip={_savedFarClip:F0}");
-
             _applied = false;
         }
 
