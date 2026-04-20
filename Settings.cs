@@ -47,7 +47,6 @@ namespace PiPDisabler
         public static ConfigEntry<KeyCode> SaveCustomMeshSurgerySettingsKey;
         public static ConfigEntry<KeyCode> DeleteCustomMeshSurgerySettingsKey;
         public static ConfigEntry<float> CustomPlaneOffsetMeters;
-        public static ConfigEntry<float> CustomCutRadius;
         public static ConfigEntry<float> CustomPlane1Radius;
         public static ConfigEntry<float> CustomPlane1OffsetMeters;
         public static ConfigEntry<float> CustomPlane2Position;

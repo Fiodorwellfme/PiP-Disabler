@@ -502,23 +502,19 @@ namespace PiPDisabler
 
             if (ShouldBypassByWhitelist(os))
             {
-                PiPDisablerPlugin.LogSource.LogInfo("BypassByWhitelist");
                 return true;
             }
 
             if (Settings.AutoDisableForVariableScopes.Value
                 && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
             {
-                PiPDisablerPlugin.LogSource.LogInfo("Bypass Adjust/NVG/Thermal");
                 return true;
             }
 
             if (ScopeNameMatchesBypassPattern(os))
             {
-                PiPDisablerPlugin.LogSource.LogInfo("BypassPattern");
                 return true;
             }
-            PiPDisablerPlugin.LogSource.LogInfo("Don't bypass");
             return false;
         }
 

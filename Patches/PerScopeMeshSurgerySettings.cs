@@ -11,7 +11,6 @@ namespace PiPDisabler
     {
         public string ScopeKey;
         public float PlaneOffsetMeters;
-        public float CutRadius;
         public float Plane1Radius;
         public float Plane1OffsetMeters;
         public float Plane2Position;
@@ -85,7 +84,6 @@ namespace PiPDisabler
             try
             {
                 Settings.CustomPlaneOffsetMeters.Value = entry.PlaneOffsetMeters;
-                Settings.CustomCutRadius.Value = entry.CutRadius;
                 Settings.CustomPlane1Radius.Value = entry.Plane1Radius;
                 Settings.CustomPlane1OffsetMeters.Value = entry.Plane1OffsetMeters;
                 Settings.CustomPlane2Position.Value = entry.Plane2Position;
@@ -157,7 +155,6 @@ namespace PiPDisabler
             }
 
             target.PlaneOffsetMeters = Settings.CustomPlaneOffsetMeters.Value;
-            target.CutRadius = Settings.CustomCutRadius.Value;
             target.Plane1Radius = Settings.CustomPlane1Radius.Value;
             target.Plane1OffsetMeters = Settings.CustomPlane1OffsetMeters.Value;
             target.Plane2Position = Settings.CustomPlane2Position.Value;
