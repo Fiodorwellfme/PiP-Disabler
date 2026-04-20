@@ -26,11 +26,9 @@ namespace PiPDisabler.Patches
 
             Patch("FOVFix.FovController:ChangeMainCamFOV", nameof(SkipVoidWhenPiPActive));
             Patch("FOVFix.PwaWeaponParamsPatch:PatchPostfix", nameof(SkipVoidWhenPiPActive));
-            Patch("FOVFix.AimingSensitivityPatch:PatchPrefix", nameof(SkipVoidWhenPiPActive));
             Patch("FOVFix.SetPlayerAimingPatch:PatchPostfix", nameof(SkipVoidWhenPiPActive));
             Patch("FOVFix.FreeLookPatch:Prefix", nameof(SkipBoolPatchWhenPiPActive));
             Patch("FOVFix.LerpCameraPatch:Prefix", nameof(SkipBoolPatchWhenPiPActive));
-            Patch("FOVFix.ScopeSensitivityPatch:PatchPrefix", nameof(SkipBoolPatchWhenPiPActive));
             Patch("FOVFix.CalculateScaleValueByFovPatch:Prefix", nameof(SkipBoolPatchWhenPiPActive));
 
         }
