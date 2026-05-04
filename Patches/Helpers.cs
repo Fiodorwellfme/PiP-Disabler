@@ -1,4 +1,4 @@
-ï»¿using System;
+using System;
 using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Configuration;
@@ -27,7 +27,7 @@ namespace PiPDisabler
 
         /// <summary>
         /// Returns the local player via GameWorld singleton.
-        /// Shared helper â€” used by WeaponScalingPatch and ScopeLifecycle.
+        /// Shared helper — used by WeaponScalingPatch and ScopeLifecycle.
         /// </summary>
         internal static Player GetLocalPlayer()
         {
@@ -41,7 +41,7 @@ namespace PiPDisabler
 
         /// <summary>
         /// Returns the display viewport in pixels (accounts for DLSS/FSR).
-        /// Shared helper â€” used by ReticleRenderer and ScopeEffectsRenderer.
+        /// Shared helper — used by ReticleRenderer and ScopeEffectsRenderer.
         /// </summary>
         internal static Rect GetDisplayViewport(Camera cam)
         {
@@ -57,7 +57,7 @@ namespace PiPDisabler
 
         /// <summary>
         /// Check if two transforms share the same mode_XXX ancestor.
-        /// Shared helper â€” used by FovController, CameraSettingsManager.
+        /// Shared helper — used by FovController, CameraSettingsManager.
         /// </summary>
         internal static bool IsOnSameMode(Transform a, Transform b)
         {

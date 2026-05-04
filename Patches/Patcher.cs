@@ -17,12 +17,24 @@ namespace PiPDisabler.Patches
             SafeEnable<SetScopeModePatch>();
             SafeEnable<PlayerOnSetInHandsPatch>();
             SafeEnable<PlayerSetInventoryOpenedPatch>();
+            SafeEnable<OpticCameraManagerEnableOptic_NoPipPatch>();
+            SafeEnable<OpticCameraManagerSetResolution_NoPipPatch>();
+            SafeEnable<CameraClassOnOpticEnabled_NoPipPatch>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterCopyComponentFromOptic_DisablePiP>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterLateUpdate_DisablePiP>();
             SafeEnable<PiPDisabler.OpticSightLensFade_NoPipPatch>();
             SafeEnable<PWAMethod23Patch>();
             SafeEnable<PlayerLookPatch>();
             SafeEnable<WeaponScalingPatch>();
+            SafeEnable<PWAWeaponRootZOffsetPatch>();
+            SafeEnable<FireModeSwitchMovementPatch>();
+            SafeEnable<MagnificationSwitchMovementContextPatch>();
+            SafeEnable<ModToggleTriggerMovementPatch>();
+            SafeEnable<SwayVectorVelocityFovScalingPatch>();
+            SafeEnable<SwayComponentVelocityFovScalingPatch>();
+            SafeEnable<SpringVectorAccelerationFovScalingPatch>();
+            SafeEnable<SpringComponentAccelerationFovScalingPatch>();
+            SafeEnable<RecoilReturnToZeroPatch>();
             FikaCompat.Enable();
             FOVFixCompat.Enable();
             DERPCompat.Enable();
@@ -37,7 +49,7 @@ namespace PiPDisabler.Patches
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
+                PiPDisablerPlugin.DebugLogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
             }
         }
     }

@@ -12,7 +12,7 @@ namespace PiPDisabler.Patches
         {
             if (!Chainloader.PluginInfos.ContainsKey(FOVFixPluginGuid))
             {
-                PiPDisablerPlugin.LogSource.LogInfo("[FOVFixCompat] FOVFix not installed, no patching O.o");
+                PiPDisablerPlugin.DebugLogInfo("[FOVFixCompat] FOVFix not installed, no patching O.o");
                 return;
             }
 

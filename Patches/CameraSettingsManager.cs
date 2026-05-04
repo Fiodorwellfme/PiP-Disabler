@@ -33,14 +33,14 @@ namespace PiPDisabler
 
             float scopeFov = 0f;
             float scopeFarClip = 0f;
-            float magnification = FovController.GetEffectiveMagnification();
+            float magnification = 35f / FovController.ComputeZoomedFov();
             if (magnification < 0.1f)
                 magnification = scopeFov > 0.1f ? 35f / scopeFov : 1f;
 
             float manualLodBias = Settings.ManualLodBias.Value;
             if (manualLodBias == 0f)
             {
-                manualLodBias = FovController.GetEffectiveMagnificationUncached() * Settings.AutoLodBiasMultiplier.Value;
+                manualLodBias = Mathf.Clamp(magnification * Settings.AutoLodBiasMultiplier.Value, 0.01f, 20f);
             }
             float newLodBias = manualLodBias > 0f
                 ? manualLodBias
@@ -67,6 +67,8 @@ namespace PiPDisabler
                 }
                 cam.layerCullDistances = newCull;
             }
+            PiPDisablerPlugin.DebugLogInfo(
+                $"[LodBias] LodBias = {newLodBias}");
         }
 
         public static void Restore()

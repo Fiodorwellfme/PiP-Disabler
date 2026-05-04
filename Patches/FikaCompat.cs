@@ -19,7 +19,7 @@ namespace PiPDisabler.Patches
                 var worldToScreenType = AccessTools.TypeByName("Fika.Core.Main.Utils.WorldToScreen");
                 if (worldToScreenType == null)
                 {
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         "[FikaCompat] Fika.Core.Main.Utils.WorldToScreen not found — Fika not installed, skipping compat patch.");
                     return;
                 }
@@ -35,12 +35,12 @@ namespace PiPDisabler.Patches
                 _harmony.Patch(targetMethod, prefix: prefix);
                 _patched = true;
 
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     "[FikaCompat] Patched WorldToScreen.IsZoomedOpticAiming — pings/healthbars will use main camera when PiP is disabled.");
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogError(
+                PiPDisablerPlugin.DebugLogError(
                     $"[FikaCompat] Failed to patch Fika compat: {ex.Message}");
             }
         }
@@ -68,11 +68,11 @@ namespace PiPDisabler.Patches
             {
                 _harmony.UnpatchSelf();
                 _patched = false;
-                PiPDisablerPlugin.LogSource.LogInfo("[FikaCompat] Unpatched Fika compat.");
+                PiPDisablerPlugin.DebugLogInfo("[FikaCompat] Unpatched Fika compat.");
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogError(
+                PiPDisablerPlugin.DebugLogError(
                     $"[FikaCompat] Failed to unpatch: {ex.Message}");
             }
         }

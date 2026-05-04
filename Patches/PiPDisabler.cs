@@ -154,7 +154,7 @@ namespace PiPDisabler
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[PiPDisabler] Vanilla optic cleanup failed: {ex.Message}");
             }
 
@@ -209,7 +209,7 @@ namespace PiPDisabler
                         if (!_loggedBase)
                         {
                             _loggedBase = true;
-                            PiPDisablerPlugin.LogSource.LogInfo(
+                            PiPDisablerPlugin.DebugLogInfo(
                                 $"[PiPDisabler] Found BaseOpticCamera: {n} (cameras: {_baseOpticCams.Count})");
                         }
                         break;
@@ -241,9 +241,6 @@ namespace PiPDisabler
                 if (!Settings.AutoDisableForVariableScopes.Value)
                     return false;
 
-                if (FovController.IsOpticAdjustable(os))
-                    return true;
-
                 return ScopeLifecycle.IsThermalOrNightVisionOpticForBypass(os);
             }
             catch
@@ -265,13 +262,13 @@ namespace PiPDisabler
                     if (f.FieldType == typeof(OpticSight))
                     {
                         _opticSightField = f;
-                        PiPDisablerPlugin.LogSource.LogInfo(
+                        PiPDisablerPlugin.DebugLogInfo(
                             $"[PiPDisabler] Found OpticSight field on OpticComponentUpdater: '{f.Name}'");
                         break;
                     }
                 }
                 if (_opticSightField == null)
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         "[PiPDisabler] Could not find any OpticSight field on OpticComponentUpdater!");
             }
             return _opticSightField;
@@ -401,6 +398,17 @@ namespace PiPDisabler
                 }
 
                 return true;
+            }
+
+            [PatchPostfix]
+            private static void Postfix()
+            {
+                if (!Settings.ModEnabled.Value) return;
+                if (!ScopeLifecycle.IsScoped) return;
+                if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
+                if (FreelookTracker.IsFreelooking) return;
+
+                ScopeLifecycle.ReapplyFov();
             }
 
             [PatchTranspiler]

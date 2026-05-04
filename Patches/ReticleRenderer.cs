@@ -41,10 +41,21 @@ namespace PiPDisabler
     /// </summary>
     internal static class ReticleRenderer
     {
+        private enum ReticleSource
+        {
+            None,
+            Texture,
+            Mesh
+        }
+
         private static Material     _reticleMat;
         private static Mesh         _reticleMesh;
         private static Texture      _savedMarkTex;
         private static Texture      _savedMaskTex;
+        private static ScopeReticle _savedScopeReticle;
+        private static Material     _meshReticleMat;
+        private static ReticleSource _reticleSource = ReticleSource.None;
+        private static float        _meshReticleBoundsScale = 1f;
 
         // Stencil masking — lens visibility
         // UI/Default exposes _Stencil, _StencilComp, _StencilOp, _ColorMask which let us
@@ -55,6 +66,10 @@ namespace PiPDisabler
         private static Material            _stencilDebugMat; // debug overlay: red tint where lens writes
         private static readonly List<LensTransparency.LensMaskEntry> _lensMaskEntries = new List<LensTransparency.LensMaskEntry>();
         private static readonly List<Renderer> _occluderMaskRenderers = new List<Renderer>();
+        private static readonly List<Vector3> _lensBoundsVertices = new List<Vector3>(256);
+        private static readonly Dictionary<Mesh, List<Vector3>> _lensVertexCache =
+            new Dictionary<Mesh, List<Vector3>>();
+        private static readonly HashSet<Mesh> _lensVertexCacheFailures = new HashSet<Mesh>();
         private static bool                _hasStencilSupport; // true when UI/Default was found
 
         // Debug frame counter — logs stencil state for first N frames after scope enter
@@ -64,6 +79,8 @@ namespace PiPDisabler
         // Scale tracking
         private static float _baseScale;
         private static float _lastMag = 1f;
+        private static float _lastZoomPosition;
+        private static Vector2 _reticlePixelSize = Vector2.zero;
 
         // Cached transforms
         private static Transform _opticTransform;   // OpticSight   — for forward (downrange)
@@ -87,7 +104,7 @@ namespace PiPDisabler
         // ── Public API ───────────────────────────────────────────────────────
 
         /// <summary>
-        /// Extract reticle textures from the OpticSight's lens material.
+        /// Extract reticle data from ScopeData first, then lens mark textures.
         /// MUST be called BEFORE LensTransparency replaces the mesh.
         /// </summary>
         public static void ExtractReticle(OpticSight os)
@@ -96,41 +113,58 @@ namespace PiPDisabler
 
             _savedMarkTex = null;
             _savedMaskTex = null;
+            _savedScopeReticle = null;
+            _reticleSource = ReticleSource.None;
 
             try
             {
-                Renderer lensRenderer = os.LensRenderer;
-                if (lensRenderer == null) return;
-
-                Material mat = null;
-                foreach (var m in lensRenderer.sharedMaterials)
+                ScopeReticle scopeReticle = os.ScopeData != null ? os.ScopeData.Reticle : null;
+                if (scopeReticle != null && scopeReticle.Mesh != null && scopeReticle.Material != null)
                 {
-                    if (m != null && m.shader != null && m.shader.name.Contains("OpticSight"))
-                    { mat = m; break; }
+                    _savedScopeReticle = scopeReticle;
+                    _reticleSource = ReticleSource.Mesh;
+                    _meshReticleBoundsScale = GetMeshReticleBoundsScale(scopeReticle.Mesh);
                 }
-                if (mat == null) mat = lensRenderer.sharedMaterial;
-                if (mat == null) return;
 
-                if (mat.HasProperty("_MarkTex"))
-                    _savedMarkTex = mat.GetTexture("_MarkTex");
-                if (mat.HasProperty("_MaskTex"))
-                    _savedMaskTex = mat.GetTexture("_MaskTex");
+                Renderer lensRenderer = os.LensRenderer;
+                if (lensRenderer != null)
+                {
+                    Material mat = null;
+                    foreach (var m in lensRenderer.sharedMaterials)
+                    {
+                        if (m != null && m.shader != null && m.shader.name.Contains("OpticSight"))
+                        { mat = m; break; }
+                    }
+                    if (mat == null) mat = lensRenderer.sharedMaterial;
+
+                    if (mat != null)
+                    {
+                        if (mat.HasProperty("_MarkTex"))
+                            _savedMarkTex = mat.GetTexture("_MarkTex");
+                        if (mat.HasProperty("_MaskTex"))
+                            _savedMaskTex = mat.GetTexture("_MaskTex");
+                    }
+                }
 
                 if (_savedMarkTex != null)
                 {
                     _savedMarkTex.filterMode = FilterMode.Trilinear;
                     _savedMarkTex.anisoLevel = 16;
+                    if (_reticleSource == ReticleSource.None)
+                        _reticleSource = ReticleSource.Texture;
                 }
 
-                PiPDisablerPlugin.LogSource.LogInfo(
-                    $"[Reticle] Extracted: _MarkTex={(_savedMarkTex != null ? _savedMarkTex.name : "null")} " +
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[Reticle] Extracted: source={_reticleSource} " +
+                    $"ScopeReticle={(_savedScopeReticle != null ? _savedScopeReticle.Mesh.name : "null")} " +
+                    $"_MarkTex={(_savedMarkTex != null ? _savedMarkTex.name : "null")} " +
                     $"({(_savedMarkTex != null ? $"{_savedMarkTex.width}x{_savedMarkTex.height}" : "?")}) " +
                     $"_MaskTex={(_savedMaskTex != null ? _savedMaskTex.name : "null")} " +
                     "filter=Trilinear aniso=16");
             }
             catch (System.Exception e)
             {
-                PiPDisablerPlugin.LogSource.LogInfo($"[Reticle] Extract failed: {e.Message}");
+                PiPDisablerPlugin.DebugLogInfo($"[Reticle] Extract failed: {e.Message}");
             }
         }
 
@@ -140,7 +174,7 @@ namespace PiPDisabler
         /// </summary>
         public static void Show(OpticSight os, float magnification = 1f)
         {
-            if (_savedMarkTex == null || os == null) return;
+            if (os == null || _reticleSource == ReticleSource.None) return;
 
             try
             {
@@ -148,18 +182,25 @@ namespace PiPDisabler
 
                 EnsureMeshAndMaterial();
 
-                _reticleMat.mainTexture = _savedMarkTex;
-                ApplyHorizontalFlip();
+                if (_reticleSource == ReticleSource.Texture)
+                {
+                    if (_savedMarkTex == null) return;
+                    _reticleMat.mainTexture = _savedMarkTex;
+                    ApplyHorizontalFlip();
+                }
+                else if (_reticleSource == ReticleSource.Mesh)
+                {
+                    EnsureMeshReticleMaterial();
+                    if (_meshReticleMat == null || _savedScopeReticle == null) return;
+                }
 
                 // Scale
-                float configBase = PerScopeMeshSurgerySettings.GetReticleBaseSize();
-                _baseScale = (configBase > 0f)
-                    ? configBase
-                    : PerScopeMeshSurgerySettings.GetPlane1Radius() * 2f;
+                _baseScale = GetBaseReticleScale();
                 if (_baseScale < 0.001f) _baseScale = 0.030f;
 
                 if (magnification < 1f) magnification = 1f;
                 _lastMag = magnification;
+                _lastZoomPosition = FovController.GetSmoothScopeZoomPosition();
 
                 // Attach CommandBuffer + onPreCull
                 AttachToCamera();
@@ -168,13 +209,14 @@ namespace PiPDisabler
                 _settled = true;
                 _alignmentActive = true;
 
-                PiPDisablerPlugin.LogSource.LogInfo(
-                    $"[Reticle] Showing: base={_baseScale:F4} mag={magnification:F1}x " +
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[Reticle] Showing: source={_reticleSource} base={_baseScale:F4} " +
+                    $"mag={magnification:F1}x zoomT={_lastZoomPosition:F3} " +
                     $"(camera-aligned centered rendering)");
             }
             catch (System.Exception e)
             {
-                PiPDisablerPlugin.LogSource.LogInfo($"[Reticle] Show failed: {e.Message}");
+                PiPDisablerPlugin.DebugLogInfo($"[Reticle] Show failed: {e.Message}");
             }
         }
 
@@ -191,6 +233,9 @@ namespace PiPDisabler
             if (magnification < 1f) magnification = 1f;
             if (Mathf.Abs(magnification - _lastMag) >= 0.01f)
                 _lastMag = magnification;
+            _lastZoomPosition = FovController.GetSmoothScopeZoomPosition();
+            _baseScale = GetBaseReticleScale();
+            if (_baseScale < 0.001f) _baseScale = 0.030f;
 
             var mainCam = Helpers.GetMainCamera();
             if (mainCam != null && mainCam != _attachedCamera)
@@ -233,8 +278,14 @@ namespace PiPDisabler
             _debugFrameCount   = 0;
             _savedMarkTex      = null;
             _savedMaskTex      = null;
+            _savedScopeReticle  = null;
+            _meshReticleMat     = null;
+            _reticleSource      = ReticleSource.None;
+            _meshReticleBoundsScale = 1f;
             _opticTransform    = null;
             _lastMag           = 1f;
+            _lastZoomPosition   = 0f;
+            _reticlePixelSize   = Vector2.zero;
             _baseScale         = 0f;
             _settled           = false;
         }
@@ -254,6 +305,105 @@ namespace PiPDisabler
 
         public static CameraEvent CurrentCameraEvent => _attachedEvent;
 
+        public static bool HasLensStencilMask => _hasStencilSupport && _lensMaskEntries.Count > 0;
+
+        public static bool TryGetLensMaskClipBounds(Camera cam, out Vector2 center, out Vector2 size)
+        {
+            center = Vector2.zero;
+            size = Vector2.zero;
+            if (cam == null || _lensMaskEntries.Count == 0) return false;
+
+            bool any = false;
+            Vector2 min = new Vector2(float.PositiveInfinity, float.PositiveInfinity);
+            Vector2 max = new Vector2(float.NegativeInfinity, float.NegativeInfinity);
+
+            for (int i = 0; i < _lensMaskEntries.Count; i++)
+            {
+                var entry = _lensMaskEntries[i];
+                if (entry.Renderer == null || entry.Mesh == null) continue;
+                if (!entry.Renderer.gameObject.activeInHierarchy) continue;
+
+                Matrix4x4 matrix = entry.Renderer.localToWorldMatrix;
+                if (!TryGetLensMeshVertices(entry.Mesh, _lensBoundsVertices))
+                    continue;
+
+                for (int v = 0; v < _lensBoundsVertices.Count; v++)
+                {
+                    Vector3 local = _lensBoundsVertices[v];
+                    Vector3 view = cam.WorldToViewportPoint(matrix.MultiplyPoint3x4(local));
+                    if (view.z <= cam.nearClipPlane) continue;
+
+                    min.x = Mathf.Min(min.x, view.x);
+                    min.y = Mathf.Min(min.y, view.y);
+                    max.x = Mathf.Max(max.x, view.x);
+                    max.y = Mathf.Max(max.y, view.y);
+                    any = true;
+                }
+            }
+
+            if (!any) return false;
+
+            center = new Vector2((min.x + max.x) - 1f, (min.y + max.y) - 1f);
+            size = new Vector2(
+                Mathf.Max(0.001f, (max.x - min.x) * 2f),
+                Mathf.Max(0.001f, (max.y - min.y) * 2f));
+            return true;
+        }
+
+        private static bool TryGetLensMeshVertices(Mesh mesh, List<Vector3> vertices)
+        {
+            vertices.Clear();
+            if (mesh == null) return false;
+
+            if (_lensVertexCache.TryGetValue(mesh, out var cached))
+            {
+                vertices.AddRange(cached);
+                return vertices.Count > 0;
+            }
+
+            var extracted = new List<Vector3>(Mathf.Max(16, mesh.vertexCount));
+
+            try
+            {
+                if (mesh.isReadable)
+                {
+                    mesh.GetVertices(extracted);
+                }
+                else
+                {
+                    Mesh readableCopy = MeshPlaneCutter.MakeReadableMeshCopy(mesh);
+                    if (readableCopy != null)
+                    {
+                        try
+                        {
+                            readableCopy.GetVertices(extracted);
+                        }
+                        finally
+                        {
+                            UnityEngine.Object.Destroy(readableCopy);
+                        }
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                if (!_lensVertexCacheFailures.Contains(mesh))
+                {
+                    _lensVertexCacheFailures.Add(mesh);
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[Reticle] Failed to extract lens vertices from '{mesh.name}': {ex.Message}");
+                }
+                return false;
+            }
+
+            if (extracted.Count == 0)
+                return false;
+
+            _lensVertexCache[mesh] = extracted;
+            vertices.AddRange(extracted);
+            return true;
+        }
+
         /// <summary>
         /// Provide cached lens mesh entries for the stencil pass.
         /// Pass null or an empty list to disable lens masking.
@@ -265,7 +415,7 @@ namespace PiPDisabler
             if (entries != null)
                 _lensMaskEntries.AddRange(entries);
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[Reticle] Lens mask: {_lensMaskEntries.Count} entry(s) registered" +
                 $" stencilSupport={_hasStencilSupport}");
         }
@@ -303,7 +453,7 @@ namespace PiPDisabler
                 _preCullRegistered = true;
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[Reticle] CommandBuffer attached to '{mainCam.name}' at {_attachedEvent}");
         }
 
@@ -353,7 +503,7 @@ namespace PiPDisabler
             _attachedCamera.AddCommandBuffer(desiredEvent, _cmdBuffer);
             _attachedEvent = desiredEvent;
 
-            PiPDisablerPlugin.LogSource.LogInfo($"[Reticle] CommandBuffer moved to {_attachedEvent} (debug toggle)");
+            PiPDisablerPlugin.DebugLogInfo($"[Reticle] CommandBuffer moved to {_attachedEvent} (debug toggle)");
         }
 
         // ── onPreCull — camera alignment + rebuild CommandBuffer ─────────────
@@ -361,7 +511,8 @@ namespace PiPDisabler
         private static void OnPreCullCallback(Camera cam)
         {
             if (cam != _attachedCamera) return;
-            if (_cmdBuffer == null || _reticleMat == null || !_settled) return;
+            if (_cmdBuffer == null || !_settled) return;
+            if (GetActiveReticleMesh() == null || GetActiveReticleMaterial() == null) return;
 
             // ── Camera alignment ─────────────────────────────────────────
             // Override the camera's rotation to look exactly where the scope
@@ -405,6 +556,59 @@ namespace PiPDisabler
         private static void RebuildMatrix(Camera cam)
         {
             if (cam == null) return;
+
+            if (_reticleSource == ReticleSource.Mesh && _savedScopeReticle != null)
+            {
+                float meshAspect = GetActiveAspect(cam);
+                float zoomPosition = FovController.GetSmoothScopeZoomPosition();
+                float currentMag = FovController.GetEffectiveMagnificationUncached();
+                if (currentMag < 1f) currentMag = _lastMag;
+                float meshZoomScale = Mathf.Lerp(1f, Mathf.Max(1f, currentMag), zoomPosition);
+                float normalizedScale = Settings.MeshReticleNormalizedScale.Value;
+                float meshScale = _baseScale * meshZoomScale * _meshReticleBoundsScale * normalizedScale;
+                float minMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMinScale();
+                float maxMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMaxScale();
+                if (minMeshScale > 0f && maxMeshScale > 0f &&
+                    FovController.TryGetCurrentVariableFovRange(
+                        out float currentFov,
+                        out float wideFov,
+                        out float narrowFov,
+                        out float variableZoomPosition))
+                {
+                    if (maxMeshScale < minMeshScale)
+                    {
+                        float swap = minMeshScale;
+                        minMeshScale = maxMeshScale;
+                        maxMeshScale = swap;
+                    }
+
+                    float fovHigh = Mathf.Max(wideFov, narrowFov);
+                    float fovLow = Mathf.Min(wideFov, narrowFov);
+                    if (!Mathf.Approximately(fovHigh, fovLow))
+                    {
+                        float clampedFov = Mathf.Clamp(currentFov, fovLow, fovHigh);
+                        float t = Mathf.Clamp01(Mathf.InverseLerp(fovHigh, fovLow, clampedFov));
+                        if (variableZoomPosition >= 0f)
+                            t = variableZoomPosition;
+
+                        meshScale = Mathf.Lerp(minMeshScale, maxMeshScale, t);
+                    }
+                }
+
+                Vector3 position = _savedScopeReticle.Position;
+                position.z = 0.5f;
+                float zRotation = Mathf.Repeat(_savedScopeReticle.Rotation.z, 360f);
+                bool quarterTurnReticle = Mathf.Abs(zRotation - 90f) < 0.5f || Mathf.Abs(zRotation - 270f) < 0.5f;
+                Vector3 meshReticleScale = quarterTurnReticle
+                    ? new Vector3(meshScale, meshScale / Mathf.Max(0.01f, meshAspect), meshScale)
+                    : new Vector3(meshScale / Mathf.Max(0.01f, meshAspect), meshScale, meshScale);
+
+                _reticleMatrix = Matrix4x4.TRS(
+                    position,
+                    Quaternion.Euler(_savedScopeReticle.Rotation),
+                    meshReticleScale);
+                return;
+            }
 
             // Clip-space centered quad: independent of world/lens transforms.
             // Convert configured physical size using fixed references so the
@@ -450,13 +654,17 @@ namespace PiPDisabler
             if (isAfterEverything)
             {
                 // Late-overlay path: draw in display space after upscaling/postfx.
+                Rect viewport = GetDisplayViewport(cam);
                 _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-                _cmdBuffer.SetViewport(GetDisplayViewport(cam));
+                _cmdBuffer.SetViewport(viewport);
+                _reticlePixelSize = GetClipPixelSize(viewport);
             }
             else
             {
                 // Scene-overlay path: use render-resolution viewport for DLSS/FSR correctness.
-                _cmdBuffer.SetViewport(GetSceneViewport(cam));
+                Rect viewport = GetSceneViewport(cam);
+                _cmdBuffer.SetViewport(viewport);
+                _reticlePixelSize = GetClipPixelSize(viewport);
             }
 
             bool useStencil = _hasStencilSupport && _lensMaskEntries.Count > 0
@@ -472,7 +680,7 @@ namespace PiPDisabler
                     if (entry.Renderer != null && entry.Renderer.gameObject.activeInHierarchy) activeCount++;
                 }
 
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[Reticle] Frame {_debugFrameCount + 1}/{DebugLogFrames}: " +
                     $"useStencil={useStencil} lensTotal={_lensMaskEntries.Count} " +
                     $"lensActive={activeCount} stencilSupport={_hasStencilSupport}");
@@ -503,7 +711,7 @@ namespace PiPDisabler
                 {
                     // ── Step 3: draw reticle only inside the visible lens (clip-space) ──
                     _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                    _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                    DrawActiveReticle();
                 }
 
                 // ── Step 4: optional debug overlay — red tint where lens writes ─────
@@ -518,10 +726,99 @@ namespace PiPDisabler
             {
                 // Original path — no stencil.
                 _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                _cmdBuffer.DrawMesh(_reticleMesh, _reticleMatrix, _reticleMat, 0, -1);
+                DrawActiveReticle();
             }
 
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
+        }
+
+        private static void DrawActiveReticle()
+        {
+            if (!HasLensStencilMask) return;
+
+            Mesh mesh = GetActiveReticleMesh();
+            Material material = GetActiveReticleMaterial();
+            if (mesh == null || material == null) return;
+
+            if (_reticleSource == ReticleSource.Mesh && Settings.MeshReticleMinimumStrokeEnabled.Value)
+                DrawMeshReticleWithMinimumStroke(mesh, material);
+            else
+                DrawReticleMesh(mesh, material, _reticleMatrix);
+        }
+
+        private static void DrawMeshReticleWithMinimumStroke(Mesh mesh, Material material)
+        {
+            float minimumPixels = Settings.MeshReticleMinimumStrokePixels.Value;
+            if (minimumPixels <= 0f || _reticlePixelSize.x <= 0f || _reticlePixelSize.y <= 0f)
+            {
+                DrawReticleMesh(mesh, material, _reticleMatrix);
+                return;
+            }
+
+            float pixelRadius = Mathf.Clamp((minimumPixels - 1f) * 0.5f, 0f, 1.5f);
+            if (pixelRadius > 0f)
+            {
+                DrawReticleMesh(mesh, material, OffsetReticleMatrix(-_reticlePixelSize.x * pixelRadius, 0f));
+                DrawReticleMesh(mesh, material, OffsetReticleMatrix( _reticlePixelSize.x * pixelRadius, 0f));
+                DrawReticleMesh(mesh, material, OffsetReticleMatrix(0f, -_reticlePixelSize.y * pixelRadius));
+                DrawReticleMesh(mesh, material, OffsetReticleMatrix(0f,  _reticlePixelSize.y * pixelRadius));
+            }
+
+            DrawReticleMesh(mesh, material, _reticleMatrix);
+        }
+
+        private static void DrawReticleMesh(Mesh mesh, Material material, Matrix4x4 matrix)
+        {
+            int subMeshCount = Mathf.Max(1, mesh.subMeshCount);
+            for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
+                _cmdBuffer.DrawMesh(mesh, matrix, material, subMesh, -1);
+        }
+
+        private static Matrix4x4 OffsetReticleMatrix(float clipX, float clipY)
+        {
+            return Matrix4x4.Translate(new Vector3(clipX, clipY, 0f)) * _reticleMatrix;
+        }
+
+        private static Mesh GetActiveReticleMesh()
+        {
+            return _reticleSource == ReticleSource.Mesh && _savedScopeReticle != null
+                ? _savedScopeReticle.Mesh
+                : _reticleMesh;
+        }
+
+        private static Material GetActiveReticleMaterial()
+        {
+            return _reticleSource == ReticleSource.Mesh
+                ? _meshReticleMat
+                : _reticleMat;
+        }
+
+        private static float GetBaseReticleScale()
+        {
+            float configBase = PerScopeMeshSurgerySettings.GetReticleBaseSize();
+
+            if (_reticleSource == ReticleSource.Mesh)
+            {
+                if (configBase > 0f)
+                    return configBase;
+                if (_savedScopeReticle != null && _savedScopeReticle.Scale > 0f)
+                    return _savedScopeReticle.Scale;
+            }
+
+            return configBase > 0f
+                ? configBase
+                : PerScopeMeshSurgerySettings.GetPlane1Radius() * 2f;
+        }
+
+        private static float GetMeshReticleBoundsScale(Mesh mesh)
+        {
+            if (mesh == null)
+                return 1f;
+
+            Bounds bounds = mesh.bounds;
+            Vector3 size = bounds.size;
+            float maxDimension = Mathf.Max(size.x, Mathf.Max(size.y, size.z));
+            return maxDimension > 0.0001f ? 1f / maxDimension : 1f;
         }
 
         private static void DrawLensMaskEntry(LensTransparency.LensMaskEntry entry)
@@ -568,6 +865,13 @@ namespace PiPDisabler
         private static Rect GetDisplayViewport(Camera cam)
             => Helpers.GetDisplayViewport(cam);
 
+        private static Vector2 GetClipPixelSize(Rect viewport)
+        {
+            float width = Mathf.Max(1f, viewport.width);
+            float height = Mathf.Max(1f, viewport.height);
+            return new Vector2(2f / width, 2f / height);
+        }
+
         /// <summary>
         /// Returns the aspect ratio for the currently attached command-buffer event.
         /// </summary>
@@ -589,6 +893,39 @@ namespace PiPDisabler
             {
                 new Vector2(0,0), new Vector2(1,0), new Vector2(1,1), new Vector2(0,1)
             };
+        }
+
+        private static void EnsureMeshReticleMaterial()
+        {
+            if (_meshReticleMat != null || _savedScopeReticle == null) return;
+
+            Shader stencilShader = Shader.Find("UI/Default");
+            if (stencilShader == null)
+                return;
+
+            _hasStencilSupport = true;
+            _meshReticleMat = new Material(stencilShader)
+            {
+                color = Color.white,
+                renderQueue = 3100
+            };
+
+            Material source = _savedScopeReticle.Material;
+            if (source != null)
+            {
+                if (source.HasProperty("_MainTex") && source.mainTexture != null)
+                    _meshReticleMat.mainTexture = source.mainTexture;
+                if (source.HasProperty("_Color"))
+                    _meshReticleMat.color = source.color;
+            }
+
+            _meshReticleMat.SetInt("_ZTest", (int)CompareFunction.Always);
+            _meshReticleMat.SetInt("_ZWrite", 0);
+            _meshReticleMat.SetFloat("_Stencil", 1f);
+            _meshReticleMat.SetFloat("_StencilComp", (float)CompareFunction.Equal);
+            _meshReticleMat.SetFloat("_StencilOp", (float)StencilOp.Keep);
+            _meshReticleMat.SetFloat("_StencilReadMask", 255f);
+            _meshReticleMat.SetFloat("_StencilWriteMask", 0f);
         }
 
         private static void EnsureMeshAndMaterial()
@@ -636,7 +973,7 @@ namespace PiPDisabler
                         Shader.Find("Particles/Additive") ??
                         Shader.Find("Legacy Shaders/Particles/Additive");
 
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         "[Reticle] No alpha-blend shader found; falling back to Particles/Additive.");
                 }
 
@@ -658,7 +995,7 @@ namespace PiPDisabler
                     _reticleMat.SetFloat("_StencilWriteMask", 0f);   // don't write
                 }
 
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[Reticle] Created material (shader='{(alphaShader != null ? alphaShader.name : "null")}'" +
                     $" stencilSupport={_hasStencilSupport})");
 

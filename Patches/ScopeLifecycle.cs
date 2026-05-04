@@ -32,6 +32,8 @@ namespace PiPDisabler
             Time.realtimeSinceStartup < _postExitRestoreExpiry;
         public static float PostExitRestoreFov => _postExitRestoreFov;
 
+        private static readonly HashSet<string> _scopeBlacklistNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static string _scopeBlacklistRawCached;
         private static readonly HashSet<string> _scopeWhitelistNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static string _scopeWhitelistRawCached;
 
@@ -75,7 +77,7 @@ namespace PiPDisabler
 
         public static void Init()
         {
-            PiPDisablerPlugin.LogSource.LogInfo("[ScopeLifecycle] Init: IsAiming/CurrentScope/IsOptic are public — direct access.");
+            PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Init: IsAiming/CurrentScope/IsOptic are public — direct access.");
         }
 
 
@@ -89,7 +91,7 @@ namespace PiPDisabler
                 var pwa = player?.ProceduralWeaponAnimation;
                 if (pwa != null && _getIsAiming(pwa))
                 {
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeLifecycle] Collimator→optic switch while ADS: " +
                         $"'{os.name}'[{FovController.GetOpticTemplateId(os)}] — treating as scope enter");
                 }
@@ -97,7 +99,7 @@ namespace PiPDisabler
 
             if (_isScoped && os != null && os != _activeOptic)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeLifecycle] Mode switch while scoped: " +
                     $"'{(_activeOptic != null ? _activeOptic.name : "?")}'[{FovController.GetOpticTemplateId(_activeOptic)}] → " +
                     $"'{os.name}'[{FovController.GetOpticTemplateId(os)}]");
@@ -128,7 +130,7 @@ namespace PiPDisabler
                 MeshSurgeryManager.RestoreForScope(os.transform);
                 if (IsReloadActive())
                 {
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeLifecycle] Skipping mode-switch mesh surgery because reload is active. frame={Time.frameCount}");
                     LensTransparency.RestoreAll();
                     SuppressReticleForReload();
@@ -138,8 +140,6 @@ namespace PiPDisabler
                 {
                     MeshSurgeryManager.ApplyForOptic(os);
                 }
-
-                CameraSettingsManager.ApplyForOptic(os);
                 Patches.WeaponScalingPatch.CaptureBaseState();
                 if (!FreelookTracker.IsFreelooking && !_meshSurgerySuppressedByReload)
                 {
@@ -148,6 +148,7 @@ namespace PiPDisabler
                     ScopeEffectsRenderer.Show();
                     ApplyFov(true);
                 }
+                CameraSettingsManager.ApplyForOptic(os);
             }
 
             CheckAndUpdate("OnOpticEnabled");
@@ -215,7 +216,7 @@ namespace PiPDisabler
 
             if (shouldBeScoped != _isScoped)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeLifecycle] State change: {(_isScoped ? "SCOPED" : "NOT_SCOPED")} → " +
                     $"{(shouldBeScoped ? "SCOPED" : "NOT_SCOPED")} reason='{reason}' " +
                     $"caller={_lastCaller} frame={Time.frameCount}");
@@ -266,7 +267,7 @@ namespace PiPDisabler
                         LensTransparency.RestoreAll();
                         ScopeEffectsRenderer.Hide();
                         _meshSurgerySuppressedByReload = true;
-                        PiPDisablerPlugin.LogSource.LogInfo(
+                        PiPDisablerPlugin.DebugLogInfo(
                             $"[ScopeLifecycle] Mesh surgery suspended during reload. frame={Time.frameCount}");
                     }
                 }
@@ -277,7 +278,7 @@ namespace PiPDisabler
                     LensTransparency.HideAllLensSurfaces(_activeOptic);
                     ResumeReticleAfterReload();
                     ScopeEffectsRenderer.Show();
-                    PiPDisablerPlugin.LogSource.LogInfo($"[ScopeLifecycle] Mesh surgery resumed after reload. frame={Time.frameCount}");
+                    PiPDisablerPlugin.DebugLogInfo($"[ScopeLifecycle] Mesh surgery resumed after reload. frame={Time.frameCount}");
                 }
             }
 
@@ -323,7 +324,7 @@ namespace PiPDisabler
             var pwa = player?.ProceduralWeaponAnimation;
             if (pwa == null || !pwa.IsAiming)
             {
-                PiPDisablerPlugin.LogSource.LogInfo("[ScopeLifecycle] Whitelist toggle ignored: not aiming");
+                PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Whitelist toggle ignored: not aiming");
                 return;
 
             }
@@ -334,14 +335,14 @@ namespace PiPDisabler
 
             if (os == null)
             {
-                PiPDisablerPlugin.LogSource.LogInfo("[ScopeLifecycle] Whitelist toggle ignored: no active scope");
+                PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Whitelist toggle ignored: no active scope");
                 return;
             }
 
             string scopeName = ResolveWhitelistScopeKey(os);
             if (string.IsNullOrWhiteSpace(scopeName))
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeLifecycle] Whitelist toggle ignored: no usable scope key for '{os.name}'");
                 return;
             }
@@ -360,10 +361,10 @@ namespace PiPDisabler
                 removed = false;
             }
 
-            Settings.ScopeWhitelistNames.Value = string.Join(",", _scopeWhitelistNames);
+            Settings.ScopeWhitelistNames.Value = string.Join(";", _scopeWhitelistNames);
             _scopeWhitelistRawCached = Settings.ScopeWhitelistNames.Value ?? string.Empty;
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeLifecycle] Whitelist {(removed ? "removed" : "added")}: scopeKey='{scopeName}'");
 
             if (Settings.ModEnabled.Value && _isScoped)
@@ -372,6 +373,62 @@ namespace PiPDisabler
                 SyncState();
             }
         }
+
+        public static void ToggleActiveScopeBlacklistEntry()
+        {
+            var player = GetLocalPlayer();
+            var pwa = player?.ProceduralWeaponAnimation;
+            if (pwa == null || !pwa.IsAiming)
+            {
+                PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Blacklist toggle ignored: not aiming");
+                return;
+            }
+
+            var os = _activeOptic;
+            if (os == null)
+                os = _lastEnabledOptic;
+
+            if (os == null)
+            {
+                PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Blacklist toggle ignored: no active scope");
+                return;
+            }
+
+            string scopeName = ResolveWhitelistScopeKey(os);
+            if (string.IsNullOrWhiteSpace(scopeName))
+            {
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[ScopeLifecycle] Blacklist toggle ignored: no usable scope key for '{os.name}'");
+                return;
+            }
+
+            RefreshScopeBlacklistCache();
+
+            bool removed;
+            if (_scopeBlacklistNames.Contains(scopeName))
+            {
+                _scopeBlacklistNames.Remove(scopeName);
+                removed = true;
+            }
+            else
+            {
+                _scopeBlacklistNames.Add(scopeName);
+                removed = false;
+            }
+
+            Settings.ScopeBlacklistNames.Value = string.Join(";", _scopeBlacklistNames);
+            _scopeBlacklistRawCached = Settings.ScopeBlacklistNames.Value ?? string.Empty;
+
+            PiPDisablerPlugin.DebugLogInfo(
+                $"[ScopeLifecycle] Blacklist {(removed ? "removed" : "added")}: scopeKey='{scopeName}'");
+
+            if (Settings.ModEnabled.Value && _isScoped)
+            {
+                ForceExit();
+                SyncState();
+            }
+        }
+
         private static string ResolveWhitelistScopeKey(OpticSight os)
         {
             if (os == null) return null;
@@ -463,7 +520,7 @@ namespace PiPDisabler
             if (!_isScoped) return;
             if (!Settings.ModEnabled.Value) return;
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeLifecycle] SetScopeMode fired while scoped frame={Time.frameCount}");
 
 
@@ -491,7 +548,7 @@ namespace PiPDisabler
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeLifecycle] Failed to refresh scope aim transforms on mode switch: {ex.Message}");
             }
         }
@@ -500,13 +557,18 @@ namespace PiPDisabler
         {
             if (os == null) return false;
 
+            if (ShouldBypassByBlacklist(os))
+            {
+                return true;
+            }
+
             if (ShouldBypassByWhitelist(os))
             {
                 return true;
             }
 
             if (Settings.AutoDisableForVariableScopes.Value
-                && (FovController.IsOpticAdjustable(os) || IsThermalOrNightVisionOptic(os)))
+                && IsThermalOrNightVisionOptic(os))
             {
                 return true;
             }
@@ -518,6 +580,26 @@ namespace PiPDisabler
             return false;
         }
 
+        private static bool ShouldBypassByBlacklist(OpticSight os)
+        {
+            RefreshScopeBlacklistCache();
+            if (_scopeBlacklistNames.Count == 0)
+                return false;
+
+            string scopeName = ResolveWhitelistScopeKey(os);
+            bool blacklisted = !string.IsNullOrEmpty(scopeName)
+                && !string.Equals(scopeName, "unknown", StringComparison.OrdinalIgnoreCase)
+                && _scopeBlacklistNames.Contains(scopeName);
+
+            if (blacklisted)
+            {
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[ScopeLifecycle] Blacklist bypass: '{os.name}'[scopeKey={scopeName}] is in ScopeBlacklistNames");
+            }
+
+            return blacklisted;
+        }
+
         private static bool ScopeNameMatchesBypassPattern(OpticSight os)
         {
             if (os == null) return false;
@@ -527,13 +609,13 @@ namespace PiPDisabler
             string scopeKey = ResolveWhitelistScopeKey(os) ?? string.Empty;
             string objectName = os.name ?? string.Empty;
 
-            foreach (string token in raw.Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            foreach (string token in raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 string t = token.Trim();
                 if (string.IsNullOrEmpty(t)) continue;
                 if (ContainsCI(scopeKey, t) || ContainsCI(objectName, t))
                 {
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeLifecycle] AutoBypassNameContains match: token='{t}'" +
                         $" objectName='{objectName}' scopeKey='{scopeKey}'");
                     return true;
@@ -555,11 +637,29 @@ namespace PiPDisabler
 
             if (!allowed)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeLifecycle] Whitelist bypass: '{os.name}'[scopeKey={scopeName}] is not in ScopeWhitelistNames");
             }
 
             return !allowed;
+        }
+
+        private static void RefreshScopeBlacklistCache()
+        {
+            string raw = Settings.ScopeBlacklistNames.Value ?? string.Empty;
+            if (string.Equals(raw, _scopeBlacklistRawCached, StringComparison.Ordinal))
+                return;
+
+            _scopeBlacklistRawCached = raw;
+            _scopeBlacklistNames.Clear();
+
+            var parts = raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                string id = part.Trim();
+                if (!string.IsNullOrEmpty(id))
+                    _scopeBlacklistNames.Add(id);
+            }
         }
 
         private static void RefreshScopeWhitelistCache()
@@ -571,7 +671,7 @@ namespace PiPDisabler
             _scopeWhitelistRawCached = raw;
             _scopeWhitelistNames.Clear();
 
-            var parts = raw.Split(new[] { ',', ';', '\n', '\r', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            var parts = raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var part in parts)
             {
                 string id = part.Trim();
@@ -610,14 +710,14 @@ namespace PiPDisabler
 
                 if (hasNightVision || hasThermal)
                 {
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeLifecycle] Thermal/NV auto-bypass match: nightVision={hasNightVision} thermal={hasThermal}");
                     return true;
                 }
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeLifecycle] Thermal/NV detection failed: {ex.Message}");
             }
 
@@ -630,7 +730,7 @@ namespace PiPDisabler
             bool restoreFov)
         {
             string opticName = os != null ? os.name : "null";
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeLifecycle] Bypassing mod for current scope ({reason}): " +
                 $"'{opticName}'[{FovController.GetOpticTemplateId(os)}] " +
                 $"key='{ResolveWhitelistScopeKey(os)}' adjustable={FovController.IsOpticAdjustable(os)} " +
@@ -649,6 +749,7 @@ namespace PiPDisabler
             LensTransparency.RestoreAll();
             CameraSettingsManager.Restore();
             PiPDisabler.RestoreAllCameras();
+            Patches.VanillaOpticSuppression.RestoreVanillaOpticState(os);
 
             if (os != null)
                 MeshSurgeryManager.RestoreForScope(os.transform);
@@ -661,7 +762,7 @@ namespace PiPDisabler
             var os = FindEnabledOpticFromPWA();
             if (os == null)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     "[ScopeLifecycle] ENTER aborted — no OpticSight found");
                 return;
             }
@@ -678,7 +779,7 @@ namespace PiPDisabler
                 return;
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeLifecycle] ENTER: '{os.name}'[{FovController.GetOpticTemplateId(os)}] frame={Time.frameCount}");
 
             // 1. Extract reticle texture BEFORE destroying lens mesh
@@ -709,7 +810,7 @@ namespace PiPDisabler
             _meshSurgerySuppressedByReload = false;
             if (IsReloadActive())
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeLifecycle] Skipping initial mesh surgery because reload is active. frame={Time.frameCount}");
                 LensTransparency.RestoreAll();
                 SuppressReticleForReload();
@@ -746,7 +847,7 @@ namespace PiPDisabler
             FreelookTracker.Reset();
 
             var prevOptic = _activeOptic;
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeLifecycle] EXIT: '{(prevOptic != null ? prevOptic.name : "null")}'" +
                 $"[{FovController.GetOpticTemplateId(prevOptic)}] frame={Time.frameCount}");
 
@@ -829,8 +930,9 @@ namespace PiPDisabler
 
                 float zoomBaseFov = FovController.ZoomBaselineFov;
                 float zoomedFov = FovController.ComputeZoomedFov();
+                bool smoothScopeFov = FovController.IsSmoothScopeFovActive();
 
-                if (zoomedFov >= 0.5f && zoomedFov < zoomBaseFov)
+                if (zoomedFov >= 0.5f && (smoothScopeFov || zoomedFov < zoomBaseFov))
                 {
                     float duration = isTransition
                         ? Settings.FovAnimationDuration.Value
@@ -844,10 +946,10 @@ namespace PiPDisabler
                     FovController.TrackAppliedFov(zoomedFov);
                     CameraClass.Instance.SetFov(zoomedFov, duration, false);
                     FreelookTracker.CacheAppliedFov(zoomedFov);
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
                 }
-                else if (isTransition && zoomedFov >= zoomBaseFov)
+                else if (isTransition && !smoothScopeFov && zoomedFov >= zoomBaseFov)
                 {
                     // High-to-low mode switch where new mode has no zoom:
                     // restore to baseline with configured duration so both directions are consistent
@@ -855,13 +957,13 @@ namespace PiPDisabler
                     FovController.TrackAppliedFov(zoomBaseFov);
                     CameraClass.Instance.SetFov(zoomBaseFov, duration, false);
                     FreelookTracker.CacheAppliedFov(zoomBaseFov);
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeLifecycle] ApplyFov (restore baseline): {zoomBaseFov:F1}° dur={duration:F2}s");
                 }
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeLifecycle] ApplyFov error: {ex.Message}");
             }
         }
@@ -896,13 +998,13 @@ namespace PiPDisabler
                     _postExitRestoreExpiry = Time.realtimeSinceStartup + suppressFor;
                     FovController.TrackAppliedFov(targetFov);
                     cc.SetFov(targetFov, duration, true);
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeLifecycle] RestoreFov: {targetFov:F1}° dur={duration:F2}s suppress={suppressFor:F2}s");
                 }
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeLifecycle] RestoreFov error: {ex.Message}");
             }
         }
@@ -966,6 +1068,10 @@ namespace PiPDisabler
 
             if (_lastEnabledOptic != null && _lastEnabledOptic.isActiveAndEnabled)
                 return _lastEnabledOptic;
+
+            var currentOptic = TryGetCurrentScopeOpticFromPwa();
+            if (currentOptic != null && currentOptic.isActiveAndEnabled)
+                return currentOptic;
 
             // During rapid transitions (mode switch), the incoming optic may not
             // be marked enabled yet. Trust the cache rather than doing a scene scan.

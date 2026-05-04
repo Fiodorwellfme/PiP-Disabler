@@ -14,7 +14,7 @@ namespace PiPDisabler.Patches
         {
             if (!Chainloader.PluginInfos.ContainsKey(DERPFixPluginGuid))
             {
-                PiPDisablerPlugin.LogSource.LogInfo("[DERPCompat] DynamicExternalResolution not installed, no patching O.o");
+                PiPDisablerPlugin.DebugLogInfo("[DERPCompat] DynamicExternalResolution not installed, no patching O.o");
                 return;
             }
 
@@ -29,7 +29,7 @@ namespace PiPDisabler.Patches
             _harmony = new Harmony(HarmonyId);
             _harmony.Patch(setResolutionAim, prefix: prefix);
 
-            PiPDisablerPlugin.LogSource.LogInfo("[DERPCompat] Patched DynamicExternalResolution SetResolutionAim.");
+            PiPDisablerPlugin.DebugLogInfo("[DERPCompat] Patched DynamicExternalResolution SetResolutionAim.");
 
         }
 
@@ -40,11 +40,11 @@ namespace PiPDisabler.Patches
 
             if (ScopeLifecycle.IsCurrentOrPendingOpticBypassed() || ScopeLifecycle.IsLastOpticNameBypassed())
             {
-                PiPDisablerPlugin.LogSource.LogInfo("[DERPCompat] Allowing DERP.");
+                PiPDisablerPlugin.DebugLogInfo("[DERPCompat] Allowing DERP.");
                 return true;
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo("[DERPCompat] No DERP today");
+            PiPDisablerPlugin.DebugLogInfo("[DERPCompat] No DERP today");
             return false;
         }
     }

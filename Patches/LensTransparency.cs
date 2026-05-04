@@ -98,7 +98,7 @@ namespace PiPDisabler
             }
             catch { }
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[LensTransparency] Destroyed geometry on {killed} lens surfaces (searchRoot='{searchRoot.name}')");
         }
 
@@ -118,13 +118,13 @@ namespace PiPDisabler
                 if (e.Skinned != null && e.Skinned.sharedMesh != emptyMesh)
                 {
                     e.Skinned.sharedMesh = emptyMesh;
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[LensTransparency] Re-emptied skinned mesh on '{e.Skinned.gameObject.name}'");
                 }
                 else if (e.Filter != null && e.Filter.sharedMesh != emptyMesh)
                 {
                     e.Filter.sharedMesh = emptyMesh;
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[LensTransparency] Re-emptied mesh on '{e.Filter.gameObject.name}'");
                 }
                 if (e.Renderer != null)
@@ -152,27 +152,27 @@ namespace PiPDisabler
                     if (e.Skinned != null && e.OriginalMesh != null)
                     {
                         e.Skinned.sharedMesh = e.OriginalMesh;
-                        PiPDisablerPlugin.LogSource.LogInfo(
+                        PiPDisablerPlugin.DebugLogInfo(
                             $"[LensTransparency] Restored skinned mesh on '{e.Skinned.gameObject.name}' → {e.OriginalMesh.vertexCount} verts");
                     }
                     else if (e.Filter != null && e.OriginalMesh != null)
                     {
                         e.Filter.sharedMesh = e.OriginalMesh;
-                        PiPDisablerPlugin.LogSource.LogInfo(
+                        PiPDisablerPlugin.DebugLogInfo(
                             $"[LensTransparency] Restored mesh on '{e.Filter.gameObject.name}' → {e.OriginalMesh.vertexCount} verts");
                     }
 
                     if (e.Renderer != null)
                     {
                         e.Renderer.forceRenderingOff = e.WasForceOff;
-                        PiPDisablerPlugin.LogSource.LogInfo(
+                        PiPDisablerPlugin.DebugLogInfo(
                             $"[LensTransparency] Restored renderer '{e.Renderer.gameObject.name}' forceOff={e.WasForceOff}");
                     }
                 }
                 catch { }
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo($"[LensTransparency] Restored {_hidden.Count} lens meshes");
+            PiPDisablerPlugin.DebugLogInfo($"[LensTransparency] Restored {_hidden.Count} lens meshes");
             _hidden.Clear();
         }
 
@@ -215,7 +215,7 @@ namespace PiPDisabler
             // dynamically between optic/collimator modes.
             r.forceRenderingOff = true;
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[LensTransparency] MESH DESTROYED: '{r.gameObject.name}' " +
                 $"(had {(origMesh != null ? origMesh.vertexCount.ToString() : "?")} verts → 0) " +
                 $"MeshFilter={(mf != null ? "yes" : "NO")}, Skinned={(smr != null ? "yes" : "NO")}");
@@ -402,12 +402,12 @@ namespace PiPDisabler
                     Mesh = entry.OriginalMesh,
                 });
 
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[LensTransparency] LensMask +mesh: go='{entry.Renderer.gameObject.name}'" +
                     $" mesh='{entry.OriginalMesh.name}' verts={entry.OriginalMesh.vertexCount}");
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[LensTransparency] CollectLensMaskEntries: {result.Count} entry(s)" +
                 $" (searchRoot='{searchRoot?.name ?? "null"}' from '{os.name}')");
 
@@ -446,26 +446,26 @@ namespace PiPDisabler
 
                 if (ContainsCI(meshName, "LOD1"))
                 {
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[LensTransparency] HousingMask -skip LOD1 mesh: go='{goName}' mesh='{meshName}'");
                     continue;
                 }
 
                 if (LooksLikeLensName(meshName) || LooksLikeLensName(goName))
                 {
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[LensTransparency] HousingMask -skip lens-like mesh: go='{goName}' mesh='{meshName}'");
                     continue;
                 }
 
                 result.Add(r);
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[LensTransparency] HousingMask +renderer: go='{r.gameObject.name}'" +
                     $" mesh='{mesh.name}' verts={mesh.vertexCount}" +
                     $" shader='{(r.sharedMaterial?.shader?.name ?? "null")}'");
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[LensTransparency] CollectHousingRenderers: {result.Count} renderer(s)" +
                 $" (searchRoot='{searchRoot?.name ?? "null"}' from '{os.name}')");
 
@@ -510,7 +510,7 @@ namespace PiPDisabler
             Transform weaponRoot = FindWeaponRoot(os.transform);
             if (weaponRoot == null)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     "[LensTransparency] CollectWeaponRenderers: no 'weapon' root found");
                 return result;
             }
@@ -540,12 +540,12 @@ namespace PiPDisabler
                 if (LooksLikeLensName(meshName) || LooksLikeLensName(goName)) continue;
 
                 result.Add(r);
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[LensTransparency] WeaponMask +renderer: go='{goName}'" +
                     $" mesh='{meshName}' verts={mesh.vertexCount}");
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[LensTransparency] CollectWeaponRenderers: {result.Count} renderer(s)" +
                 $" (weaponRoot='{weaponRoot.name}')");
 
@@ -561,7 +561,7 @@ namespace PiPDisabler
                 return;
             _dumpedOnce = true;
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[LensTransparency] === SCOPE HIERARCHY DUMP: '{root.name}' ===");
 
             var allRenderers = root.GetComponentsInChildren<Renderer>(true);
@@ -599,14 +599,14 @@ namespace PiPDisabler
                 bool isLens = IsLensSurfaceRenderer(r);
                 string path = GetRelativePath(r.transform, root);
 
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[LensTransparency]   {(isLens ? "★LENS★" : "      ")} " +
                     $"'{path}' mesh='{meshName}' verts={verts} enabled={r.enabled} " +
                     $"active={r.gameObject.activeSelf} layer={r.gameObject.layer} " +
                     $"mats=[{matInfo}]");
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[LensTransparency] === END DUMP ({allRenderers.Length} renderers) ===");
         }
 

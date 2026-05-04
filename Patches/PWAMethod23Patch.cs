@@ -75,8 +75,9 @@ namespace PiPDisabler.Patches
             {
                 float zoomBaseFov = FovController.ZoomBaselineFov;
                 float zoomedFov = FovController.ComputeZoomedFov();
+                bool smoothScopeFov = FovController.IsSmoothScopeFovActive();
 
-                if (zoomedFov >= 0.5f && zoomedFov <= zoomBaseFov)
+                if (zoomedFov >= 0.5f && (smoothScopeFov || zoomedFov <= zoomBaseFov))
                 {
                     if (FovController.HasFovChanged(zoomedFov))
                     {

@@ -13,6 +13,7 @@ namespace PiPDisabler.Patches
     internal sealed class WeaponScalingPatch : ModulePatch
     {
         private static bool _isActive;
+        private static bool _suppressCompensationOverride;
         private const float ZoomBaseline = 50f;
 
         protected override MethodBase GetTargetMethod()
@@ -42,10 +43,30 @@ namespace PiPDisabler.Patches
         public static void RestoreScale()
         {
             _isActive = false;
+            RestoreVanillaScale();
+        }
+
+        public static void RestoreScaleForFreelook()
+        {
+            if (!_isActive) return;
+            RestoreVanillaScale();
+        }
+
+        private static void RestoreVanillaScale()
+        {
             var player = GetMainPlayer();
             if (player == null) return;
             int settingsFov = GetVanillaSettingsFov();
-            player.OnFovUpdatedEvent(settingsFov);
+            _suppressCompensationOverride = true;
+            try
+            {
+                player.OnFovUpdatedEvent(settingsFov);
+                player.RibcageScaleCurrent = player.RibcageScaleCurrentTarget;
+            }
+            finally
+            {
+                _suppressCompensationOverride = false;
+            }
         }
 
         private static float ComputeCompensatedScale(float currentFov, float settingsFov)
@@ -103,6 +124,7 @@ namespace PiPDisabler.Patches
         private static void Postfix(Player __instance)
         {
             if (!__instance.IsYourPlayer) return;
+            if (_suppressCompensationOverride) return;
             if (!ScopeLifecycle.IsScoped) return;
             if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
             if (!_isActive) return;

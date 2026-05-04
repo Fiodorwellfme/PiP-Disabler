@@ -23,6 +23,11 @@ namespace PiPDisabler
         public float CutLength;
         public float NearPreserveDepth;
         public float ReticleBaseSize;
+        public float MeshReticleMinScale;
+        public float MeshReticleMaxScale;
+        public float VignetteOpacity;
+        public float VignetteRadius;
+        public float VignetteSoftness;
         public bool ExpandSearchToWeaponRoot;
     }
 
@@ -62,6 +67,11 @@ namespace PiPDisabler
         internal static float GetCutLength() => ActiveScopeOverride != null ? ActiveScopeOverride.CutLength : Settings.CutLength.Value;
         internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : Settings.NearPreserveDepth.Value;
         internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : Settings.ReticleBaseSize.Value;
+        internal static float GetMeshReticleMinScale() => ActiveScopeOverride != null ? ActiveScopeOverride.MeshReticleMinScale : Settings.MeshReticleMinScale.Value;
+        internal static float GetMeshReticleMaxScale() => ActiveScopeOverride != null ? ActiveScopeOverride.MeshReticleMaxScale : Settings.MeshReticleMaxScale.Value;
+        internal static float GetVignetteOpacity() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteOpacity ?? 0f, Settings.VignetteOpacity.Value);
+        internal static float GetVignetteRadius() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteRadius ?? 0f, Settings.VignetteRadius.Value);
+        internal static float GetVignetteSoftness() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteSoftness ?? 0f, Settings.VignetteSoftness.Value);
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : Settings.ExpandSearchToWeaponRoot.Value;
 
 
@@ -96,12 +106,17 @@ namespace PiPDisabler
                 Settings.CustomCutLength.Value = entry.CutLength;
                 Settings.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
                 Settings.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
+                Settings.CustomMeshReticleMinScale.Value = entry.MeshReticleMinScale;
+                Settings.CustomMeshReticleMaxScale.Value = entry.MeshReticleMaxScale;
+                Settings.CustomVignetteOpacity.Value = entry.VignetteOpacity;
+                Settings.CustomVignetteRadius.Value = entry.VignetteRadius;
+                Settings.CustomVignetteSoftness.Value = entry.VignetteSoftness;
                 Settings.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
-                PiPDisablerPlugin.LogSource.LogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
+                PiPDisablerPlugin.DebugLogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogInfo($"[CustomMeshSettings] Failed to sync Custom config entries from override: {ex.Message}");
+                PiPDisablerPlugin.DebugLogInfo($"[CustomMeshSettings] Failed to sync Custom config entries from override: {ex.Message}");
             }
         }
 
@@ -167,6 +182,11 @@ namespace PiPDisabler
             target.CutLength = Settings.CustomCutLength.Value;
             target.NearPreserveDepth = Settings.CustomNearPreserveDepth.Value;
             target.ReticleBaseSize = Settings.CustomReticleBaseSize.Value;
+            target.MeshReticleMinScale = Settings.CustomMeshReticleMinScale.Value;
+            target.MeshReticleMaxScale = Settings.CustomMeshReticleMaxScale.Value;
+            target.VignetteOpacity = Settings.CustomVignetteOpacity.Value;
+            target.VignetteRadius = Settings.CustomVignetteRadius.Value;
+            target.VignetteSoftness = Settings.CustomVignetteSoftness.Value;
             target.ExpandSearchToWeaponRoot = Settings.CustomExpandSearchToWeaponRoot.Value;
             WriteToDisk();
             return true;
@@ -215,7 +235,7 @@ namespace PiPDisabler
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogInfo($"[CustomMeshSettings] Failed to load settings json: {ex.Message}");
+                PiPDisablerPlugin.DebugLogInfo($"[CustomMeshSettings] Failed to load settings json: {ex.Message}");
                 _file = new ScopeMeshSurgerySettingsFile();
             }
         }
@@ -229,9 +249,15 @@ namespace PiPDisabler
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogInfo($"[CustomMeshSettings] Failed to save settings json: {ex.Message}");
+                PiPDisablerPlugin.DebugLogInfo($"[CustomMeshSettings] Failed to save settings json: {ex.Message}");
             }
         }
+
+        private static float GetPositiveOrDefault(float value, float defaultValue)
+        {
+            return value > 0f ? value : defaultValue;
+        }
+
         private static string GetPluginRootDirectory()
         {
             string pluginDir = null;

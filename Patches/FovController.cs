@@ -37,9 +37,21 @@ namespace PiPDisabler
         private static string _lastLoggedSource;
         private static float _lastTemplateZoomLog = -1f;
         private static string _lastTemplateZoomLogMode;
+        private static float _lastVariableTemplateFovLog = -1f;
 
         public static float ComputeZoomedFov()
         {
+            if (TryGetVariableTemplateFov(out float variableFov, out _, out _, out float smoothT))
+            {
+                if (Mathf.Abs(variableFov - _lastVariableTemplateFovLog) > 0.05f)
+                {
+                    _lastVariableTemplateFovLog = variableFov;
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[FovController] variable template FOV={variableFov:F2} deg t={smoothT:F3}");
+                }
+                return variableFov;
+            }
+
             float magnification = GetEffectiveMagnification();
             float oneXTargetFov = GetOneXTargetFov();
             float resultFov = magnification <= 1.01f
@@ -54,7 +66,7 @@ namespace PiPDisabler
                 string mapping = magnification <= 1.01f
                     ? $"(1x override={oneXTargetFov:F1}°)"
                     : $"(baseline={ZoomBaselineFov:F0}°)";
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[FovController] mag={magnification:F2}x → mainFov={resultFov:F1}° " +
                     $"{mapping} [{source}]");
             }
@@ -83,8 +95,32 @@ namespace PiPDisabler
 
         public static float GetEffectiveMagnificationUncached()
         {
+            if (TryGetVariableTemplateFov(out float variableFov, out _, out _, out _))
+                return FovToMagnification(variableFov, ZoomBaselineFov);
+
             float templateMag = GetTemplateZoom();
             return templateMag;
+        }
+
+        public static float GetSmoothScopeZoomPosition()
+        {
+            return TryGetVariableTemplateFov(out _, out _, out _, out float zoomPosition)
+                ? zoomPosition
+                : 0f;
+        }
+
+        public static bool IsSmoothScopeFovActive()
+        {
+            return TryGetVariableTemplateFov(out _, out _, out _, out _);
+        }
+
+        public static bool TryGetCurrentVariableFovRange(
+            out float currentFov,
+            out float wideFov,
+            out float narrowFov,
+            out float zoomPosition)
+        {
+            return TryGetVariableTemplateFov(out currentFov, out wideFov, out narrowFov, out zoomPosition);
         }
 
         /// <summary>
@@ -97,6 +133,14 @@ namespace PiPDisabler
             float baseFovRad = baseFov * Mathf.Deg2Rad;
             float resultRad = 2f * Mathf.Atan2(Mathf.Tan(baseFovRad * 0.5f), magnification);
             return resultRad * Mathf.Rad2Deg;
+        }
+
+        private static float FovToMagnification(float fov, float baseFov)
+        {
+            if (fov < 0.1f) return 1f;
+            float baseFovRad = baseFov * Mathf.Deg2Rad;
+            float fovRad = fov * Mathf.Deg2Rad;
+            return Mathf.Max(1f, Mathf.Tan(baseFovRad * 0.5f) / Mathf.Tan(fovRad * 0.5f));
         }
 
         public static float GetOneXTargetFov()
@@ -165,6 +209,132 @@ namespace PiPDisabler
             _lastAppliedFov = 0f;
             _lastTemplateZoomLog = -1f;
             _lastTemplateZoomLogMode = null;
+            _lastVariableTemplateFovLog = -1f;
+        }
+
+        private static bool TryGetVariableTemplateFov(
+            out float fov,
+            out float wideFov,
+            out float narrowFov,
+            out float zoomPosition)
+        {
+            fov = 0f;
+            wideFov = 0f;
+            narrowFov = 0f;
+            zoomPosition = 0f;
+
+            var os = ScopeLifecycle.ActiveOptic;
+            if (os == null) return false;
+
+            var handler = FindScopeZoomHandler(os);
+            if (handler == null) return false;
+
+            if (!TryGetAdjustableFovBounds(os, handler, out float opticWideFov, out float opticNarrowFov))
+                return false;
+
+            float current = handler.FiledOfView;
+            if (current <= 0.1f)
+                return false;
+
+            float opticHigh = Mathf.Max(opticWideFov, opticNarrowFov);
+            float opticLow = Mathf.Min(opticWideFov, opticNarrowFov);
+            if (opticHigh <= 0.1f || opticLow <= 0.1f || Mathf.Approximately(opticHigh, opticLow))
+                return false;
+
+            var sc = FindSightComponent(os);
+            if (!TryGetTemplateZoomRange(sc, out float minZoom, out float maxZoom))
+                return false;
+
+            float wideZoom = Mathf.Min(minZoom, maxZoom);
+            float narrowZoom = Mathf.Max(minZoom, maxZoom);
+            if (Mathf.Approximately(wideZoom, narrowZoom))
+                return false;
+
+            float clampedCurrent = Mathf.Clamp(current, opticLow, opticHigh);
+            zoomPosition = Mathf.Clamp01(Mathf.InverseLerp(opticHigh, opticLow, clampedCurrent));
+
+            // Optic FOV only supplies position; template zooms define the output FOV.
+            wideFov = MagnificationToFov(wideZoom, ZoomBaselineFov);
+            narrowFov = MagnificationToFov(narrowZoom, ZoomBaselineFov);
+            fov = Mathf.Lerp(wideFov, narrowFov, zoomPosition);
+            return true;
+        }
+
+        private static bool TryGetAdjustableFovBounds(
+            OpticSight os,
+            ScopeZoomHandler handler,
+            out float wideFov,
+            out float narrowFov)
+        {
+            wideFov = 0f;
+            narrowFov = 0f;
+
+            var sc = FindSightComponent(os);
+            var templateData = sc?.AdjustableOpticData;
+            if (templateData != null && templateData.IsAdjustableOptic)
+            {
+                Vector3 bounds = templateData.MinMaxFov;
+                if (bounds.x > 0.1f && bounds.y > 0.1f)
+                {
+                    wideFov = bounds.x;
+                    narrowFov = bounds.y;
+                    return true;
+                }
+            }
+
+            ScopeSmoothCameraData cameraData = handler.CameraData ?? FindScopeSmoothCameraData(os);
+            if (cameraData == null)
+                return false;
+
+            Vector3 cameraBounds = cameraData.MinMaxFieldOfView;
+            if (cameraBounds.x <= 0.1f || cameraBounds.y <= 0.1f)
+                return false;
+
+            wideFov = cameraBounds.x;
+            narrowFov = cameraBounds.y;
+            return true;
+        }
+
+        private static ScopeZoomHandler FindScopeZoomHandler(OpticSight os)
+        {
+            if (os == null) return null;
+
+            ScopeZoomHandler handler = os.GetComponentInParent<ScopeZoomHandler>();
+            if (handler != null) return handler;
+
+            handler = os.GetComponentInChildren<ScopeZoomHandler>(true);
+            if (handler != null) return handler;
+
+            Transform root = ScopeHierarchy.FindScopeRoot(os.transform);
+            if (root == null) return null;
+
+            handler = root.GetComponentInChildren<ScopeZoomHandler>(true);
+            if (handler != null) return handler;
+
+            return root.parent != null
+                ? root.parent.GetComponentInChildren<ScopeZoomHandler>(true)
+                : null;
+        }
+
+        private static ScopeSmoothCameraData FindScopeSmoothCameraData(OpticSight os)
+        {
+            if (os == null) return null;
+
+            ScopeSmoothCameraData data = os.GetComponentInParent<ScopeSmoothCameraData>();
+            if (data != null) return data;
+
+            data = os.GetComponentInChildren<ScopeSmoothCameraData>(true);
+            if (data != null) return data;
+
+            Transform root = ScopeHierarchy.FindScopeRoot(os.transform);
+            if (root == null) return null;
+
+            data = root.GetComponentInChildren<ScopeSmoothCameraData>(true);
+            if (data != null) return data;
+
+            return root.parent != null
+                ? root.parent.GetComponentInChildren<ScopeSmoothCameraData>(true)
+                : null;
         }
 
         private static float GetTemplateZoom()
@@ -196,7 +366,7 @@ namespace PiPDisabler
 
             _lastTemplateZoomLog = zoom;
             _lastTemplateZoomLogMode = mode;
-            PiPDisablerPlugin.LogSource.LogInfo(message);
+            PiPDisablerPlugin.DebugLogInfo(message);
         }
 
         /// <summary>
@@ -210,18 +380,27 @@ namespace PiPDisabler
             if (os == null) return (0f, 0f);
 
             var sc = FindSightComponent(os);
-            if (sc == null) return (0f, 0f);
+            return TryGetTemplateZoomRange(sc, out float minZ, out float maxZ)
+                ? (minZ, maxZ)
+                : (0f, 0f);
+        }
+
+        private static bool TryGetTemplateZoomRange(SightComponent sc, out float minZ, out float maxZ)
+        {
+            minZ = 0f;
+            maxZ = 0f;
+            if (sc == null) return false;
 
             try
             {
-                float minZ = sc.GetMinOpticZoom();
-                float maxZ = sc.GetMaxOpticZoom();
+                minZ = sc.GetMinOpticZoom();
+                maxZ = sc.GetMaxOpticZoom();
                 if (minZ > 0.1f && maxZ > 0.1f)
-                    return (minZ, maxZ);
+                    return true;
             }
             catch { }
 
-            return (0f, 0f);
+            return false;
         }
 
         public static bool IsOpticAdjustable(OpticSight os)
@@ -336,7 +515,7 @@ namespace PiPDisabler
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[FovController] FindSightComponent exception: {ex.Message}");
             }
 
@@ -370,7 +549,7 @@ namespace PiPDisabler
                         {
                             _smvcType = t;
                             _sightModProp = prop;
-                            PiPDisablerPlugin.LogSource.LogInfo(
+                            PiPDisablerPlugin.DebugLogInfo(
                                 $"[FovController] Found SightModVisualControllers: {t.FullName}, " +
                                 $"SightMod={prop.Name} ({prop.PropertyType.Name})");
                             return;
@@ -382,7 +561,7 @@ namespace PiPDisabler
 
             // Strategy 2: Scan assemblies for MonoBehaviour with a property whose
             // return type has GetCurrentOpticZoom method
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 "[FovController] SightModVisualControllers name lookup failed, scanning assemblies...");
 
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -398,7 +577,7 @@ namespace PiPDisabler
                         {
                             _smvcType = type;
                             _sightModProp = prop;
-                            PiPDisablerPlugin.LogSource.LogInfo(
+                            PiPDisablerPlugin.DebugLogInfo(
                                 $"[FovController] Discovered SightModVisualControllers via scan: " +
                                 $"{type.FullName}, SightMod={prop.Name} ({prop.PropertyType.Name})");
                             return;
@@ -408,7 +587,7 @@ namespace PiPDisabler
                 catch { }
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 "[FovController] SightModVisualControllers NOT found — template zoom unavailable");
         }
 

@@ -18,7 +18,7 @@ namespace PiPDisabler.Patches
         private static void Postfix(OpticSight __instance)
         {
             // Always cache the enabled optic (so it's ready if mod is toggled on later)
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[Patch] OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"enabled={__instance?.enabled} frame={Time.frameCount}");
 
@@ -35,7 +35,7 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix(OpticSight __instance)
         {
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[Patch] OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"frame={Time.frameCount}");
 
@@ -54,7 +54,7 @@ namespace PiPDisabler.Patches
         {
             if (!Settings.ModEnabled.Value) return;
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
             ScopeLifecycle.CheckAndUpdate("ChangeAimingMode");
             ScopeLifecycle.OnSetScopeMode();
@@ -81,7 +81,7 @@ namespace PiPDisabler.Patches
                     && m.GetParameters()[0].ParameterType.IsArray);
 
             if (method == null)
-                PiPDisablerPlugin.LogSource.LogInfo("[Patch] SetScopeMode: target method not found");
+                PiPDisablerPlugin.DebugLogInfo("[Patch] SetScopeMode: target method not found");
 
             return method;
         }
@@ -91,7 +91,7 @@ namespace PiPDisabler.Patches
         {
             if (!Settings.ModEnabled.Value) return;
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[Patch] SetScopeMode frame={Time.frameCount}");
             ScopeLifecycle.OnSetScopeMode();
         }
@@ -116,7 +116,7 @@ namespace PiPDisabler.Patches
             var localPlayer = Helpers.GetLocalPlayer();
             if (!ReferenceEquals(__instance, localPlayer)) return;
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[Patch] OnSetInHands frame={Time.frameCount} item='{eventArgs.Item?.TemplateId ?? "null"}'");
 
             if (ScopeLifecycle.IsScoped)

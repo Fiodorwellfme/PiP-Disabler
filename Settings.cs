@@ -16,6 +16,8 @@ namespace PiPDisabler
         // --- General ---
         public static ConfigEntry<bool> AutoDisableForVariableScopes;
         public static ConfigEntry<string> AutoBypassNameContains;
+        public static ConfigEntry<string> ScopeBlacklistNames;
+        public static ConfigEntry<KeyCode> ScopeBlacklistToggleEntryKey;
         public static ConfigEntry<string> ScopeWhitelistNames;
         public static ConfigEntry<KeyCode> ScopeWhitelistToggleEntryKey;
 
@@ -40,6 +42,11 @@ namespace PiPDisabler
         public static ConfigEntry<float> CutLength;
         public static ConfigEntry<float> NearPreserveDepth;
         public static ConfigEntry<float> ReticleBaseSize;
+        public static ConfigEntry<float> MeshReticleMinScale;
+        public static ConfigEntry<float> MeshReticleMaxScale;
+        public static ConfigEntry<float> MeshReticleNormalizedScale;
+        public static ConfigEntry<bool> MeshReticleMinimumStrokeEnabled;
+        public static ConfigEntry<float> MeshReticleMinimumStrokePixels;
         public static ConfigEntry<bool> ExpandSearchToWeaponRoot;
         public static ConfigEntry<bool> DebugShowHousingMask;
         public static ConfigEntry<bool> StencilIncludeWeaponMeshes;
@@ -60,19 +67,22 @@ namespace PiPDisabler
         public static ConfigEntry<float> CustomCutLength;
         public static ConfigEntry<float> CustomNearPreserveDepth;
         public static ConfigEntry<float> CustomReticleBaseSize;
+        public static ConfigEntry<float> CustomMeshReticleMinScale;
+        public static ConfigEntry<float> CustomMeshReticleMaxScale;
+        public static ConfigEntry<float> CustomVignetteOpacity;
+        public static ConfigEntry<float> CustomVignetteRadius;
+        public static ConfigEntry<float> CustomVignetteSoftness;
         public static ConfigEntry<bool> CustomExpandSearchToWeaponRoot;
 
         // --- Scope Effects ---
         public static ConfigEntry<bool>  VignetteEnabled;
         public static ConfigEntry<float> VignetteOpacity;
-        public static ConfigEntry<float> VignetteSizeMult;
+        public static ConfigEntry<float> VignetteRadius;
         public static ConfigEntry<float> VignetteSoftness;
         public static ConfigEntry<bool>  ScopeShadowEnabled;
         public static ConfigEntry<bool>  DebugShowScopeShadowMask;
         public static ConfigEntry<bool>  ScopeShadowPersistOnUnscope;
         public static ConfigEntry<float> ScopeShadowOpacity;
-        public static ConfigEntry<float> ScopeShadowRadius;
-        public static ConfigEntry<float> ScopeShadowSoftness;
 
         // --- Weapon Scaling ---
         public static ConfigEntry<float> BaselineWeaponScale;
@@ -82,7 +92,13 @@ namespace PiPDisabler
         public static ConfigEntry<float> FovAnimationDuration;
         public static ConfigEntry<float> ManualLodBias;
         public static ConfigEntry<float> ManualCullingMultiplier;
+        public static ConfigEntry<bool> SuppressFireModeSwitchMovement;
+        public static ConfigEntry<bool> SuppressMagnificationSwitchMovement;
+        public static ConfigEntry<bool> ScaleSwayWithCameraFov;
+        public static ConfigEntry<float> SwayStrength;
+        public static ConfigEntry<bool> ForceRecoilReturnToZero;
         // --- Debug ---
+        public static ConfigEntry<bool> DebugLogging;
         public static ConfigEntry<bool> DebugReticleAfterEverything;
 
 
@@ -101,62 +117,67 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = false})));
 
             // --- General ---
-            ConfigEntries.Add(AutoDisableForVariableScopes = config.Bind("General", "Auto Disable For Variable Scopes", true,
+            ConfigEntries.Add(AutoDisableForVariableScopes = config.Bind("General", "Auto Disable For NV/Thermals", true,
                 new ConfigDescription(
-                    "Automatically disable all mod effects while scoped with unsupported scopes",
+                    "Automatically disable the mod for thermal/night vision scopes.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(AutoBypassNameContains = config.Bind("General", "Auto Bypass Name Contains", "npz, PU, vomz, d-evo",
+            ConfigEntries.Add(AutoBypassNameContains = config.Bind("General", "Auto Bypass Name Contains", "d-evo; scope_ags_npz_pag17_2,7x",
                 new ConfigDescription(
-                    "Comma-separated list of substrings. Any scope whose object name or scope key contains one of these ",
+                    "Semi-colon separated list. Any scope whose object name or scope key contains one of these gets bypassed",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(ScopeBlacklistNames = config.Bind("General", "Scope Blacklist Names", "",
+                new ConfigDescription(
+                    "Semi-colon separated list of scope keys that should bypass the mod.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(ScopeBlacklistToggleEntryKey = config.Bind("General", "Scope Blacklist Toggle Entry Key", KeyCode.None,
+                new ConfigDescription(
+                    "When pressed while scoped, add/remove the current scope to the blacklist.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(ScopeWhitelistNames = config.Bind("General", "Scope Whitelist Names", "",
                 new ConfigDescription(
-                    "Comma/semicolon/newline separated list of allowed scope keys.\n" +
-                "Primary key is derived from the object under mod_scope that does not contain mount (case-insensitive).\n" +
-                "Fallbacks: template _name, template _id, then optic object name. Empty list = whitelist ignored.",
+                    "Semi-colon separated list of allowed scopes. Empty list = whitelist ignored.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(ScopeWhitelistToggleEntryKey = config.Bind("General", "Scope Whitelist Toggle Entry Key", KeyCode.None,
                 new ConfigDescription(
-                    "When pressed while scoped, add/remove the current scope key in ScopeWhitelistNames (derived from mod_scope non-mount object).",
+                    "When pressed while scoped, add/remove the current scope to the whitelist.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            // --- Weapon Scaling ---
-            ConfigEntries.Add(BaselineWeaponScale = config.Bind("General", "Baseline Weapon Scale", 0.8873239f,
-                new ConfigDescription(
-                    "NOT WORKING CURRENTLY. Base weapon scale applied at all FOV values before compensation.\n" +
-                    "1.00 = default EFT visual scale.",
-                    new AcceptableValueRange<float>(0.00f, 2.00f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(WeaponScaleStrength = config.Bind("General", "Weapon Scale Strength", 0.2723005f,
-                new ConfigDescription(
-                    "NOT WORKING CURRENTLY. Blends between no compensation and full inverse-FOV compensation.\n" +
-                    "0.00 = no compensation, 1.00 = full compensation, values outside [0,1] over/under-compensate.",
-                    new AcceptableValueRange<float>(-2.00f, 2.00f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true })));
 
             // --- Zoom ---
-            ConfigEntries.Add(BaselineFOV = config.Bind("General", "Baseline FOV", 50f,
+            ConfigEntries.Add(BaselineFOV = config.Bind("General", "Baseline FOV", 35f,
                 new ConfigDescription(
                     "What to use when calculating magnified FOV (if set to 50 then 2x will be 25°).\n" +
-                    "Be aware that 1x is always forced to 35°.",
-                    new AcceptableValueRange<float>(20f, 50f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(FovAnimationDuration = config.Bind("General", "FOV Animation Duration", 0.15f,
+                    "Be aware that 1x is always forced to 35° for stepped optics.",
+                    new AcceptableValueRange<float>(20f, 35f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(FovAnimationDuration = config.Bind("General", "FOV Animation Duration", 0.5f,
                 new ConfigDescription(
                     "Duration of the FOV transitions during magnification changes.",
                     new AcceptableValueRange<float>(0f, 10f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(BypassDuringReload = config.Bind("General", "Bypass during reload", true,
+            ConfigEntries.Add(BypassDuringReload = config.Bind("Hacks", "Bypass during reload", true,
                 new ConfigDescription(
                     "Bypass the mod while reloading",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(ReloadBypassModifier = config.Bind("General", "Reload Bypass Modifier", 0.2f,
+            ConfigEntries.Add(ReloadBypassModifier = config.Bind("Hacks", "Reload Bypass Modifier", 0.2f,
                 new ConfigDescription(
                     "Changes the duration of the reload bypass, higher values lower the duration.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(ScaleSwayWithCameraFov = config.Bind("Hacks", "Scale Sway With Camera FOV", false,
+                new ConfigDescription(
+                    "Lowers weapon sway while scoped in proportion to the current FOV.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(SwayStrength = config.Bind("Hacks", "Sway Modifier", 0.3f,
+                new ConfigDescription(
+                    "Changes the intensity of the sway reduction.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
             ConfigEntries.Add(KeepScopedLodBiasUntilInventory = config.Bind("Optimization", "Keep scoped LOD Bias until inventory is opened", false,
@@ -183,6 +204,21 @@ namespace PiPDisabler
                     ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
                     new AcceptableValueRange<float>(0f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(SuppressFireModeSwitchMovement = config.Bind("Hacks", "Suppress Fire Mode Switch Movement", false,
+                new ConfigDescription(
+                    "Prevents the weapon from playing the fire-mode switch movement animation while still changing fire mode.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(SuppressMagnificationSwitchMovement = config.Bind("Hacks", "Suppress Magnification Switch Movement", false,
+                new ConfigDescription(
+                    "Prevents the weapon from playing the scope magnification switch movement animation while still changing magnification.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(ForceRecoilReturnToZero = config.Bind("Hacks", "Force Recoil Return To Zero", false,
+                new ConfigDescription(
+                    "Forces the weapon's post-recoil hand rotation rest point back to zero instead of using Tarkov's small randomized offset.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
 
             // --- Mesh Surgery (ON by default, Cylinder mode) --- //Needs global cleanup, config name standardization.
             ConfigEntries.Add(PlaneOffsetMeters = config.Bind("Global Mesh Surgery settings", "PlaneOffsetMeters", 0.001f,
@@ -261,17 +297,37 @@ namespace PiPDisabler
                     "Size of the reticle",
                     new AcceptableValueRange<float>(0f, 0.2f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(ExpandSearchToWeaponRoot = config.Bind("Global Mesh Surgery settings", "ExpandSearchToWeaponRoot", true, //Needs to be hardset
+            ConfigEntries.Add(MeshReticleMinScale = config.Bind("Global Mesh Surgery settings", "Mesh Reticle Min Scale", 0f,
                 new ConfigDescription(
-                    "Expand the mesh surgery search root all the way up to the Weapon_root node.\n" +
-                "When enabled, meshes on the weapon body under Weapon_root are also candidates\n" +
-                "for cutting — not just those in the scope sub-hierarchy.\n" +
-                "Use this when scope geometry blends into the weapon receiver and you need to cut\n" +
-                "the underlying weapon meshes as well.\n" +
-                "Example path: Weapon_root/Weapon_root_anim/weapon/mod_scope/...",
+                    "Minimum final mesh reticle scale after normalization and zoom. 0 = disabled.",
+                    new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(MeshReticleMaxScale = config.Bind("Global Mesh Surgery settings", "Mesh Reticle Max Scale", 0f,
+                new ConfigDescription(
+                    "Maximum final mesh reticle scale after normalization and zoom. 0 = disabled.",
+                    new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(MeshReticleNormalizedScale = config.Bind("Global Mesh Surgery settings", "Mesh Reticle Normalized Scale", 36.67718f,
+                new ConfigDescription(
+                    "Multiplier applied after mesh reticle bounds normalization.",
+                    new AcceptableValueRange<float>(0.01f, 100f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(MeshReticleMinimumStrokeEnabled = config.Bind("Global Mesh Surgery settings", "Mesh Reticle Minimum Stroke Enabled", true,
+                new ConfigDescription(
+                    "Draws mesh reticles with a small screen-space dilation so thin details survive downscaling.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(DebugShowHousingMask = config.Bind("Global Mesh Surgery settings", "DebugShowHousingMask", false,
+            ConfigEntries.Add(MeshReticleMinimumStrokePixels = config.Bind("Global Mesh Surgery settings", "Mesh Reticle Minimum Stroke Pixels", 1.963615f,
+                new ConfigDescription(
+                    "Approximate minimum visible thickness for mesh reticles, in screen pixels.",
+                    new AcceptableValueRange<float>(0f, 4f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(ExpandSearchToWeaponRoot = config.Bind("Global Mesh Surgery settings", "ExpandSearchToWeaponRoot", true, //Needs to be hardset
+                new ConfigDescription(
+                    "Make the meshcutter run for the whole weapon.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(DebugShowHousingMask = config.Bind("Debug", "DebugShowHousingMask", false,
                 new ConfigDescription(
                     "Render a red overlay wherever the lens stencil mask is.",
                     null,
@@ -360,6 +416,31 @@ namespace PiPDisabler
                     "Custom per-scope reticle base diameter in meters. Needs to be saved to take effect.",
                     new AcceptableValueRange<float>(0f, 0.2f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(CustomMeshReticleMinScale = config.Bind("Per scope settings", "Mesh Reticle Min Scale", 0f,
+                new ConfigDescription(
+                    "Custom per-scope minimum final reticle scale. If either max or min is set to 0 then this doesn't do anything. Needs to be saved to take effect.",
+                    new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(CustomMeshReticleMaxScale = config.Bind("Per scope settings", "Mesh Reticle Max Scale", 0f,
+                new ConfigDescription(
+                    "Custom per-scope maximum final reticle scale. If either max or min is set to 0 then this doesn't do anything. Needs to be saved to take effect.",
+                    new AcceptableValueRange<float>(0f, 20f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(CustomVignetteOpacity = config.Bind("Per scope settings", "Vignette Opacity", 0f,
+                new ConfigDescription(
+                    "Custom per-scope vignette opacity. 0 = use Scope Effects default.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(CustomVignetteRadius = config.Bind("Per scope settings", "Vignette Radius", 0f,
+                new ConfigDescription(
+                    "Custom per-scope vignette radius. 0 = use Scope Effects default.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(CustomVignetteSoftness = config.Bind("Per scope settings", "Vignette Softness", 0f,
+                new ConfigDescription(
+                    "Custom per-scope vignette softness. 0 = use Scope Effects default.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(CustomExpandSearchToWeaponRoot = config.Bind("Per scope settings", "ExpandSearchToWeaponRoot", true,
                 new ConfigDescription(
                     "Custom per-scope search root expansion to Weapon_root.",
@@ -367,33 +448,33 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
 
             // --- Scope Effects ---
-            ConfigEntries.Add(VignetteEnabled = config.Bind("Scope Effects", "Vignette", false,
+            ConfigEntries.Add(VignetteEnabled = config.Bind("Scope Effects", "Vignette", true,
                 new ConfigDescription(
                     "Render a circular vignette ring around the scope aperture.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(VignetteOpacity = config.Bind("Scope Effects", "Vignette Opacity", 0.78f,
+            ConfigEntries.Add(VignetteOpacity = config.Bind("Scope Effects", "Vignette Opacity", 1f,
                 new ConfigDescription(
                     "Maximum opacity of the lens vignette ring (0=invisible, 1=full black).",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(VignetteSizeMult = config.Bind("Scope Effects", "Vignette Size Multiplier", 0.41f,
+            ConfigEntries.Add(VignetteRadius = config.Bind("Scope Effects", "Vignette Radius", 0.47f,
                 new ConfigDescription(
-                    "Vignette quad diameter as a multiplier of Reticle Base Size.",
+                    "Inner clear radius of the lens vignette (0=center starts darkening, 0.5=outer half darkened, 1=edge only).",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(VignetteSoftness = config.Bind("Scope Effects", "Vignette Softness", 1f,
+            ConfigEntries.Add(VignetteSoftness = config.Bind("Scope Effects", "Vignette Softness", 0.80f,
                 new ConfigDescription(
                     "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
 
-            ConfigEntries.Add(ScopeShadowEnabled = config.Bind("Scope Effects", "ScopeShadow", false,
+            ConfigEntries.Add(ScopeShadowEnabled = config.Bind("Scope Effects", "Scope Shadow", false,
                 new ConfigDescription(
-                    "Overlay a fullscreen scope-tube shadow: black everywhere except a transparent hole where the lens is.",
+                    "Overlay a fullscreen black shadow everywhere except the lens mask.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(DebugShowScopeShadowMask = config.Bind("Scope Effects", "DebugShowScopeShadowMask", false,
+            ConfigEntries.Add(DebugShowScopeShadowMask = config.Bind("Debug", "DebugShowScopeShadowMask", false,
                 new ConfigDescription(
                     "Render the shadow lens mask as a green overlay for debugging.",
                     null,
@@ -408,19 +489,14 @@ namespace PiPDisabler
                     "Maximum opacity of the scope shadow overlay.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(ScopeShadowRadius = config.Bind("Scope Effects", "ScopeShadow Radius", 0.05f,
-                new ConfigDescription(
-                    "Radius of the transparent part",
-                    new AcceptableValueRange<float>(0.02f, 0.5f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(ScopeShadowSoftness = config.Bind("Scope Effects", "ScopeShadow Softness", 0.08f,
-                new ConfigDescription(
-                    "Width of the gradient",
-                    new AcceptableValueRange<float>(0f, 0.3f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
 
             // --- Debug ---
-            ConfigEntries.Add(DebugReticleAfterEverything = config.Bind("General", "Draw reticle after everything", false,
+            ConfigEntries.Add(DebugLogging = config.Bind("Debug", "Debug logging", false,
+                new ConfigDescription(
+                    "Enable verbose diagnostic logging.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(DebugReticleAfterEverything = config.Bind("Debug", "Draw reticle after everything", false,
                 new ConfigDescription(
                     "When enabled, reticle is always clear but doesn't get tinted by NVGs",
                     null,

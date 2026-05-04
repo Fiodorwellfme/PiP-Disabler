@@ -74,7 +74,7 @@ namespace PiPDisabler
         /// </summary>
         public static void Init()
         {
-            PiPDisablerPlugin.LogSource.LogInfo("[FreelookTracker] Init: MouseLookControl is public — direct access.");
+            PiPDisablerPlugin.DebugLogInfo("[FreelookTracker] Init: MouseLookControl is public — direct access.");
         }
 
         /// <summary>
@@ -128,10 +128,17 @@ namespace PiPDisabler
                 _fovBeforeFreelook = _lastAppliedScopedFov;
             }
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[FreelookTracker] Freelook START — cached FOV={_fovBeforeFreelook:F1}°, " +
-                "hiding reticle");
+                "restoring scope meshes, hiding reticle");
 
+            Patches.WeaponScalingPatch.RestoreScaleForFreelook();
+            var os = ScopeLifecycle.ActiveOptic;
+            if (os != null)
+            {
+                MeshSurgeryManager.RestoreForScope(os.transform);
+                LensTransparency.EnsureHidden();
+            }
             ReticleRenderer.Hide();
             ScopeEffectsRenderer.Hide();
         }
@@ -140,7 +147,7 @@ namespace PiPDisabler
         {
             float fovToRestore = _fovBeforeFreelook > 0.5f ? _fovBeforeFreelook : _lastAppliedScopedFov;
 
-            PiPDisablerPlugin.LogSource.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[FreelookTracker] Freelook END — restoring FOV={fovToRestore:F1}°, showing reticle");
 
             // Directly restore the cached FOV (Update path).
@@ -159,6 +166,16 @@ namespace PiPDisabler
             var os = ScopeLifecycle.ActiveOptic;
             if (os != null)
             {
+                LensTransparency.HideAllLensSurfaces(os);
+                ReticleRenderer.SetLensMaskEntries(LensTransparency.CollectLensMaskEntries(os));
+
+                var occluderRenderers = LensTransparency.CollectHousingRenderers(os);
+                if (Settings.StencilIncludeWeaponMeshes.Value)
+                    occluderRenderers.AddRange(
+                        LensTransparency.CollectWeaponRenderers(os, occluderRenderers));
+                ReticleRenderer.SetOccluderMaskRenderers(occluderRenderers);
+
+                MeshSurgeryManager.ApplyForOptic(os);
                 float mag = FovController.GetEffectiveMagnification();
                 ReticleRenderer.Show(os, mag);
                 ScopeEffectsRenderer.Show();
@@ -200,7 +217,7 @@ namespace PiPDisabler
                 // Quick heuristic: if targetFov <= 35 and we have a cached value, use ours.
                 if (targetFov <= 35.5f)
                 {
-                    PiPDisablerPlugin.LogSource.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[FreelookTracker] Look interceptor: replacing FOV {targetFov:F1}° → " +
                         $"{fovToRestore:F1}° (pre-freelook snapshot)");
 
@@ -264,7 +281,7 @@ namespace PiPDisabler
                     yield return code;
                 }
 
-                PiPDisablerPlugin.LogSource.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[PlayerLookPatch] Transpiler: replaced {replaced} SetFov callsite(s)");
             }
         }

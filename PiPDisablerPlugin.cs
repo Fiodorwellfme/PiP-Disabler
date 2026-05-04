@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace PiPDisabler
 {
-    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "0.8.2")]
+    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "1.0.0")]
     [BepInDependency("com.fontaine.fovfix", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.Shibatsu.DynamicExternalResolution", BepInDependency.DependencyFlags.SoftDependency)]
 
@@ -17,16 +17,34 @@ namespace PiPDisabler
     {
         public static ManualLogSource LogSource;
         internal static PiPDisablerPlugin Instance;
+
+        public static void DebugLogInfo(object data)
+        {
+            if (Settings.DebugLogging.Value)
+            {
+                LogSource.LogInfo(data);
+            }
+        }
+
+        public static void DebugLogError(object data)
+        {
+            if (Settings.DebugLogging.Value)
+            {
+                LogSource.LogError(data);
+            }
+        }
+
         private void Awake()
         {
             Instance = this;
             LogSource = Logger;
-            LogSource.LogInfo("PiP-Disabler 0.8.2 loaded.");
+            LogSource.LogInfo("PiP-Disabler 1.0.0 loaded.");
             Settings.Init(Config);
             Patches.Patcher.Enable();
             ScopeLifecycle.Init();
             FreelookTracker.Init();
             Settings.ModEnabled.SettingChanged += OnModEnabledChanged;
+            Settings.ScopeBlacklistNames.SettingChanged += OnScopeListSettingsChanged;
             Settings.ScopeWhitelistNames.SettingChanged += OnWhitelistSettingsChanged;
         }
 
@@ -40,6 +58,7 @@ namespace PiPDisabler
             PiPDisabler.RestoreAllCameras();
 
             Settings.ModEnabled.SettingChanged -= OnModEnabledChanged;
+            Settings.ScopeBlacklistNames.SettingChanged -= OnScopeListSettingsChanged;
             Settings.ScopeWhitelistNames.SettingChanged -= OnWhitelistSettingsChanged;
         }
 
@@ -59,6 +78,11 @@ namespace PiPDisabler
 
         private static void OnWhitelistSettingsChanged(object sender, EventArgs e)
         {
+            OnScopeListSettingsChanged(sender, e);
+        }
+
+        private static void OnScopeListSettingsChanged(object sender, EventArgs e)
+        {
             if (!Settings.ModEnabled.Value) return;
             if (ScopeLifecycle.IsScoped)
             {
@@ -73,7 +97,7 @@ namespace PiPDisabler
             if (Settings.ModToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(Settings.ModToggleKey.Value))
             {
                 Settings.ModEnabled.Value = !Settings.ModEnabled.Value;
-                LogSource.LogInfo($"[Global] Mod {(Settings.ModEnabled.Value ? "ENABLED" : "DISABLED")}");
+                DebugLogInfo($"[Global] Mod {(Settings.ModEnabled.Value ? "ENABLED" : "DISABLED")}");
             }
             if (!Settings.ModEnabled.Value) return;
 
@@ -82,17 +106,22 @@ namespace PiPDisabler
                 ScopeLifecycle.ToggleActiveScopeWhitelistEntry();
             }
 
+            if (Settings.ScopeBlacklistToggleEntryKey.Value != KeyCode.None && InputProxy.GetKeyDown(Settings.ScopeBlacklistToggleEntryKey.Value))
+            {
+                ScopeLifecycle.ToggleActiveScopeBlacklistEntry();
+            }
+
             if (Settings.SaveCustomMeshSurgerySettingsKey.Value != KeyCode.None && InputProxy.GetKeyDown(Settings.SaveCustomMeshSurgerySettingsKey.Value))
             {
                 string scopeKey = ScopeLifecycle.GetActiveScopeWhitelistKey();
                 if (string.IsNullOrWhiteSpace(scopeKey))
                 {
-                    LogSource.LogInfo("[CustomMeshSettings] Save ignored: no active scope key");
+                    DebugLogInfo("[CustomMeshSettings] Save ignored: no active scope key");
                 }
                 else
                 {
                     bool saved = PerScopeMeshSurgerySettings.SaveCustomSettingsForScope(scopeKey);
-                    LogSource.LogInfo(saved
+                    DebugLogInfo(saved
                         ? $"[CustomMeshSettings] Saved custom settings for scope key '{scopeKey}'"
                         : "[CustomMeshSettings] Save failed");
                 }
@@ -103,12 +132,12 @@ namespace PiPDisabler
                 string scopeKey = ScopeLifecycle.GetActiveScopeWhitelistKey();
                 if (string.IsNullOrWhiteSpace(scopeKey))
                 {
-                    LogSource.LogInfo("[CustomMeshSettings] Delete ignored: no active scope key");
+                    DebugLogInfo("[CustomMeshSettings] Delete ignored: no active scope key");
                 }
                 else
                 {
                     bool removed = PerScopeMeshSurgerySettings.DeleteCustomSettingsForScope(scopeKey);
-                    LogSource.LogInfo(removed
+                    DebugLogInfo(removed
                         ? $"[CustomMeshSettings] Deleted custom settings for scope key '{scopeKey}'"
                         : $"[CustomMeshSettings] No custom settings existed for scope key '{scopeKey}'");
                 }
