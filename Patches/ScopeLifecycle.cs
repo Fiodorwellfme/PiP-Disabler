@@ -4,6 +4,7 @@ using EFT.CameraControl;
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 
 namespace PiPDisabler
@@ -16,6 +17,10 @@ namespace PiPDisabler
             = pwa => pwa.CurrentScope;
         private static readonly Func<ProceduralWeaponAnimation.SightNBone, bool> _getIsOptic
             = scope => scope.IsOptic;
+        private static readonly FieldInfo _aimingWeightField
+            = AccessTools.Field(typeof(ProceduralWeaponAnimation), "_aimingWeight");
+        private static bool _aimingWeightReflectionFailedLogged;
+        private static float _postSprintAimGateExpiry;
         private static bool _isScoped;
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic;
@@ -177,8 +182,20 @@ namespace PiPDisabler
                 var pwa = player.ProceduralWeaponAnimation;
                 if (pwa == null) { reason = "no PWA"; goto evaluate; }
 
+                if (IsPlayerSprinting(player))
+                {
+                    ArmPostSprintAimGate();
+                    reason = "sprinting";
+                    goto evaluate;
+                }
+
                 bool isAiming = _getIsAiming(pwa);
                 if (!isAiming) { reason = "not aiming"; goto evaluate; }
+                if (ShouldApplyPostSprintAimGate() && !IsAimBlendReady(pwa, out float aimBlend))
+                {
+                    reason = $"ADS blend {aimBlend:F2} below threshold {Settings.AimActivationBlendThreshold.Value:F2}";
+                    goto evaluate;
+                }
 
                 var currentScope = _getCurrentScope(pwa);
                 if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
@@ -208,6 +225,7 @@ namespace PiPDisabler
                 shouldBeScoped = true;
                 _activeOptic = enabledOs;
                 _lastEnabledOptic = enabledOs;
+                _postSprintAimGateExpiry = 0f;
                 reason = "aiming+optic+enabled OpticSight";
             }
             catch (Exception ex) { reason = $"exception: {ex.Message}"; }
@@ -1023,6 +1041,66 @@ namespace PiPDisabler
             var valueProp = AccessTools.Property(blender.GetType(), "Value");
             float blendValue = (float)valueProp.GetValue(blender, null);
             return blendValue > (Mathf.Epsilon + Settings.ReloadBypassModifier.Value);
+        }
+
+        private static void ArmPostSprintAimGate()
+        {
+            _postSprintAimGateExpiry = Time.realtimeSinceStartup + Mathf.Max(0f, Settings.PostSprintAimGateDuration.Value);
+        }
+
+        private static bool ShouldApplyPostSprintAimGate()
+        {
+            return Time.realtimeSinceStartup < _postSprintAimGateExpiry;
+        }
+
+        private static bool IsPlayerSprinting(Player player)
+        {
+            try
+            {
+                if (player == null)
+                    return false;
+
+                if (player.Physical != null && player.Physical.Sprinting)
+                    return true;
+
+                var movementContext = player.MovementContext;
+                return movementContext != null &&
+                       (movementContext.IsSprintEnabled ||
+                        movementContext.CurrentState != null &&
+                        movementContext.CurrentState.Name == EPlayerState.Sprint);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsAimBlendReady(ProceduralWeaponAnimation pwa, out float blendValue)
+        {
+            blendValue = 1f;
+            float threshold = Mathf.Clamp01(Settings.AimActivationBlendThreshold.Value);
+            if (threshold <= 0f)
+                return true;
+
+            try
+            {
+                if (_aimingWeightField == null)
+                    throw new MissingFieldException(nameof(ProceduralWeaponAnimation), "_aimingWeight");
+
+                blendValue = Mathf.Clamp01((float)_aimingWeightField.GetValue(pwa));
+                return blendValue >= threshold;
+            }
+            catch (Exception ex)
+            {
+                if (!_aimingWeightReflectionFailedLogged)
+                {
+                    _aimingWeightReflectionFailedLogged = true;
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[ScopeLifecycle] Could not read ADS blend threshold field; allowing scope activation. {ex.Message}");
+                }
+                blendValue = 1f;
+                return true;
+            }
         }
 
         private static void SuppressReticleForReload()

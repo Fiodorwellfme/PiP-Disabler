@@ -20,6 +20,8 @@ namespace PiPDisabler
         public static ConfigEntry<KeyCode> ScopeBlacklistToggleEntryKey;
         public static ConfigEntry<string> ScopeWhitelistNames;
         public static ConfigEntry<KeyCode> ScopeWhitelistToggleEntryKey;
+        public static ConfigEntry<float> AimActivationBlendThreshold;
+        public static ConfigEntry<float> PostSprintAimGateDuration;
 
         // --- Optimization ---
         public static ConfigEntry<float> AutoLodBiasMultiplier;
@@ -147,6 +149,16 @@ namespace PiPDisabler
                     "When pressed while scoped, add/remove the current scope to the whitelist.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(AimActivationBlendThreshold = config.Bind("General", "ADS Activation Blend Threshold", 1f,
+                new ConfigDescription(
+                    "Minimum internal ADS blend value required before the mod activates after sprinting. Raise this if the mod toggles too soon for you.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(PostSprintAimGateDuration = config.Bind("General", "Post Sprint ADS Gate Duration", 0.35f,
+                new ConfigDescription(
+                    "How long after sprinting the ADS activation blend threshold should be enforced.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
 
             // --- Zoom ---
             ConfigEntries.Add(BaselineFOV = config.Bind("General", "Baseline FOV", 35f,
