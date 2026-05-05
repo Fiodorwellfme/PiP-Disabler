@@ -22,6 +22,8 @@ namespace PiPDisabler
         public static ConfigEntry<KeyCode> ScopeWhitelistToggleEntryKey;
         public static ConfigEntry<float> AimActivationBlendThreshold;
         public static ConfigEntry<float> PostSprintAimGateDuration;
+        public static ConfigEntry<bool> BypassDuringStanceTransitions;
+        public static ConfigEntry<float> PostStanceAimGateDuration;
 
         // --- Optimization ---
         public static ConfigEntry<float> AutoLodBiasMultiplier;
@@ -149,14 +151,24 @@ namespace PiPDisabler
                     "When pressed while scoped, add/remove the current scope to the whitelist.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(AimActivationBlendThreshold = config.Bind("General", "ADS Activation Blend Threshold", 1f,
+            ConfigEntries.Add(AimActivationBlendThreshold = config.Bind("Hacks", "ADS Activation Blend Threshold", 0.985f,
                 new ConfigDescription(
                     "Minimum internal ADS blend value required before the mod activates after sprinting. Raise this if the mod toggles too soon for you.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
-            ConfigEntries.Add(PostSprintAimGateDuration = config.Bind("General", "Post Sprint ADS Gate Duration", 0.35f,
+            ConfigEntries.Add(PostSprintAimGateDuration = config.Bind("Hacks", "Post Sprint ADS Gate Duration", 1f,
                 new ConfigDescription(
                     "How long after sprinting the ADS activation blend threshold should be enforced.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(BypassDuringStanceTransitions = config.Bind("Hacks", "Bypass During Stance Transitions", true,
+                new ConfigDescription(
+                    "Bypass the mod while changing between standing and prone.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(PostStanceAimGateDuration = config.Bind("Hacks", "Post Stance ADS Gate Duration", 1f,
+                new ConfigDescription(
+                    "How long after standing/prone transitions the ADS activation blend threshold should be enforced.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
 
@@ -182,7 +194,7 @@ namespace PiPDisabler
                     "Changes the duration of the reload bypass, higher values lower the duration.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
-            ConfigEntries.Add(ScaleSwayWithCameraFov = config.Bind("Hacks", "Scale Sway With Camera FOV", false,
+            ConfigEntries.Add(ScaleSwayWithCameraFov = config.Bind("Hacks", "Scale Sway With Camera FOV", true,
                 new ConfigDescription(
                     "Lowers weapon sway while scoped in proportion to the current FOV.",
                     null,
@@ -226,7 +238,7 @@ namespace PiPDisabler
                     "Prevents the weapon from playing the scope magnification switch movement animation while still changing magnification.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(ForceRecoilReturnToZero = config.Bind("Hacks", "Force Recoil Return To Zero", false,
+            ConfigEntries.Add(ForceRecoilReturnToZero = config.Bind("Hacks", "Force Recoil Return To Zero", true,
                 new ConfigDescription(
                     "Forces the weapon's post-recoil hand rotation rest point back to zero instead of using Tarkov's small randomized offset.",
                     null,

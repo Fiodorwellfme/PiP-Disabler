@@ -21,6 +21,7 @@ namespace PiPDisabler
             = AccessTools.Field(typeof(ProceduralWeaponAnimation), "_aimingWeight");
         private static bool _aimingWeightReflectionFailedLogged;
         private static float _postSprintAimGateExpiry;
+        private static float _postStanceAimGateExpiry;
         private static bool _isScoped;
         private static OpticSight _activeOptic;
         private static OpticSight _lastEnabledOptic;
@@ -189,9 +190,16 @@ namespace PiPDisabler
                     goto evaluate;
                 }
 
+                if (Settings.BypassDuringStanceTransitions.Value && IsStanceTransitionActive(player))
+                {
+                    ArmPostStanceAimGate();
+                    reason = "stance transition";
+                    goto evaluate;
+                }
+
                 bool isAiming = _getIsAiming(pwa);
                 if (!isAiming) { reason = "not aiming"; goto evaluate; }
-                if (ShouldApplyPostSprintAimGate() && !IsAimBlendReady(pwa, out float aimBlend))
+                if (ShouldApplyAimBlendGate() && !IsAimBlendReady(pwa, out float aimBlend))
                 {
                     reason = $"ADS blend {aimBlend:F2} below threshold {Settings.AimActivationBlendThreshold.Value:F2}";
                     goto evaluate;
@@ -226,6 +234,7 @@ namespace PiPDisabler
                 _activeOptic = enabledOs;
                 _lastEnabledOptic = enabledOs;
                 _postSprintAimGateExpiry = 0f;
+                _postStanceAimGateExpiry = 0f;
                 reason = "aiming+optic+enabled OpticSight";
             }
             catch (Exception ex) { reason = $"exception: {ex.Message}"; }
@@ -1048,9 +1057,15 @@ namespace PiPDisabler
             _postSprintAimGateExpiry = Time.realtimeSinceStartup + Mathf.Max(0f, Settings.PostSprintAimGateDuration.Value);
         }
 
-        private static bool ShouldApplyPostSprintAimGate()
+        private static void ArmPostStanceAimGate()
         {
-            return Time.realtimeSinceStartup < _postSprintAimGateExpiry;
+            _postStanceAimGateExpiry = Time.realtimeSinceStartup + Mathf.Max(0f, Settings.PostStanceAimGateDuration.Value);
+        }
+
+        private static bool ShouldApplyAimBlendGate()
+        {
+            float now = Time.realtimeSinceStartup;
+            return now < _postSprintAimGateExpiry || now < _postStanceAimGateExpiry;
         }
 
         private static bool IsPlayerSprinting(Player player)
@@ -1068,6 +1083,24 @@ namespace PiPDisabler
                        (movementContext.IsSprintEnabled ||
                         movementContext.CurrentState != null &&
                         movementContext.CurrentState.Name == EPlayerState.Sprint);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsStanceTransitionActive(Player player)
+        {
+            try
+            {
+                var movementContext = player?.MovementContext;
+                if (movementContext?.CurrentState == null)
+                    return false;
+
+                EPlayerState state = movementContext.CurrentState.Name;
+                return state == EPlayerState.Transit2Prone ||
+                       state == EPlayerState.Prone2Stand;
             }
             catch
             {
