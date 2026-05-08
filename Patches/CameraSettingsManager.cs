@@ -1,14 +1,14 @@
-using System;
+using Comfort.Common;
 using EFT.CameraControl;
+using PiPDisabler.Patches;
 using UnityEngine;
 
 namespace PiPDisabler
 {
     internal static class CameraSettingsManager
     {
+        private const float LodBiasRefreshThreshold = 0.01f;
         private static float _savedLodBias;
-        private static float _savedFarClip;
-        private static float[] _savedCullDistances;
         private static bool _applied;
         private static bool _pendingRestore;
 
@@ -24,51 +24,22 @@ namespace PiPDisabler
             if (!_applied)
             {
                 _savedLodBias = QualitySettings.lodBias;
-                _savedFarClip = cam.farClipPlane;
-                _savedCullDistances = cam.layerCullDistances != null
-                    ? (float[])cam.layerCullDistances.Clone()
-                    : null;
                 _applied = true;
             }
 
-            float scopeFov = 0f;
-            float scopeFarClip = 0f;
-            float magnification = 35f / FovController.ComputeZoomedFov();
-            if (magnification < 0.1f)
-                magnification = scopeFov > 0.1f ? 35f / scopeFov : 1f;
+            float magnification = GetMagnificationFromFov(FovController.ComputeZoomedFov(), 0f);
 
-            float manualLodBias = Settings.ManualLodBias.Value;
-            if (manualLodBias == 0f)
-            {
-                manualLodBias = Mathf.Clamp(magnification * Settings.AutoLodBiasMultiplier.Value, 0.01f, 20f);
-            }
-            float newLodBias = manualLodBias > 0f
-                ? manualLodBias
-                : _savedLodBias * Mathf.Max(magnification, 1f);
-            QualitySettings.lodBias = newLodBias;
+            MainCameraLodBiasOverride.Activate();
+            ApplyScopedLodBias(magnification, force: true);
+        }
 
-            if (scopeFarClip > cam.farClipPlane)
-                cam.farClipPlane = scopeFarClip;
+        public static void RefreshScopedLodBias()
+        {
+            if (!_applied)
+                return;
 
-            if (_savedCullDistances != null)
-            {
-                float manualCullMultiplier = Settings.ManualCullingMultiplier != null
-                    ? Settings.ManualCullingMultiplier.Value
-                    : 0f;
-                float cullingMultiplier = manualCullMultiplier > 0f
-                    ? manualCullMultiplier
-                    : Mathf.Max(magnification, 1f);
-
-                float[] newCull = (float[])_savedCullDistances.Clone();
-                for (int i = 0; i < newCull.Length; i++)
-                {
-                    if (newCull[i] > 0f)
-                        newCull[i] *= cullingMultiplier;
-                }
-                cam.layerCullDistances = newCull;
-            }
-            PiPDisablerPlugin.DebugLogInfo(
-                $"[LodBias] LodBias = {newLodBias}");
+            MainCameraLodBiasOverride.Activate();
+            ApplyScopedLodBias(GetCurrentMainCameraMagnification(), force: false);
         }
 
         public static void Restore()
@@ -82,6 +53,12 @@ namespace PiPDisabler
                 return;
             }
 
+            PerformRestore();
+        }
+
+        public static void ForceRestore()
+        {
+            _pendingRestore = false;
             PerformRestore();
         }
 
@@ -99,67 +76,79 @@ namespace PiPDisabler
             if (!_applied)
                 return;
 
+            MainCameraLodBiasOverride.Deactivate();
             QualitySettings.lodBias = _savedLodBias;
-
-            var cam = Helpers.GetMainCamera();
-            if (cam != null)
-            {
-                cam.farClipPlane = _savedFarClip;
-                if (_savedCullDistances != null)
-                    cam.layerCullDistances = _savedCullDistances;
-            }
             _applied = false;
         }
 
-        private static bool TryGetScopeCameraData(OpticSight os, out float fov, out float farClip)
+        private static void ApplyScopedLodBias(float magnification, bool force)
         {
-            fov = 0f;
-            farClip = 0f;
+            float newLodBias = ComputeScopedLodBias(magnification);
+            if (!force && Mathf.Abs(QualitySettings.lodBias - newLodBias) < LodBiasRefreshThreshold)
+                return;
 
-            ScopeCameraData data = os.GetComponent<ScopeCameraData>();
-            if (data == null)
-                data = os.GetComponentInChildren<ScopeCameraData>(true);
-            if (data == null)
-                data = os.GetComponentInParent<ScopeCameraData>();
-
-            if (data == null)
-            {
-                Transform root = GetScopeRoot(os.transform);
-                foreach (var candidate in root.GetComponentsInChildren<ScopeCameraData>(true))
-                {
-                    if (IsOnSameMode(candidate.transform, os.transform))
-                    {
-                        data = candidate;
-                        break;
-                    }
-                }
-            }
-
-            if (data == null)
-                return false;
-
-            fov = data.FieldOfView;
-            farClip = data.FarClipPlane;
-            return fov > 0.1f;
+            QualitySettings.lodBias = newLodBias;
+            PiPDisablerPlugin.DebugLogInfo($"[LodBias] LodBias = {newLodBias:F3}");
         }
 
-        private static Transform GetScopeRoot(Transform from)
+        private static float ComputeScopedLodBias(float magnification)
         {
-            Transform root = from;
-            while (root.parent != null)
-            {
-                string parentName = root.parent.name ?? string.Empty;
-                if (parentName.StartsWith("scope_", StringComparison.OrdinalIgnoreCase))
-                {
-                    root = root.parent;
-                    break;
-                }
-                root = root.parent;
-            }
-            return root;
+            float manualLodBias = Settings.ManualLodBias.Value;
+            float minimumLodBias = GetGameSettingsLodBiasFloor();
+
+            if (manualLodBias > 0f)
+                return Mathf.Max(manualLodBias, minimumLodBias);
+
+            if (manualLodBias == 0f)
+                return ClampScopedLodBias(magnification * Settings.AutoLodBiasMultiplier.Value, minimumLodBias);
+
+            return ClampScopedLodBias(_savedLodBias * Mathf.Max(magnification, 1f), minimumLodBias);
         }
 
-        private static bool IsOnSameMode(Transform a, Transform b)
-            => Helpers.IsOnSameMode(a, b);
+        private static float ClampScopedLodBias(float value, float minimum)
+            => Mathf.Max(minimum, Mathf.Min(value, 20f));
+
+        private static float GetGameSettingsLodBiasFloor()
+        {
+            try
+            {
+                if (Singleton<SharedGameSettingsClass>.Instantiated)
+                    return Mathf.Max(0.01f, Singleton<SharedGameSettingsClass>.Instance.Graphics.Settings.LodBias.Value);
+            }
+            catch { }
+
+            return Mathf.Max(0.01f, _savedLodBias);
+        }
+
+        private static float GetCurrentMainCameraMagnification()
+        {
+            float currentFov = 0f;
+
+            try
+            {
+                if (CameraClass.Exist && CameraClass.Instance != null)
+                    currentFov = CameraClass.Instance.Fov;
+                else
+                {
+                    var cam = Helpers.GetMainCamera();
+                    if (cam != null)
+                        currentFov = cam.fieldOfView;
+                }
+            }
+            catch { }
+
+            return GetMagnificationFromFov(currentFov, 0f);
+        }
+
+        private static float GetMagnificationFromFov(float fov, float fallbackFov)
+        {
+            float effectiveFov = fov > 0.1f ? fov : fallbackFov;
+            if (effectiveFov <= 0.1f)
+                effectiveFov = FovController.ComputeZoomedFov();
+            if (effectiveFov <= 0.1f)
+                return 1f;
+
+            return Mathf.Max(35f / effectiveFov, 0.1f);
+        }
     }
 }

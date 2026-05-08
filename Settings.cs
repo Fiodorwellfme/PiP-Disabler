@@ -20,7 +20,7 @@ namespace PiPDisabler
         public static ConfigEntry<KeyCode> ScopeBlacklistToggleEntryKey;
         public static ConfigEntry<string> ScopeWhitelistNames;
         public static ConfigEntry<KeyCode> ScopeWhitelistToggleEntryKey;
-        public static ConfigEntry<float> AimActivationBlendThreshold;
+        public static ConfigEntry<float> ScopeAlignmentAngleTolerance;
         public static ConfigEntry<float> PostSprintAimGateDuration;
         public static ConfigEntry<bool> BypassDuringStanceTransitions;
         public static ConfigEntry<float> PostStanceAimGateDuration;
@@ -95,7 +95,6 @@ namespace PiPDisabler
         public static ConfigEntry<float> BaselineFOV;
         public static ConfigEntry<float> FovAnimationDuration;
         public static ConfigEntry<float> ManualLodBias;
-        public static ConfigEntry<float> ManualCullingMultiplier;
         public static ConfigEntry<bool> SuppressFireModeSwitchMovement;
         public static ConfigEntry<bool> SuppressMagnificationSwitchMovement;
         public static ConfigEntry<bool> ScaleSwayWithCameraFov;
@@ -151,14 +150,14 @@ namespace PiPDisabler
                     "When pressed while scoped, add/remove the current scope to the whitelist.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(AimActivationBlendThreshold = config.Bind("Hacks", "ADS Activation Blend Threshold", 0.985f,
+            ConfigEntries.Add(ScopeAlignmentAngleTolerance = config.Bind("Hacks", "ADS Scope Alignment Angle Tolerance", 2f,
                 new ConfigDescription(
-                    "Minimum internal ADS blend value required before the mod activates after sprinting. Raise this if the mod toggles too soon for you.",
-                    new AcceptableValueRange<float>(0f, 1f),
+                    "Maximum angle in degrees between the active scope aim axis and the main camera before the mod activates after sprinting or stance transitions.",
+                    new AcceptableValueRange<float>(0f, 15f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
             ConfigEntries.Add(PostSprintAimGateDuration = config.Bind("Hacks", "Post Sprint ADS Gate Duration", 1f,
                 new ConfigDescription(
-                    "How long after sprinting the ADS activation blend threshold should be enforced.",
+                    "How long after sprinting the scope alignment gate should be enforced.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
             ConfigEntries.Add(BypassDuringStanceTransitions = config.Bind("Hacks", "Bypass During Stance Transitions", true,
@@ -168,7 +167,7 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(PostStanceAimGateDuration = config.Bind("Hacks", "Post Stance ADS Gate Duration", 1f,
                 new ConfigDescription(
-                    "How long after standing/prone transitions the ADS activation blend threshold should be enforced.",
+                    "How long after standing/prone transitions the scope alignment gate should be enforced.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
 
@@ -221,13 +220,6 @@ namespace PiPDisabler
                     "Self explanatory",
                     new AcceptableValueRange<float>(0.01f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(ManualCullingMultiplier = config.Bind("Optimization", "ManualCullingMultiplier", 0.8f,
-                new ConfigDescription(
-                    "Manual multiplier for Camera.layerCullDistances while scoped.\n" +
-                    "0 = auto (use magnification).\n" +
-                    ">0 = force this multiplier (e.g. 2.0 doubles cull distances).",
-                    new AcceptableValueRange<float>(0f, 20f),
-                    new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(SuppressFireModeSwitchMovement = config.Bind("Hacks", "Suppress Fire Mode Switch Movement", false,
                 new ConfigDescription(
                     "Prevents the weapon from playing the fire-mode switch movement animation while still changing fire mode.",

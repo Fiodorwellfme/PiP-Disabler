@@ -20,6 +20,7 @@ namespace PiPDisabler.Patches
             SafeEnable<OpticCameraManagerEnableOptic_NoPipPatch>();
             SafeEnable<OpticCameraManagerSetResolution_NoPipPatch>();
             SafeEnable<CameraClassOnOpticEnabled_NoPipPatch>();
+            SafeEnable<MainCameraLodBiasSetByFovPatch>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterCopyComponentFromOptic_DisablePiP>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterLateUpdate_DisablePiP>();
             SafeEnable<PiPDisabler.OpticSightLensFade_NoPipPatch>();

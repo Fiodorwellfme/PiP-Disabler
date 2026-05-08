@@ -4,7 +4,6 @@ using EFT.CameraControl;
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using UnityEngine;
 
 namespace PiPDisabler
@@ -17,9 +16,7 @@ namespace PiPDisabler
             = pwa => pwa.CurrentScope;
         private static readonly Func<ProceduralWeaponAnimation.SightNBone, bool> _getIsOptic
             = scope => scope.IsOptic;
-        private static readonly FieldInfo _aimingWeightField
-            = AccessTools.Field(typeof(ProceduralWeaponAnimation), "_aimingWeight");
-        private static bool _aimingWeightReflectionFailedLogged;
+        private static bool _scopeAlignmentGateFailureLogged;
         private static float _postSprintAimGateExpiry;
         private static float _postStanceAimGateExpiry;
         private static bool _isScoped;
@@ -199,11 +196,6 @@ namespace PiPDisabler
 
                 bool isAiming = _getIsAiming(pwa);
                 if (!isAiming) { reason = "not aiming"; goto evaluate; }
-                if (ShouldApplyAimBlendGate() && !IsAimBlendReady(pwa, out float aimBlend))
-                {
-                    reason = $"ADS blend {aimBlend:F2} below threshold {Settings.AimActivationBlendThreshold.Value:F2}";
-                    goto evaluate;
-                }
 
                 var currentScope = _getCurrentScope(pwa);
                 if (currentScope == null) { reason = "no CurrentScope"; goto evaluate; }
@@ -227,6 +219,12 @@ namespace PiPDisabler
                     shouldBeScoped = false;
                     reason = "optic flag true but no enabled OpticSight";
                     exitingToNonOpticWhileAiming = true;
+                    goto evaluate;
+                }
+
+                if (ShouldApplyScopeAlignmentGate() && !IsScopeAlignedWithMainCamera(currentScope, enabledOs, out float scopeAngle, out float tolerance))
+                {
+                    reason = $"scope axis angle {scopeAngle:F2}° exceeds tolerance {tolerance:F2}°";
                     goto evaluate;
                 }
 
@@ -268,6 +266,8 @@ namespace PiPDisabler
         {
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
+
+            CameraSettingsManager.RefreshScopedLodBias();
 
             bool freelookJustEnded = FreelookTracker.Tick();
 
@@ -774,7 +774,7 @@ namespace PiPDisabler
             ReticleRenderer.Cleanup();
             ScopeEffectsRenderer.Cleanup();
             LensTransparency.RestoreAll();
-            CameraSettingsManager.Restore();
+            CameraSettingsManager.ForceRestore();
             PiPDisabler.RestoreAllCameras();
             Patches.VanillaOpticSuppression.RestoreVanillaOpticState(os);
 
@@ -1062,7 +1062,7 @@ namespace PiPDisabler
             _postStanceAimGateExpiry = Time.realtimeSinceStartup + Mathf.Max(0f, Settings.PostStanceAimGateDuration.Value);
         }
 
-        private static bool ShouldApplyAimBlendGate()
+        private static bool ShouldApplyScopeAlignmentGate()
         {
             float now = Time.realtimeSinceStartup;
             return now < _postSprintAimGateExpiry || now < _postStanceAimGateExpiry;
@@ -1108,32 +1108,59 @@ namespace PiPDisabler
             }
         }
 
-        private static bool IsAimBlendReady(ProceduralWeaponAnimation pwa, out float blendValue)
+        private static bool IsScopeAlignedWithMainCamera(ProceduralWeaponAnimation.SightNBone currentScope, OpticSight enabledOptic, out float angle, out float tolerance)
         {
-            blendValue = 1f;
-            float threshold = Mathf.Clamp01(Settings.AimActivationBlendThreshold.Value);
-            if (threshold <= 0f)
-                return true;
+            angle = 0f;
+            tolerance = Mathf.Max(0f, Settings.ScopeAlignmentAngleTolerance.Value);
 
             try
             {
-                if (_aimingWeightField == null)
-                    throw new MissingFieldException(nameof(ProceduralWeaponAnimation), "_aimingWeight");
+                Camera mainCamera = Helpers.GetMainCamera();
+                Transform mainCameraTransform = mainCamera != null ? mainCamera.transform : null;
 
-                blendValue = Mathf.Clamp01((float)_aimingWeightField.GetValue(pwa));
-                return blendValue >= threshold;
+                if (mainCameraTransform == null || !TryGetScopeAxisDirection(currentScope, enabledOptic, out Vector3 scopeAxis))
+                    throw new MissingMemberException("Missing scope axis or main camera transform");
+
+                angle = Vector3.Angle(scopeAxis, mainCameraTransform.forward);
+                return angle <= tolerance;
             }
             catch (Exception ex)
             {
-                if (!_aimingWeightReflectionFailedLogged)
+                if (!_scopeAlignmentGateFailureLogged)
                 {
-                    _aimingWeightReflectionFailedLogged = true;
+                    _scopeAlignmentGateFailureLogged = true;
                     PiPDisablerPlugin.DebugLogInfo(
-                        $"[ScopeLifecycle] Could not read ADS blend threshold field; allowing scope activation. {ex.Message}");
+                        $"[ScopeLifecycle] Could not evaluate scope alignment gate; allowing scope activation. {ex.Message}");
                 }
-                blendValue = 1f;
+                angle = 0f;
                 return true;
             }
+        }
+
+        private static bool TryGetScopeAxisDirection(ProceduralWeaponAnimation.SightNBone currentScope, OpticSight enabledOptic, out Vector3 direction)
+        {
+            direction = Vector3.zero;
+
+            if (currentScope?.Bone != null)
+            {
+                Transform bone = currentScope.Bone;
+                direction = bone.name == "aim_camera" ? -bone.up : -bone.forward;
+                return direction.sqrMagnitude > Mathf.Epsilon;
+            }
+
+            if (PiPDisabler.OpticCameraTransform != null)
+            {
+                direction = PiPDisabler.OpticCameraTransform.forward;
+                return direction.sqrMagnitude > Mathf.Epsilon;
+            }
+
+            if (enabledOptic != null)
+            {
+                direction = enabledOptic.transform.forward;
+                return direction.sqrMagnitude > Mathf.Epsilon;
+            }
+
+            return false;
         }
 
         private static void SuppressReticleForReload()
