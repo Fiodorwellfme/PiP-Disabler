@@ -1045,6 +1045,9 @@ namespace PiPDisabler
         {
             var player = GetLocalPlayer();
             var pwa = player.ProceduralWeaponAnimation;
+            var BipodActive = pwa.IsBipodUsed;
+            if (BipodActive)
+                return false;
             var field = AccessTools.Field(typeof(ProceduralWeaponAnimation), "_tacticalReload");
             var blender = field.GetValue(pwa);
             var valueProp = AccessTools.Property(blender.GetType(), "Value");
