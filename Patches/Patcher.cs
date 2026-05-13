@@ -29,6 +29,7 @@ namespace PiPDisabler.Patches
             SafeEnable<PlayerLookPatch>();
             SafeEnable<WeaponScalingPatch>();
             VisualRecoilCompensationPatch.Enable();
+            SafeEnable<GrassMotionVectorSuppressionPatch>();
             SafeEnable<PWAWeaponRootZOffsetPatch>();
             SafeEnable<FireModeSwitchMovementPatch>();
             SafeEnable<MagnificationSwitchMovementContextPatch>();

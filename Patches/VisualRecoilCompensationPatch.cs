@@ -1,5 +1,11 @@
 using EFT;
 using EFT.Animations;
+using GPUInstancer;
+using HarmonyLib;
+using SPT.Reflection.Patching;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 
 namespace PiPDisabler.Patches
@@ -140,6 +146,61 @@ namespace PiPDisabler.Patches
             _nextLogFrame = frame + LogIntervalFrames;
             _lastLoggedStrength = strength;
             PiPDisablerPlugin.DebugLogInfo($"[VisualRecoilCompensation] scope='{ScopeLifecycle.GetActiveScopeWhitelistKey()}' screenPlane={strength:F3}");
+        }
+
+        internal static bool ShouldDisableGrassMotionVectors(GPUInstancerManager manager)
+        {
+            if (!(manager is GPUInstancerDetailManager))
+                return false;
+
+            var camera = manager.Camera;
+            if (camera == null || camera != Helpers.GetMainCamera())
+                return false;
+
+            Player player;
+            ProceduralWeaponAnimation pwa;
+            if (!ShouldApply(out player, out pwa))
+                return false;
+
+            if (PiPDisabler.OpticCameraTransform == null)
+                return false;
+
+            return Mathf.Abs(PerScopeMeshSurgerySettings.GetVisualRecoilCompensation()) > 0.0001f;
+        }
+    }
+
+    internal sealed class GrassMotionVectorSuppressionPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(GPUInstancerManager), nameof(GPUInstancerManager.Update));
+
+        [PatchTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var getter = AccessTools.PropertyGetter(
+                typeof(GPUInstancerManager),
+                nameof(GPUInstancerManager.bGenerateMotionVectors));
+            var replacement = AccessTools.Method(
+                typeof(GrassMotionVectorSuppressionPatch),
+                nameof(ShouldGenerateMotionVectors));
+
+            foreach (var code in instructions)
+            {
+                if (code.opcode == OpCodes.Call && Equals(code.operand, getter))
+                {
+                    yield return new CodeInstruction(OpCodes.Ldarg_0);
+                    yield return new CodeInstruction(OpCodes.Call, replacement);
+                    continue;
+                }
+
+                yield return code;
+            }
+        }
+
+        private static bool ShouldGenerateMotionVectors(GPUInstancerManager manager)
+        {
+            return !VisualRecoilCompensationPatch.ShouldDisableGrassMotionVectors(manager) &&
+                   GPUInstancerManager.bGenerateMotionVectors;
         }
     }
 }
