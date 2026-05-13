@@ -23,8 +23,13 @@ namespace PiPDisabler
         public float CutLength;
         public float NearPreserveDepth;
         public float ReticleBaseSize;
+        public float ReticleSizeMultiplier = 1f;
         public float MeshReticleMinScale;
         public float MeshReticleMaxScale;
+        public float WeaponScaleMinMagnification;
+        public float WeaponScaleMaxMagnification;
+        public float WeaponScaleMultiplier = 1f;
+        public float VisualRecoilCompensation;
         public float VignetteOpacity;
         public float VignetteRadius;
         public float VignetteSoftness;
@@ -66,12 +71,40 @@ namespace PiPDisabler
         internal static float GetCutStartOffset() => ActiveScopeOverride != null ? ActiveScopeOverride.CutStartOffset : Settings.CutStartOffset.Value;
         internal static float GetCutLength() => ActiveScopeOverride != null ? ActiveScopeOverride.CutLength : Settings.CutLength.Value;
         internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : Settings.NearPreserveDepth.Value;
-        internal static float GetReticleBaseSize() => ActiveScopeOverride != null ? ActiveScopeOverride.ReticleBaseSize : Settings.ReticleBaseSize.Value;
+        internal static float GetReticleBaseSize()
+        {
+            var entry = ActiveScopeOverride;
+            if (entry == null)
+                return Settings.ReticleBaseSize.Value;
+
+            float multiplier = entry.ReticleSizeMultiplier > 0f ? entry.ReticleSizeMultiplier : 1f;
+            return entry.ReticleBaseSize * multiplier;
+        }
         internal static float GetMeshReticleMinScale() => ActiveScopeOverride != null ? ActiveScopeOverride.MeshReticleMinScale : Settings.MeshReticleMinScale.Value;
         internal static float GetMeshReticleMaxScale() => ActiveScopeOverride != null ? ActiveScopeOverride.MeshReticleMaxScale : Settings.MeshReticleMaxScale.Value;
+        internal static bool TryGetWeaponScale(out float minMagnificationScale, out float maxMagnificationScale)
+        {
+            minMagnificationScale = 0f;
+            maxMagnificationScale = 0f;
+            var entry = ActiveScopeOverride;
+            if (entry == null || entry.WeaponScaleMinMagnification <= 0f || entry.WeaponScaleMaxMagnification <= 0f)
+                return false;
+
+            float multiplier = entry.WeaponScaleMultiplier > 0f ? entry.WeaponScaleMultiplier : 1f;
+            minMagnificationScale = entry.WeaponScaleMinMagnification * multiplier;
+            maxMagnificationScale = entry.WeaponScaleMaxMagnification * multiplier;
+            return true;
+        }
         internal static float GetVignetteOpacity() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteOpacity ?? 0f, Settings.VignetteOpacity.Value);
         internal static float GetVignetteRadius() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteRadius ?? 0f, Settings.VignetteRadius.Value);
         internal static float GetVignetteSoftness() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteSoftness ?? 0f, Settings.VignetteSoftness.Value);
+        internal static float GetVisualRecoilCompensation()
+        {
+            var entry = ActiveScopeOverride;
+            return entry != null && Mathf.Abs(entry.VisualRecoilCompensation) > 0.0001f
+                ? entry.VisualRecoilCompensation
+                : Settings.VisualRecoilCompensation.Value;
+        }
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : Settings.ExpandSearchToWeaponRoot.Value;
 
 
@@ -106,8 +139,13 @@ namespace PiPDisabler
                 Settings.CustomCutLength.Value = entry.CutLength;
                 Settings.CustomNearPreserveDepth.Value = entry.NearPreserveDepth;
                 Settings.CustomReticleBaseSize.Value = entry.ReticleBaseSize;
+                Settings.CustomReticleSizeMultiplier.Value = entry.ReticleSizeMultiplier > 0f ? entry.ReticleSizeMultiplier : 1f;
                 Settings.CustomMeshReticleMinScale.Value = entry.MeshReticleMinScale;
                 Settings.CustomMeshReticleMaxScale.Value = entry.MeshReticleMaxScale;
+                Settings.CustomWeaponScaleMinMagnification.Value = entry.WeaponScaleMinMagnification;
+                Settings.CustomWeaponScaleMaxMagnification.Value = entry.WeaponScaleMaxMagnification;
+                Settings.CustomWeaponScaleMultiplier.Value = entry.WeaponScaleMultiplier > 0f ? entry.WeaponScaleMultiplier : 1f;
+                Settings.CustomVisualRecoilCompensation.Value = entry.VisualRecoilCompensation;
                 Settings.CustomVignetteOpacity.Value = entry.VignetteOpacity;
                 Settings.CustomVignetteRadius.Value = entry.VignetteRadius;
                 Settings.CustomVignetteSoftness.Value = entry.VignetteSoftness;
@@ -182,8 +220,13 @@ namespace PiPDisabler
             target.CutLength = Settings.CustomCutLength.Value;
             target.NearPreserveDepth = Settings.CustomNearPreserveDepth.Value;
             target.ReticleBaseSize = Settings.CustomReticleBaseSize.Value;
+            target.ReticleSizeMultiplier = Settings.CustomReticleSizeMultiplier.Value;
             target.MeshReticleMinScale = Settings.CustomMeshReticleMinScale.Value;
             target.MeshReticleMaxScale = Settings.CustomMeshReticleMaxScale.Value;
+            target.WeaponScaleMinMagnification = Settings.CustomWeaponScaleMinMagnification.Value;
+            target.WeaponScaleMaxMagnification = Settings.CustomWeaponScaleMaxMagnification.Value;
+            target.WeaponScaleMultiplier = Settings.CustomWeaponScaleMultiplier.Value;
+            target.VisualRecoilCompensation = Settings.CustomVisualRecoilCompensation.Value;
             target.VignetteOpacity = Settings.CustomVignetteOpacity.Value;
             target.VignetteRadius = Settings.CustomVignetteRadius.Value;
             target.VignetteSoftness = Settings.CustomVignetteSoftness.Value;

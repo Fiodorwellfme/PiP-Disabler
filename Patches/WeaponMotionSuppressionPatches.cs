@@ -14,12 +14,13 @@ namespace PiPDisabler.Patches
                 new[] { typeof(Weapon.EFireMode), typeof(bool) });
 
         [PatchPrefix]
-        private static void Prefix(ref bool skipAnimation)
+        private static void Prefix(FirearmsAnimator __instance, ref bool skipAnimation)
         {
             if (!WeaponMotionSuppressionState.ShouldApply(Settings.SuppressFireModeSwitchMovement.Value))
                 return;
 
             skipAnimation = true;
+            WeaponMotionSuppressionState.PlayWeaponSound(__instance, "Selector");
         }
     }
 
@@ -31,6 +32,25 @@ namespace PiPDisabler.Patches
                ScopeLifecycle.IsScoped &&
                ScopeLifecycle.ActiveOptic != null &&
                !ScopeLifecycle.IsModBypassedForCurrentScope;
+
+        internal static void PlayWeaponSound(FirearmsAnimator firearmsAnimator, string soundName)
+        {
+            if (firearmsAnimator == null)
+                return;
+
+            WeaponSoundPlayer soundPlayer = null;
+            foreach (IActorEvents eventsConsumer in firearmsAnimator.EventsConsumers)
+            {
+                soundPlayer = eventsConsumer as WeaponSoundPlayer;
+                if (soundPlayer != null)
+                    break;
+            }
+
+            if (soundPlayer == null)
+                return;
+
+            soundPlayer.SoundEventHandler(soundName);
+        }
     }
 
     internal sealed class MagnificationSwitchMovementContextPatch : ModulePatch
@@ -68,9 +88,13 @@ namespace PiPDisabler.Patches
             => AccessTools.Method(typeof(FirearmsAnimator), nameof(FirearmsAnimator.ModToggleTrigger));
 
         [PatchPrefix]
-        private static bool Prefix()
+        private static bool Prefix(FirearmsAnimator __instance)
         {
-            return !MagnificationSwitchMovementContextPatch.ShouldSuppressModToggle;
+            if (!MagnificationSwitchMovementContextPatch.ShouldSuppressModToggle)
+                return true;
+
+            WeaponMotionSuppressionState.PlayWeaponSound(__instance, "ModSwitch");
+            return false;
         }
     }
 }

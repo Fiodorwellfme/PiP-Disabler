@@ -63,6 +63,9 @@ namespace PiPDisabler
 
         internal static void TickBaseOpticCamera()
         {
+            if (!ScopeLifecycle.ShouldSuppressVanillaPiPNow())
+                return;
+
             // Any condition that should preserve vanilla PiP must restore and skip disabling.
             if (ShouldAllowVanillaPiP())
             {
@@ -70,7 +73,7 @@ namespace PiPDisabler
                 return;
             }
 
-            // Scan occasionally to find BaseOpticCamera if/when it spawns.
+            // Resolve occasionally in case CameraClass rebuilds the optic camera.
             if (_baseOpticCams.Count == 0 || Time.frameCount >= _nextBaseScanFrame)
             {
                 TryFindBaseOpticCameras();
@@ -173,47 +176,49 @@ namespace PiPDisabler
         internal static bool ShouldAllowForcedLensFade()
             => _allowForcedLensFade;
 
+        internal static void ForceLensFade(OpticSight opticSight, bool isHide)
+        {
+            if (opticSight == null)
+                return;
+
+            try
+            {
+                _allowForcedLensFade = true;
+                opticSight.LensFade(isHide);
+            }
+            catch { }
+            finally { _allowForcedLensFade = false; }
+        }
+
         private static void TryFindBaseOpticCameras()
         {
             _baseOpticCams.Clear();
 
             try
             {
-                var cams = Resources.FindObjectsOfTypeAll<Camera>();
-                for (int i = 0; i < cams.Length; i++)
+                if (!CameraClass.Exist || CameraClass.Instance == null)
+                    return;
+
+                var cam = CameraClass.Instance.OpticCameraManager?.Camera;
+                if (cam == null)
+                    return;
+
+                var all = cam.GetComponentsInChildren<Camera>(true);
+                for (int c = 0; c < all.Length; c++)
                 {
-                    var cam = cams[i];
-                    if (cam == null) continue;
+                    var cc = all[c];
+                    if (cc != null && !_baseOpticCams.Contains(cc))
+                        _baseOpticCams.Add(cc);
+                }
 
-                    var go = cam.gameObject;
-                    if (go == null) continue;
+                if (!_baseOpticCams.Contains(cam))
+                    _baseOpticCams.Add(cam);
 
-                    // Skip prefabs/assets.
-                    if (!go.scene.IsValid()) continue;
-
-                    var n = go.name;
-                    if (n == "BaseOpticCamera(Clone)" || n == "BaseOpticCamera")
-                    {
-                        // Collect this camera and any child cameras.
-                        var all = go.GetComponentsInChildren<Camera>(true);
-                        for (int c = 0; c < all.Length; c++)
-                        {
-                            var cc = all[c];
-                            if (cc != null && !_baseOpticCams.Contains(cc))
-                                _baseOpticCams.Add(cc);
-                        }
-
-                        if (!_baseOpticCams.Contains(cam))
-                            _baseOpticCams.Add(cam);
-
-                        if (!_loggedBase)
-                        {
-                            _loggedBase = true;
-                            PiPDisablerPlugin.DebugLogInfo(
-                                $"[PiPDisabler] Found BaseOpticCamera: {n} (cameras: {_baseOpticCams.Count})");
-                        }
-                        break;
-                    }
+                if (!_loggedBase)
+                {
+                    _loggedBase = true;
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[PiPDisabler] Found BaseOpticCamera via OpticCameraManager (cameras: {_baseOpticCams.Count})");
                 }
             }
             catch { /* ignore */ }
@@ -234,14 +239,7 @@ namespace PiPDisabler
                 var os = field.GetValue(updater) as OpticSight;
                 if (os == null) return false;
 
-                // Name-pattern bypass is independent of AutoDisableForVariableScopes.
-                if (ScopeLifecycle.IsNameBypassed(os))
-                    return true;
-
-                if (!Settings.AutoDisableForVariableScopes.Value)
-                    return false;
-
-                return ScopeLifecycle.IsThermalOrNightVisionOpticForBypass(os);
+                return ScopeLifecycle.ShouldBypassForCurrentOptic(os);
             }
             catch
             {
@@ -386,6 +384,8 @@ namespace PiPDisabler
             {
                 if (!Settings.ModEnabled.Value) return true;
                 if (__instance == null) return true;
+                if (!ScopeLifecycle.ShouldSuppressVanillaPiPNow()) return true;
+
                 OpticCameraTransform = __instance.transform;
                 Debug_LastOpticCameraTransform = OpticCameraTransform;
                 Debug_LastOpticCameraSetBy = __instance.name;

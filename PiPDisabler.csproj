@@ -75,11 +75,13 @@
 	<Target Name="PostBuild" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
 	<MakeDir Directories="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" />
 	<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" />
+	<Copy SourceFiles="$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle" DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" Condition="Exists('$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle')" />
 
 	<RemoveDir Directories="$(PackageStagingDir)" Condition="Exists('$(PackageStagingDir)')" />
 	<MakeDir Directories="$(PackagePluginDir)" />
 	<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PackagePluginDir)" />
 	<Copy SourceFiles="$(ProjectDir)custom_mesh_surgery_settings.json" DestinationFolder="$(PackagePluginDir)" Condition="Exists('$(ProjectDir)custom_mesh_surgery_settings.json')" />
+	<Copy SourceFiles="$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle" DestinationFolder="$(PackagePluginDir)" Condition="Exists('$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle')" />
 
 	<MakeDir Directories="$(ReleaseDir)" />
 	<Delete Files="$(ReleaseZip)" Condition="Exists('$(ReleaseZip)')" />

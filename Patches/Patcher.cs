@@ -13,6 +13,7 @@ namespace PiPDisabler.Patches
             _enabled = true;
             SafeEnable<OpticSightOnEnablePatch>();
             SafeEnable<OpticSightOnDisablePatch>();
+            SafeEnable<TacticalRangeFinderOnEnablePatch>();
             SafeEnable<ChangeAimingModePatch>();
             SafeEnable<SetScopeModePatch>();
             SafeEnable<PlayerOnSetInHandsPatch>();
@@ -27,6 +28,7 @@ namespace PiPDisabler.Patches
             SafeEnable<PWAMethod23Patch>();
             SafeEnable<PlayerLookPatch>();
             SafeEnable<WeaponScalingPatch>();
+            VisualRecoilCompensationPatch.Enable();
             SafeEnable<PWAWeaponRootZOffsetPatch>();
             SafeEnable<FireModeSwitchMovementPatch>();
             SafeEnable<MagnificationSwitchMovementContextPatch>();

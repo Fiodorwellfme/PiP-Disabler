@@ -14,6 +14,8 @@ namespace PiPDisabler
         private static OpticSight _cachedSightComponentForOptic;
         private static float _cachedMagnification;
         private static int _cachedMagnificationFrame = -1;
+        private static float _cachedVisualMagnification;
+        private static int _cachedVisualMagnificationFrame = -1;
         private static Type _smvcType;
         private static PropertyInfo _sightModProp;
         private static bool _smvcSearched;
@@ -102,11 +104,70 @@ namespace PiPDisabler
             return templateMag;
         }
 
+        public static float GetVisualMagnification()
+        {
+            int frame = Time.frameCount;
+            if (frame == _cachedVisualMagnificationFrame && _cachedVisualMagnification > 0.1f)
+                return _cachedVisualMagnification;
+
+            float result = GetVisualMagnificationUncached();
+            _cachedVisualMagnification = result;
+            _cachedVisualMagnificationFrame = frame;
+            return result;
+        }
+
+        public static float GetVisualMagnificationUncached()
+        {
+            if (TryGetVariableTemplateFov(out float variableFov, out _, out _, out _))
+                return FovToMagnification(variableFov, ZoomBaselineFov);
+
+            float targetMag = GetTemplateZoom();
+            if (targetMag <= 0.1f)
+                return 1f;
+
+            if (!CameraClass.Exist || CameraClass.Instance == null)
+                return targetMag;
+
+            float currentFov = CameraClass.Instance.Fov;
+            if (currentFov <= 0.1f)
+                return targetMag;
+
+            float fovMag = FovToMagnification(currentFov, ZoomBaselineFov);
+            var range = GetTemplateZoomRange();
+            float minMag = Mathf.Min(range.min, range.max);
+            float maxMag = Mathf.Max(range.min, range.max);
+
+            if (minMag > 0.1f && maxMag > 0.1f && !Mathf.Approximately(minMag, maxMag))
+                return Mathf.Clamp(fovMag, Mathf.Min(1f, minMag), maxMag);
+
+            return Mathf.Clamp(fovMag, 1f, Mathf.Max(1f, targetMag));
+        }
+
         public static float GetSmoothScopeZoomPosition()
         {
             return TryGetVariableTemplateFov(out _, out _, out _, out float zoomPosition)
                 ? zoomPosition
                 : 0f;
+        }
+
+        public static float GetVisualZoomPosition()
+        {
+            if (TryGetVariableTemplateFov(out _, out _, out _, out float zoomPosition))
+                return zoomPosition;
+
+            float visualMag = GetVisualMagnification();
+            var range = GetTemplateZoomRange();
+            float minMag = Mathf.Min(range.min, range.max);
+            float maxMag = Mathf.Max(range.min, range.max);
+
+            if (minMag > 0.1f && maxMag > 0.1f && !Mathf.Approximately(minMag, maxMag))
+                return Mathf.Clamp01(Mathf.InverseLerp(minMag, maxMag, visualMag));
+
+            float targetMag = GetTemplateZoom();
+            if (targetMag > 1.01f)
+                return Mathf.Clamp01(Mathf.InverseLerp(1f, targetMag, visualMag));
+
+            return 0f;
         }
 
         public static bool IsSmoothScopeFovActive()
@@ -205,6 +266,7 @@ namespace PiPDisabler
             _cachedSightComponentForOptic = null;
             // Invalidate per-frame cache
             _cachedMagnificationFrame = -1;
+            _cachedVisualMagnificationFrame = -1;
             // Reset dead-band so the next ApplyFov always fires
             _lastAppliedFov = 0f;
             _lastTemplateZoomLog = -1f;

@@ -44,6 +44,81 @@ namespace PiPDisabler.Patches
         }
     }
 
+    internal sealed class TacticalRangeFinderOnEnablePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(TacticalRangeFinderController), "OnEnable");
+
+        [PatchPostfix]
+        private static void Postfix(TacticalRangeFinderController __instance)
+        {
+            if (!Settings.ModEnabled.Value) return;
+            if (__instance == null) return;
+
+            var opticSight = ResolveRangeFinderOptic(__instance.transform);
+
+            PiPDisablerPlugin.DebugLogInfo(
+                $"[Patch] TacticalRangeFinder OnEnable: optic='{opticSight?.name ?? "null"}' " +
+                $"path='{GetPath(opticSight != null ? opticSight.transform : null)}' frame={Time.frameCount}");
+
+            ScopeLifecycle.RestoreBypassedOpticState(opticSight,
+                reason: "tactical rangefinder enable");
+        }
+
+        private static OpticSight ResolveRangeFinderOptic(Transform rangeFinderTransform)
+        {
+            if (rangeFinderTransform == null) return null;
+
+            Transform itemRoot = null;
+            for (var t = rangeFinderTransform; t != null; t = t.parent)
+            {
+                if (t.name == "item")
+                {
+                    itemRoot = t;
+                    break;
+                }
+            }
+
+            var searchRoot = itemRoot != null ? itemRoot : rangeFinderTransform.root;
+            var optics = searchRoot.GetComponentsInChildren<OpticSight>(true);
+            if (optics == null || optics.Length == 0)
+                return null;
+
+            OpticSight best = null;
+            int bestScore = int.MinValue;
+            for (int i = 0; i < optics.Length; i++)
+            {
+                var optic = optics[i];
+                if (optic == null) continue;
+
+                string path = GetPath(optic.transform);
+                int score = 0;
+                if (optic.isActiveAndEnabled) score += 100;
+                if (path.IndexOf("optic_camera", System.StringComparison.OrdinalIgnoreCase) >= 0) score += 50;
+                if (optic.CameraData != null) score += 10;
+                if (optic.ScopeData != null) score += 10;
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = optic;
+                }
+            }
+
+            return best;
+        }
+
+        private static string GetPath(Transform transform)
+        {
+            if (transform == null) return "null";
+
+            string path = transform.name;
+            for (var t = transform.parent; t != null; t = t.parent)
+                path = t.name + "/" + path;
+            return path;
+        }
+    }
+
     internal sealed class ChangeAimingModePatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()

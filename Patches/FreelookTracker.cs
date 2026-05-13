@@ -176,7 +176,7 @@ namespace PiPDisabler
                 ReticleRenderer.SetOccluderMaskRenderers(occluderRenderers);
 
                 MeshSurgeryManager.ApplyForOptic(os);
-                float mag = FovController.GetEffectiveMagnification();
+                float mag = FovController.GetVisualMagnification();
                 ReticleRenderer.Show(os, mag);
                 ScopeEffectsRenderer.Show();
             }

@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.IO;
+using BSG.CameraEffects;
 using EFT.CameraControl;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -7,7 +9,7 @@ namespace PiPDisabler
 {
     /// <summary>
     /// Renders the scope reticle via a CommandBuffer injected at
-    /// CameraEvent.AfterForwardAlpha on the main FPS camera.
+    /// CameraEvent.AfterEverything on the main FPS camera.
     ///
     /// ── CAMERA ALIGNMENT APPROACH ───────────────────────────────────────
     /// The root cause of reticle jitter is the mismatch between where the
@@ -29,15 +31,11 @@ namespace PiPDisabler
     /// dancing crosshair.
     ///
     /// ── NVG INTEGRATION ─────────────────────────────────────────────────
-    /// The CommandBuffer is attached at CameraEvent.AfterForwardAlpha, which
-    /// fires before OnRenderImage.  This means the NightVision image effect
-    /// reads the reticle pixels as part of the scene colour buffer and applies
-    /// its green tint, noise, and circular mask to them naturally.
+    /// The CommandBuffer is attached at CameraEvent.AfterEverything, after
+    /// Tarkov's NightVision post effect has already run. The reticle shader
+    /// remaps non-black reticle pixels toward an NVG off-white.
     ///
-    /// SetRenderTarget is intentionally absent from RebuildCommandBuffer.
-    /// At AfterForwardAlpha the active RT is the scene colour buffer — correct.
-    /// Explicitly binding CameraTarget here would resolve to the wrong surface
-    /// under DLSS/FSR and cause the draw to silently disappear.
+    /// Dark reticle pixels stay black while colored pixels become whiteish.
     /// </summary>
     internal static class ReticleRenderer
     {
@@ -88,8 +86,21 @@ namespace PiPDisabler
         // CommandBuffer state
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
-        private static CameraEvent   _attachedEvent = CameraEvent.AfterForwardAlpha;
+        private static CameraEvent   _attachedEvent = CameraEvent.AfterEverything;
         private static bool          _preCullRegistered;
+
+        private const string AfterNvgReticleShaderName = "Hidden/PiPDisabler/AfterNvgReticle";
+        private const string AfterNvgReticleBundleName = "pipdisabler_reticle_shaders.bundle";
+        private static readonly int AfterNvgOnId = Shader.PropertyToID("_AfterNvgOn");
+        private static readonly int AfterNvgColorId = Shader.PropertyToID("_AfterNvgColor");
+        private static readonly int BlackPointId = Shader.PropertyToID("_BlackPoint");
+        private static readonly int WhitePointId = Shader.PropertyToID("_WhitePoint");
+        private static readonly int ClipToVignetteId = Shader.PropertyToID("_ClipToVignette");
+        private static readonly int VignetteClipCenterId = Shader.PropertyToID("_VignetteClipCenter");
+        private static readonly int VignetteClipSizeId = Shader.PropertyToID("_VignetteClipSize");
+        private static readonly int VignetteClipRadiusId = Shader.PropertyToID("_VignetteClipRadius");
+        private static readonly int VignetteClipSoftnessId = Shader.PropertyToID("_VignetteClipSoftness");
+        private static AssetBundle _afterNvgShaderBundle;
 
         // World-space TRS for the reticle quad (rebuilt in onPreCull)
         private static Matrix4x4 _reticleMatrix = Matrix4x4.identity;
@@ -200,7 +211,7 @@ namespace PiPDisabler
 
                 if (magnification < 1f) magnification = 1f;
                 _lastMag = magnification;
-                _lastZoomPosition = FovController.GetSmoothScopeZoomPosition();
+                _lastZoomPosition = FovController.GetVisualZoomPosition();
 
                 // Attach CommandBuffer + onPreCull
                 AttachToCamera();
@@ -233,7 +244,7 @@ namespace PiPDisabler
             if (magnification < 1f) magnification = 1f;
             if (Mathf.Abs(magnification - _lastMag) >= 0.01f)
                 _lastMag = magnification;
-            _lastZoomPosition = FovController.GetSmoothScopeZoomPosition();
+            _lastZoomPosition = FovController.GetVisualZoomPosition();
             _baseScale = GetBaseReticleScale();
             if (_baseScale < 0.001f) _baseScale = 0.030f;
 
@@ -306,6 +317,27 @@ namespace PiPDisabler
         public static CameraEvent CurrentCameraEvent => _attachedEvent;
 
         public static bool HasLensStencilMask => _hasStencilSupport && _lensMaskEntries.Count > 0;
+
+        public static bool AppendLensStencilMask(CommandBuffer cmd, Mesh fullScreenMesh, Camera cam)
+        {
+            if (cmd == null || fullScreenMesh == null || cam == null) return false;
+            if (!_hasStencilSupport || _lensMaskEntries.Count == 0) return false;
+            if (_stencilClearMat == null || _lensStencilMat == null) return false;
+
+            var fullScreenMatrix = Matrix4x4.TRS(
+                Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f));
+
+            cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+            cmd.DrawMesh(fullScreenMesh, fullScreenMatrix, _stencilClearMat, 0, -1);
+
+            cmd.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
+            for (int i = 0; i < _occluderMaskRenderers.Count; i++)
+                DrawOccluderMaskRenderer(cmd, _occluderMaskRenderers[i]);
+            for (int i = 0; i < _lensMaskEntries.Count; i++)
+                DrawLensMaskEntry(cmd, _lensMaskEntries[i]);
+
+            return true;
+        }
 
         public static bool TryGetLensMaskClipBounds(Camera cam, out Vector2 center, out Vector2 size)
         {
@@ -484,10 +516,7 @@ namespace PiPDisabler
 
         private static CameraEvent GetReticleCameraEvent()
         {
-            if (Settings.DebugReticleAfterEverything.Value)
-                return CameraEvent.AfterEverything;
-            bool nvgOn = Shader.GetGlobalFloat("_NightVisionOn") > 0.5f;
-            return nvgOn ? CameraEvent.AfterForwardAlpha : CameraEvent.AfterEverything;
+            return CameraEvent.AfterEverything;
         }
 
         private static void EnsureCorrectCameraEvent()
@@ -560,20 +589,15 @@ namespace PiPDisabler
             if (_reticleSource == ReticleSource.Mesh && _savedScopeReticle != null)
             {
                 float meshAspect = GetActiveAspect(cam);
-                float zoomPosition = FovController.GetSmoothScopeZoomPosition();
-                float currentMag = FovController.GetEffectiveMagnificationUncached();
+                float zoomPosition = FovController.GetVisualZoomPosition();
+                float currentMag = FovController.GetVisualMagnificationUncached();
                 if (currentMag < 1f) currentMag = _lastMag;
                 float meshZoomScale = Mathf.Lerp(1f, Mathf.Max(1f, currentMag), zoomPosition);
                 float normalizedScale = Settings.MeshReticleNormalizedScale.Value;
                 float meshScale = _baseScale * meshZoomScale * _meshReticleBoundsScale * normalizedScale;
                 float minMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMinScale();
                 float maxMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMaxScale();
-                if (minMeshScale > 0f && maxMeshScale > 0f &&
-                    FovController.TryGetCurrentVariableFovRange(
-                        out float currentFov,
-                        out float wideFov,
-                        out float narrowFov,
-                        out float variableZoomPosition))
+                if (minMeshScale > 0f && maxMeshScale > 0f)
                 {
                     if (maxMeshScale < minMeshScale)
                     {
@@ -582,16 +606,30 @@ namespace PiPDisabler
                         maxMeshScale = swap;
                     }
 
-                    float fovHigh = Mathf.Max(wideFov, narrowFov);
-                    float fovLow = Mathf.Min(wideFov, narrowFov);
-                    if (!Mathf.Approximately(fovHigh, fovLow))
+                    if (FovController.TryGetCurrentVariableFovRange(
+                        out float currentFov,
+                        out float wideFov,
+                        out float narrowFov,
+                        out float variableZoomPosition))
                     {
-                        float clampedFov = Mathf.Clamp(currentFov, fovLow, fovHigh);
-                        float t = Mathf.Clamp01(Mathf.InverseLerp(fovHigh, fovLow, clampedFov));
-                        if (variableZoomPosition >= 0f)
-                            t = variableZoomPosition;
+                        float fovHigh = Mathf.Max(wideFov, narrowFov);
+                        float fovLow = Mathf.Min(wideFov, narrowFov);
+                        if (!Mathf.Approximately(fovHigh, fovLow))
+                        {
+                            float clampedFov = Mathf.Clamp(currentFov, fovLow, fovHigh);
+                            float t = Mathf.Clamp01(Mathf.InverseLerp(fovHigh, fovLow, clampedFov));
+                            if (variableZoomPosition >= 0f)
+                                t = variableZoomPosition;
 
-                        meshScale = Mathf.Lerp(minMeshScale, maxMeshScale, t);
+                            meshScale = Mathf.Lerp(minMeshScale, maxMeshScale, t);
+                        }
+                    }
+                    else
+                    {
+                        meshScale = Mathf.Lerp(
+                            minMeshScale,
+                            maxMeshScale,
+                            FovController.GetVisualZoomPosition());
                     }
                 }
 
@@ -640,10 +678,8 @@ namespace PiPDisabler
         /// Falls back to the original single-draw path when stencil is unavailable or no
         /// lens renderers have been registered.
         ///
-        /// Note: when attached at AfterForwardAlpha we do NOT rebind the render target,
-        /// because the active RT is already the scene colour buffer.  When attached at
-        /// AfterEverything (debug mode), we explicitly bind CameraTarget + display viewport
-        /// so clip-space quads map to the final upscaled frame.
+        /// The reticle is attached at AfterEverything, so CameraTarget and the
+        /// display viewport are explicitly bound for the final upscaled frame.
         /// </summary>
         private static void RebuildCommandBuffer(Camera cam)
         {
@@ -693,19 +729,7 @@ namespace PiPDisabler
 
             if (useStencil)
             {
-                // ── Step 1: clear stencil (clip-space full-screen quad) ──────────────
-                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                _cmdBuffer.DrawMesh(_reticleMesh, fullScreenMatrix, _stencilClearMat, 0, -1);
-
-                // ── Step 2: write lens visibility to stencil (world-space) ──────────
-                _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
-                for (int i = 0; i < _occluderMaskRenderers.Count; i++)
-                    DrawOccluderMaskRenderer(_occluderMaskRenderers[i]);
-                for (int i = 0; i < _lensMaskEntries.Count; i++)
-                {
-                    var entry = _lensMaskEntries[i];
-                    DrawLensMaskEntry(entry);
-                }
+                AppendLensStencilMask(_cmdBuffer, _reticleMesh, cam);
 
                 if (!_stencilOnlyPersistence)
                 {
@@ -739,6 +763,8 @@ namespace PiPDisabler
             Mesh mesh = GetActiveReticleMesh();
             Material material = GetActiveReticleMaterial();
             if (mesh == null || material == null) return;
+
+            ApplyAfterNvgProperties(material);
 
             if (_reticleSource == ReticleSource.Mesh && Settings.MeshReticleMinimumStrokeEnabled.Value)
                 DrawMeshReticleWithMinimumStroke(mesh, material);
@@ -793,6 +819,57 @@ namespace PiPDisabler
                 : _reticleMat;
         }
 
+        private static void ApplyAfterNvgProperties(Material material)
+        {
+            if (material == null || !material.HasProperty(AfterNvgOnId)) return;
+
+            bool nvgOn = Shader.GetGlobalFloat("_NightVisionOn") > 0.5f;
+            material.SetFloat(AfterNvgOnId, nvgOn ? 1f : 0f);
+            material.SetFloat(BlackPointId, 0.04f);
+            material.SetFloat(WhitePointId, 0.22f);
+
+            Color afterNvgColor = new Color(0.86f, 0.95f, 0.82f, 1f);
+            Camera cam = _attachedCamera != null ? _attachedCamera : Helpers.GetMainCamera();
+            NightVision nightVision = cam != null ? cam.GetComponent<NightVision>() : null;
+            if (nightVision != null)
+            {
+                Color sourceColor = nightVision.Color;
+                float maxChannel = Mathf.Max(sourceColor.r, Mathf.Max(sourceColor.g, sourceColor.b));
+                if (maxChannel > 0.001f)
+                {
+                    Color normalized = new Color(
+                        sourceColor.r / maxChannel,
+                        sourceColor.g / maxChannel,
+                        sourceColor.b / maxChannel,
+                        1f);
+                    afterNvgColor = Color.Lerp(Color.white, normalized, 0.35f);
+                    afterNvgColor.a = 1f;
+                }
+            }
+
+            material.SetColor(AfterNvgColorId, afterNvgColor);
+            ApplyVignetteClipProperties(material, cam);
+        }
+
+        private static void ApplyVignetteClipProperties(Material material, Camera cam)
+        {
+            if (material == null || !material.HasProperty(ClipToVignetteId)) return;
+
+            if (!Settings.VignetteEnabled.Value ||
+                cam == null ||
+                !TryGetLensMaskClipBounds(cam, out Vector2 center, out Vector2 size))
+            {
+                material.SetFloat(ClipToVignetteId, 0f);
+                return;
+            }
+
+            material.SetFloat(ClipToVignetteId, 1f);
+            material.SetVector(VignetteClipCenterId, new Vector4(center.x, center.y, 0f, 0f));
+            material.SetVector(VignetteClipSizeId, new Vector4(size.x, size.y, 0f, 0f));
+            material.SetFloat(VignetteClipRadiusId, PerScopeMeshSurgerySettings.GetVignetteRadius());
+            material.SetFloat(VignetteClipSoftnessId, PerScopeMeshSurgerySettings.GetVignetteSoftness());
+        }
+
         private static float GetBaseReticleScale()
         {
             float configBase = PerScopeMeshSurgerySettings.GetReticleBaseSize();
@@ -821,7 +898,7 @@ namespace PiPDisabler
             return maxDimension > 0.0001f ? 1f / maxDimension : 1f;
         }
 
-        private static void DrawLensMaskEntry(LensTransparency.LensMaskEntry entry)
+        private static void DrawLensMaskEntry(CommandBuffer cmd, LensTransparency.LensMaskEntry entry)
         {
             if (entry.Renderer == null || entry.Mesh == null) return;
             if (!entry.Renderer.gameObject.activeInHierarchy) return;
@@ -829,10 +906,10 @@ namespace PiPDisabler
             int subMeshCount = Mathf.Max(1, entry.Mesh.subMeshCount);
             Matrix4x4 matrix = entry.Renderer.localToWorldMatrix;
             for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
-                _cmdBuffer.DrawMesh(entry.Mesh, matrix, _lensStencilMat, subMesh, -1);
+                cmd.DrawMesh(entry.Mesh, matrix, _lensStencilMat, subMesh, -1);
         }
 
-        private static void DrawOccluderMaskRenderer(Renderer renderer)
+        private static void DrawOccluderMaskRenderer(CommandBuffer cmd, Renderer renderer)
         {
             if (renderer == null) return;
             if (!renderer.gameObject.activeInHierarchy) return;
@@ -845,7 +922,7 @@ namespace PiPDisabler
             int subMeshCount = Mathf.Max(1, mesh.subMeshCount);
             Matrix4x4 matrix = renderer.localToWorldMatrix;
             for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
-                _cmdBuffer.DrawMesh(mesh, matrix, _occluderStencilMat, subMesh, -1);
+                cmd.DrawMesh(mesh, matrix, _occluderStencilMat, subMesh, -1);
         }
 
         // ── Private helpers ─────────────────────────────────────────────────
@@ -895,16 +972,49 @@ namespace PiPDisabler
             };
         }
 
+        private static Shader FindAfterNvgReticleShader()
+        {
+            Shader shader = Shader.Find(AfterNvgReticleShaderName);
+            if (shader != null)
+                return shader;
+
+            if (_afterNvgShaderBundle == null)
+            {
+                string pluginDir = Path.GetDirectoryName(typeof(PiPDisablerPlugin).Assembly.Location);
+                string bundlePath = Path.Combine(pluginDir ?? string.Empty, AfterNvgReticleBundleName);
+                if (File.Exists(bundlePath))
+                    _afterNvgShaderBundle = AssetBundle.LoadFromFile(bundlePath);
+            }
+
+            if (_afterNvgShaderBundle == null)
+                return null;
+
+            foreach (Shader bundledShader in _afterNvgShaderBundle.LoadAllAssets<Shader>())
+            {
+                if (bundledShader != null && bundledShader.name == AfterNvgReticleShaderName)
+                    return bundledShader;
+            }
+
+            return null;
+        }
+
         private static void EnsureMeshReticleMaterial()
         {
             if (_meshReticleMat != null || _savedScopeReticle == null) return;
 
-            Shader stencilShader = Shader.Find("UI/Default");
-            if (stencilShader == null)
+            Shader reticleShader = FindAfterNvgReticleShader();
+            if (reticleShader == null)
+            {
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[Reticle] Missing shader '{AfterNvgReticleShaderName}'.");
                 return;
+            }
 
-            _hasStencilSupport = true;
-            _meshReticleMat = new Material(stencilShader)
+            Shader stencilShader = Shader.Find("UI/Default");
+            if (stencilShader != null)
+                _hasStencilSupport = true;
+
+            _meshReticleMat = new Material(reticleShader)
             {
                 color = Color.white,
                 renderQueue = 3100
@@ -960,21 +1070,12 @@ namespace PiPDisabler
                 Shader stencilShader = Shader.Find("UI/Default");
                 _hasStencilSupport   = stencilShader != null;
 
-                Shader alphaShader =
-                    stencilShader                           ??
-                    Shader.Find("Sprites/Default")          ??
-                    Shader.Find("Unlit/Transparent")        ??
-                    Shader.Find("Particles/Alpha Blended")  ??
-                    Shader.Find("Legacy Shaders/Transparent/Diffuse");
-
+                Shader alphaShader = FindAfterNvgReticleShader();
                 if (alphaShader == null)
                 {
-                    alphaShader =
-                        Shader.Find("Particles/Additive") ??
-                        Shader.Find("Legacy Shaders/Particles/Additive");
-
                     PiPDisablerPlugin.DebugLogInfo(
-                        "[Reticle] No alpha-blend shader found; falling back to Particles/Additive.");
+                        $"[Reticle] Missing shader '{AfterNvgReticleShaderName}'.");
+                    return;
                 }
 
                 _reticleMat = new Material(alphaShader)

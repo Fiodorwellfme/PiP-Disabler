@@ -57,6 +57,8 @@ namespace PiPDisabler.Patches
                     manager.OpticComponentUpdater_0?.CopyComponentFromOptic(opticSight);
                 }
 
+                global::PiPDisabler.PiPDisabler.ForceLensFade(opticSight, false);
+
                 if (manager.Camera != null)
                 {
                     manager.Camera.enabled = true;
@@ -170,6 +172,10 @@ namespace PiPDisabler.Patches
         private static bool Prefix()
         {
             if (!Settings.ModEnabled.Value || ScopeLifecycle.IsCurrentOrPendingOpticBypassed())
+                return true;
+
+            var currentOptic = CameraClass.Instance?.OpticCameraManager?.CurrentOpticSight;
+            if (currentOptic != null && ScopeLifecycle.ShouldBypassForCurrentOptic(currentOptic))
                 return true;
 
             PiPDisablerPlugin.DebugLogInfo(

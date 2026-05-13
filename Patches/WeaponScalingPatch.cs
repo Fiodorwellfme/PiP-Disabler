@@ -1,4 +1,3 @@
-using System;
 using Bsg.GameSettings;
 using Comfort.Common;
 using System.Reflection;
@@ -14,7 +13,7 @@ namespace PiPDisabler.Patches
     {
         private static bool _isActive;
         private static bool _suppressCompensationOverride;
-        private const float ZoomBaseline = 50f;
+        private static float _lastLoggedScale = -1f;
 
         protected override MethodBase GetTargetMethod()
         {
@@ -31,13 +30,11 @@ namespace PiPDisabler.Patches
             if (!_isActive) return;
             var player = GetMainPlayer();
             if (player == null) return;
-            if (!CameraClass.Exist) return;
 
-            float currentFov = CameraClass.Instance.Fov;
-            float settingsFov = GetSettingsFov(player);
-            float scale = ComputeCompensatedScale(currentFov, settingsFov);
+            float scale = GetManualScale();
             player.RibcageScaleCurrentTarget = scale;
             player.RibcageScaleCurrent = scale;
+            LogScale(scale);
         }
 
         public static void RestoreScale()
@@ -69,55 +66,77 @@ namespace PiPDisabler.Patches
             }
         }
 
-        private static float ComputeCompensatedScale(float currentFov, float settingsFov)
+        private static float GetManualScale()
         {
-            float halfRefRad = ZoomBaseline * 0.5f * Mathf.Deg2Rad;
-            float halfCurRad = currentFov * 0.5f * Mathf.Deg2Rad;
-            GetAutoScaleTuning(settingsFov, out float baseline, out float strength);
-            float tanRef = Mathf.Tan(halfRefRad);
-            float tanCur = Mathf.Tan(halfCurRad);
-            float invRatio = tanRef / tanCur;
+            if (!PerScopeMeshSurgerySettings.TryGetWeaponScale(out float minScale, out float maxScale))
+                return Settings.ManualWeaponScale.Value;
 
-            return baseline * ((1f - strength) + strength * invRatio);
+            if (TryGetSingleModeScale(minScale, out float singleModeScale))
+                return singleModeScale;
+
+            float t = GetCurrentMagnificationT();
+            return Mathf.Lerp(minScale, maxScale, t);
         }
 
-        private static float GetSettingsFov(Player player)
+        private static bool TryGetSingleModeScale(float targetScale, out float scale)
         {
-            var pwa = player != null ? player.ProceduralWeaponAnimation : null;
-            return pwa != null ? pwa.Single_2 : 50f;
+            scale = 0f;
+
+            var range = FovController.GetTemplateZoomRange();
+            float minZoom = Mathf.Min(range.min, range.max);
+            float maxZoom = Mathf.Max(range.min, range.max);
+            if (minZoom <= 0.1f || maxZoom <= 0.1f || !Mathf.Approximately(minZoom, maxZoom))
+                return false;
+
+            if (maxZoom <= 1.01f)
+            {
+                scale = targetScale;
+                return true;
+            }
+
+            float t = FovController.GetVisualZoomPosition();
+            scale = Mathf.Lerp(1f, targetScale, t);
+            return true;
+        }
+
+        private static float GetCurrentMagnificationT()
+        {
+            var range = FovController.GetTemplateZoomRange();
+            float minZoom = Mathf.Min(range.min, range.max);
+            float maxZoom = Mathf.Max(range.min, range.max);
+            if (minZoom <= 0.1f || maxZoom <= 0.1f)
+                return FovController.GetVisualZoomPosition();
+
+            if (Mathf.Approximately(minZoom, maxZoom))
+                return FovController.GetVisualZoomPosition();
+
+            float currentMagnification = GetCurrentFovMagnification();
+            return Mathf.Clamp01(Mathf.InverseLerp(minZoom, maxZoom, currentMagnification));
+        }
+
+        private static float GetCurrentFovMagnification()
+        {
+            if (!CameraClass.Exist)
+                return FovController.GetVisualMagnification();
+
+            float currentFov = Mathf.Max(0.1f, CameraClass.Instance.Fov);
+            float baseFovRad = FovController.ZoomBaselineFov * Mathf.Deg2Rad;
+            float currentFovRad = currentFov * Mathf.Deg2Rad;
+            return Mathf.Max(1f, Mathf.Tan(baseFovRad * 0.5f) / Mathf.Tan(currentFovRad * 0.5f));
+        }
+
+        private static void LogScale(float scale)
+        {
+            if (!Settings.DebugLogging.Value) return;
+            if (System.Math.Abs(scale - _lastLoggedScale) < 0.01f) return;
+
+            _lastLoggedScale = scale;
+            PiPDisablerPlugin.DebugLogInfo($"[WeaponScaling] manual scale={scale:F3}");
         }
 
         private static int GetVanillaSettingsFov()
         {
             return (int)Singleton<SharedGameSettingsClass>.Instance.Game.Settings.FieldOfView;
-        }
-
-        private static void GetAutoScaleTuning(float settingsFov, out float baseline, out float strength)
-        {
-            const float fovMin = 50f;
-            const float fovMid = 62f;
-            const float fovMax = 75f;
-
-            const float baselineAt50 = 0.8873239f;
-            const float baselineAt62 = 0.6619719f;
-            const float baselineAt75 = 0.53990f;
-
-            const float strengthAt50 = 0.2723005f;
-            const float strengthAt62 = 0.2723005f;
-            const float strengthAt75 = 0.422535f;
-
-            float clampedFov = Mathf.Clamp(settingsFov, fovMin, fovMax);
-            if (clampedFov <= fovMid)
-            {
-                float tLow = Mathf.InverseLerp(fovMin, fovMid, clampedFov);
-                baseline = Mathf.Lerp(baselineAt50, baselineAt62, tLow);
-                strength = Mathf.Lerp(strengthAt50, strengthAt62, tLow);
-                return;
-            }
-
-            float tHigh = Mathf.InverseLerp(fovMid, fovMax, clampedFov);
-            baseline = Mathf.Lerp(baselineAt62, baselineAt75, tHigh);
-            strength = Mathf.Lerp(strengthAt62, strengthAt75, tHigh);
         }
 
         [PatchPostfix]
@@ -128,13 +147,11 @@ namespace PiPDisabler.Patches
             if (!ScopeLifecycle.IsScoped) return;
             if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
             if (!_isActive) return;
-            if (!CameraClass.Exist) return;
 
-            float currentFov = CameraClass.Instance.Fov;
-            float settingsFov = GetSettingsFov(__instance);
-            float scale = ComputeCompensatedScale(currentFov, settingsFov);
+            float scale = GetManualScale();
             __instance.RibcageScaleCurrentTarget = scale;
             __instance.RibcageScaleCurrent = scale;
+            LogScale(scale);
         }
 
         private static Player GetMainPlayer()

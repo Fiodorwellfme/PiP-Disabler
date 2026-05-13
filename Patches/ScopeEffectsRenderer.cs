@@ -6,10 +6,10 @@ namespace PiPDisabler
 {
     /// <summary>
     /// Renders scope vignette and shadow effects via a CommandBuffer injected at
-    /// CameraEvent.AfterForwardAlpha on the main FPS camera.
+    /// CameraEvent.AfterEverything on the main FPS camera.
     ///
-    /// The shadow shares the same render stage as ReticleRenderer so both overlays
-    /// see the same scene viewport, depth, and stencil data.
+    /// The effects render on the final camera target so they follow the same
+    /// after-postfx path as the reticle overlay.
     ///
     /// ── VIGNETTE ───────────────────────────────────────────────────────────────
     /// Screen-space quad centred in view with fixed on-screen size.
@@ -52,7 +52,8 @@ namespace PiPDisabler
         // ── CommandBuffer ───────────────────────────────────────────────────
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
-        private static CameraEvent   _attachedEvent = CameraEvent.AfterForwardAlpha;
+        private static CameraEvent   _attachedEvent = CameraEvent.AfterEverything;
+        private const CameraEvent EffectsCameraEvent = CameraEvent.AfterEverything;
         private static bool          _preCullRegistered;
 
         // ─────────────────────────────────────────────────────────────────────
@@ -96,7 +97,7 @@ namespace PiPDisabler
             // + optic mode switch, or after a magnification mode switch while
             // scoped). The shadow reads stencil written by ReticleRenderer, so
             // it must execute AFTER that pass.
-            ReattachAfterReticle();
+            ReattachToSceneEvent();
 
             PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeEffects] Showing: vignette={_vigActive} shadow={_shadowActive} (CommandBuffer)");
@@ -168,17 +169,17 @@ namespace PiPDisabler
         /// in the camera's execution list.  Must be called after ReticleRenderer.Show()
         /// has (re-)attached its own CB.
         /// </summary>
-        private static void ReattachAfterReticle()
+        private static void ReattachToSceneEvent()
         {
             var mainCam = Helpers.GetMainCamera();
             if (mainCam == null) return;
 
-            ReorderPreCullAfterReticle();
+            ReorderPreCullForSceneEvent();
 
             if (_attachedCamera != null && _attachedCamera != mainCam)
                 DetachFromCamera();
 
-            CameraEvent targetEvent = ReticleRenderer.CurrentCameraEvent;
+            CameraEvent targetEvent = EffectsCameraEvent;
 
             if (_attachedCamera == mainCam && _cmdBuffer != null)
             {
@@ -212,7 +213,7 @@ namespace PiPDisabler
                 $"[ScopeEffects] CommandBuffer attached to '{mainCam.name}' at {_attachedEvent}");
         }
 
-        private static void ReorderPreCullAfterReticle()
+        private static void ReorderPreCullForSceneEvent()
         {
             if (_preCullRegistered)
             {
@@ -237,7 +238,7 @@ namespace PiPDisabler
             if (_cmdBuffer == null)
                 _cmdBuffer = new CommandBuffer { name = "ScopeEffectsOverlay" };
 
-            CameraEvent targetEvent = ReticleRenderer.CurrentCameraEvent;
+            CameraEvent targetEvent = EffectsCameraEvent;
             mainCam.AddCommandBuffer(targetEvent, _cmdBuffer);
             _attachedCamera = mainCam;
             _attachedEvent = targetEvent;
@@ -280,7 +281,7 @@ namespace PiPDisabler
         {
             if (_attachedCamera == null || _cmdBuffer == null) return;
 
-            CameraEvent desiredEvent = ReticleRenderer.CurrentCameraEvent;
+            CameraEvent desiredEvent = EffectsCameraEvent;
             if (desiredEvent == _attachedEvent) return;
 
             try { _attachedCamera.RemoveCommandBuffer(_attachedEvent, _cmdBuffer); }
@@ -356,18 +357,18 @@ namespace PiPDisabler
         {
             _cmdBuffer.Clear();
             bool isAfterEverything = _attachedEvent == CameraEvent.AfterEverything;
+            Rect viewport = isAfterEverything
+                ? GetDisplayViewport(cam)
+                : GetSceneViewport(cam);
 
             if (isAfterEverything)
-            {
                 _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-                _cmdBuffer.SetViewport(GetDisplayViewport(cam));
-            }
-            else
-            {
-                _cmdBuffer.SetViewport(GetSceneViewport(cam));
-            }
 
-            bool useStencil = _hasStencilSupport && ReticleRenderer.HasLensStencilMask;
+            _cmdBuffer.SetViewport(viewport);
+
+            Mesh stencilMesh = GetStencilMesh();
+            bool useStencil = _hasStencilSupport &&
+                              ReticleRenderer.AppendLensStencilMask(_cmdBuffer, stencilMesh, cam);
 
             // Pure screen-space draw (clip-space matrices).
             _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
@@ -377,9 +378,8 @@ namespace PiPDisabler
                 var fullScreenMatrix = Matrix4x4.TRS(
                     Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f));
 
-                // Consume the stencil ReticleRenderer already wrote this frame.
                 if (Settings.DebugShowScopeShadowMask.Value && _stencilDebugMat != null)
-                    _cmdBuffer.DrawMesh(_shadowMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
+                    _cmdBuffer.DrawMesh(stencilMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
             }
 
             // Draw shadow first (behind vignette in render order)
@@ -540,9 +540,6 @@ namespace PiPDisabler
                 $"[ScopeEffects] Shadow texture rebuilt: opacity={opac:F2}");
         }
 
-        private static Rect GetDisplayViewport(Camera cam)
-            => Helpers.GetDisplayViewport(cam);
-
         private static Rect GetSceneViewport(Camera cam)
         {
             return new Rect(0f, 0f,
@@ -550,9 +547,20 @@ namespace PiPDisabler
                 Mathf.Max(1f, cam.pixelHeight));
         }
 
+        private static Rect GetDisplayViewport(Camera cam)
+            => Helpers.GetDisplayViewport(cam);
+
         // ─────────────────────────────────────────────────────────────────────
         // Shared helpers
         // ─────────────────────────────────────────────────────────────────────
+
+        private static Mesh GetStencilMesh()
+        {
+            if (_shadowMesh != null) return _shadowMesh;
+            if (_vigMesh != null) return _vigMesh;
+            _shadowMesh = BuildQuadMesh("ScopeEffectsStencilQuad");
+            return _shadowMesh;
+        }
 
         private static Shader FindAlphaShader() =>
             Shader.Find("Sprites/Default")         ??

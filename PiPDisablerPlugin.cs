@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace PiPDisabler
 {
-    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "1.2.1")]
+    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "1.3.0")]
     [BepInDependency("com.fontaine.fovfix", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.Shibatsu.DynamicExternalResolution", BepInDependency.DependencyFlags.SoftDependency)]
 
@@ -38,7 +38,7 @@ namespace PiPDisabler
         {
             Instance = this;
             LogSource = Logger;
-            LogSource.LogInfo("PiP-Disabler 1.2.1 loaded.");
+            LogSource.LogInfo("PiP-Disabler 1.3.0 loaded.");
             Settings.Init(Config);
             Patches.Patcher.Enable();
             ScopeLifecycle.Init();
@@ -56,6 +56,7 @@ namespace PiPDisabler
             CameraSettingsManager.ForceRestore();
             LensTransparency.FullRestoreAll();
             MeshSurgeryManager.CleanupForShutdown();
+            Patches.VisualRecoilCompensationPatch.Disable();
             PiPDisabler.RestoreAllCameras();
 
             Settings.ModEnabled.SettingChanged -= OnModEnabledChanged;
@@ -144,6 +145,9 @@ namespace PiPDisabler
                         : $"[CustomMeshSettings] No custom settings existed for scope key '{scopeKey}'");
                 }
             }
+
+            if (!ScopeLifecycle.ShouldRunUpdateLoop())
+                return;
 
             PiPDisabler.TickBaseOpticCamera();
             ScopeLifecycle.CheckAndUpdate("Update");

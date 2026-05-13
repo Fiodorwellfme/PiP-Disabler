@@ -71,8 +71,13 @@ namespace PiPDisabler
         public static ConfigEntry<float> CustomCutLength;
         public static ConfigEntry<float> CustomNearPreserveDepth;
         public static ConfigEntry<float> CustomReticleBaseSize;
+        public static ConfigEntry<float> CustomReticleSizeMultiplier;
         public static ConfigEntry<float> CustomMeshReticleMinScale;
         public static ConfigEntry<float> CustomMeshReticleMaxScale;
+        public static ConfigEntry<float> CustomWeaponScaleMinMagnification;
+        public static ConfigEntry<float> CustomWeaponScaleMaxMagnification;
+        public static ConfigEntry<float> CustomWeaponScaleMultiplier;
+        public static ConfigEntry<float> CustomVisualRecoilCompensation;
         public static ConfigEntry<float> CustomVignetteOpacity;
         public static ConfigEntry<float> CustomVignetteRadius;
         public static ConfigEntry<float> CustomVignetteSoftness;
@@ -89,8 +94,8 @@ namespace PiPDisabler
         public static ConfigEntry<float> ScopeShadowOpacity;
 
         // --- Weapon Scaling ---
-        public static ConfigEntry<float> BaselineWeaponScale;
-        public static ConfigEntry<float> WeaponScaleStrength;
+        public static ConfigEntry<float> ManualWeaponScale;
+        public static ConfigEntry<float> VisualRecoilCompensation;
         // --- Zoom / FOV ---
         public static ConfigEntry<float> BaselineFOV;
         public static ConfigEntry<float> FovAnimationDuration;
@@ -107,19 +112,17 @@ namespace PiPDisabler
 
         public static void Init(ConfigFile config)
         {
-            // --- 0. Global ---
-            ConfigEntries.Add(ModEnabled = config.Bind("Global", "Mod Enabled", true,
+            // --- General ---
+            ConfigEntries.Add(ModEnabled = config.Bind("General", "Mod Enabled", true,
                 new ConfigDescription(
                     "Master ON/OFF switch for the entire mod.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false})));
-            ConfigEntries.Add(ModToggleKey = config.Bind("Global", "Mod Toggle Key", KeyCode.None,
+            ConfigEntries.Add(ModToggleKey = config.Bind("General", "Mod Toggle Key", KeyCode.None,
                 new ConfigDescription(
                     "Toggle key for master mod enable/disable.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false})));
-
-            // --- General ---
             ConfigEntries.Add(AutoDisableForVariableScopes = config.Bind("General", "Auto Disable For NV/Thermals", true,
                 new ConfigDescription(
                     "Automatically disable the mod for thermal/night vision scopes.",
@@ -134,7 +137,7 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Semi-colon separated list of scope keys that should bypass the mod.",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(ScopeBlacklistToggleEntryKey = config.Bind("General", "Scope Blacklist Toggle Entry Key", KeyCode.None,
                 new ConfigDescription(
                     "When pressed while scoped, add/remove the current scope to the blacklist.",
@@ -144,7 +147,7 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Semi-colon separated list of allowed scopes. Empty list = whitelist ignored.",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(ScopeWhitelistToggleEntryKey = config.Bind("General", "Scope Whitelist Toggle Entry Key", KeyCode.None,
                 new ConfigDescription(
                     "When pressed while scoped, add/remove the current scope to the whitelist.",
@@ -154,22 +157,22 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Maximum angle in degrees between the active scope aim axis and the main camera before the mod activates after sprinting or stance transitions.",
                     new AcceptableValueRange<float>(0f, 15f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
             ConfigEntries.Add(PostSprintAimGateDuration = config.Bind("Hacks", "Post Sprint ADS Gate Duration", 1f,
                 new ConfigDescription(
                     "How long after sprinting the scope alignment gate should be enforced.",
                     new AcceptableValueRange<float>(0f, 1f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
             ConfigEntries.Add(BypassDuringStanceTransitions = config.Bind("Hacks", "Bypass During Stance Transitions", true,
                 new ConfigDescription(
                     "Bypass the mod while changing between standing and prone.",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(PostStanceAimGateDuration = config.Bind("Hacks", "Post Stance ADS Gate Duration", 1f,
                 new ConfigDescription(
                     "How long after standing/prone transitions the scope alignment gate should be enforced.",
                     new AcceptableValueRange<float>(0f, 1f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
 
             // --- Zoom ---
             ConfigEntries.Add(BaselineFOV = config.Bind("General", "Baseline FOV", 35f,
@@ -178,7 +181,7 @@ namespace PiPDisabler
                     "Be aware that 1x is always forced to 35° for stepped optics.",
                     new AcceptableValueRange<float>(20f, 35f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(FovAnimationDuration = config.Bind("General", "FOV Animation Duration", 0.5f,
+            ConfigEntries.Add(FovAnimationDuration = config.Bind("General", "FOV Animation Duration", 1f,
                 new ConfigDescription(
                     "Duration of the FOV transitions during magnification changes.",
                     new AcceptableValueRange<float>(0f, 10f),
@@ -192,7 +195,7 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Changes the duration of the reload bypass, higher values lower the duration.",
                     new AcceptableValueRange<float>(0f, 1f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
             ConfigEntries.Add(ScaleSwayWithCameraFov = config.Bind("Hacks", "Scale Sway With Camera FOV", true,
                 new ConfigDescription(
                     "Lowers weapon sway while scoped in proportion to the current FOV.",
@@ -202,30 +205,40 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Changes the intensity of the sway reduction.",
                     new AcceptableValueRange<float>(0f, 1f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
-            ConfigEntries.Add(KeepScopedLodBiasUntilInventory = config.Bind("Optimization", "Keep scoped LOD Bias until inventory is opened", false,
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = true })));
+            ConfigEntries.Add(ManualWeaponScale = config.Bind("Hacks", "Manual Weapon Scale", 1f, //To remove
+                new ConfigDescription(
+                    "Direct ribcage compensation scale while scoped. Higher values make the weapon appear smaller.",
+                    new AcceptableValueRange<float>(0.1f, 5f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(VisualRecoilCompensation = config.Bind("Hacks", "Visual Recoil Compensation", 0f, //To remove
+                new ConfigDescription(
+                    "Render-only screen-plane camera offset toward the optic camera for scope recoil/alignment at low FOV. Negative values invert direction. 0 = disabled.",
+                    new AcceptableValueRange<float>(-2f, 2f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(KeepScopedLodBiasUntilInventory = config.Bind("Graphics", "Keep scoped LOD Bias until inventory is opened", false,
                 new ConfigDescription(
                     "When enabled, the scoped LOD bias stays active after leaving the scope and is only restored when opening inventory/loot or after a successful inventory item transfer.\n" +
                     "When disabled, LOD bias is restored immediately on scope exit.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(ManualLodBias = config.Bind("Optimization", "Manual LOD Bias", 0f,
+            ConfigEntries.Add(ManualLodBias = config.Bind("Graphics", "Manual LOD Bias", 0f,
                 new ConfigDescription(
                     "Manual LOD bias while scoped.\n" +
                     "0 = auto (Magnification * Auto LOD bias multiplier).",
                     new AcceptableValueRange<float>(0f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(AutoLodBiasMultiplier = config.Bind("Optimization", "Auto LOD bias multiplier", 2f,
+            ConfigEntries.Add(AutoLodBiasMultiplier = config.Bind("Graphics", "Auto LOD bias multiplier", 2f,
                 new ConfigDescription(
                     "Self explanatory",
                     new AcceptableValueRange<float>(0.01f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(SuppressFireModeSwitchMovement = config.Bind("Hacks", "Suppress Fire Mode Switch Movement", false,
+            ConfigEntries.Add(SuppressFireModeSwitchMovement = config.Bind("Hacks", "Suppress Fire Mode Switch Movement", true,
                 new ConfigDescription(
                     "Prevents the weapon from playing the fire-mode switch movement animation while still changing fire mode.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(SuppressMagnificationSwitchMovement = config.Bind("Hacks", "Suppress Magnification Switch Movement", false,
+            ConfigEntries.Add(SuppressMagnificationSwitchMovement = config.Bind("Hacks", "Suppress Magnification Switch Movement", true,
                 new ConfigDescription(
                     "Prevents the weapon from playing the scope magnification switch movement animation while still changing magnification.",
                     null,
@@ -234,7 +247,7 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Forces the weapon's post-recoil hand rotation rest point back to zero instead of using Tarkov's small randomized offset.",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
 
             // --- Mesh Surgery (ON by default, Cylinder mode) --- //Needs global cleanup, config name standardization.
             ConfigEntries.Add(PlaneOffsetMeters = config.Bind("Global Mesh Surgery settings", "PlaneOffsetMeters", 0.001f,
@@ -429,19 +442,44 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(CustomReticleBaseSize = config.Bind("Per scope settings", "Reticle Size", 0.030f,
                 new ConfigDescription(
-                    "Custom per-scope reticle base diameter in meters. Needs to be saved to take effect.",
+                    "Per-scope reticle size for scopes with a non scaling reticle. Needs to be saved to take effect.",
                     new AcceptableValueRange<float>(0f, 0.2f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(CustomMeshReticleMinScale = config.Bind("Per scope settings", "Mesh Reticle Min Scale", 0f,
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(CustomReticleSizeMultiplier = config.Bind("Per scope settings", "Reticle Size Multiplier", 1f,
                 new ConfigDescription(
-                    "Custom per-scope minimum final reticle scale. If either max or min is set to 0 then this doesn't do anything. Needs to be saved to take effect.",
+                    "Multiplier applied to the per-scope reticle size. 1 = unchanged. Needs to be saved to take effect.",
+                    new AcceptableValueRange<float>(0.01f, 10f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(CustomMeshReticleMinScale = config.Bind("Per scope settings", "Variable Reticle Minimum Size", 0f,
+                new ConfigDescription(
+                    "Custom per-scope smallest reticle size. If either max or min is set to 0 then this doesn't do anything. Needs to be saved to take effect.",
                     new AcceptableValueRange<float>(0f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(CustomMeshReticleMaxScale = config.Bind("Per scope settings", "Mesh Reticle Max Scale", 0f,
+            ConfigEntries.Add(CustomMeshReticleMaxScale = config.Bind("Per scope settings", "Variable Reticle Maximum Size", 0f,
                 new ConfigDescription(
-                    "Custom per-scope maximum final reticle scale. If either max or min is set to 0 then this doesn't do anything. Needs to be saved to take effect.",
+                    "Custom per-scope biggest reticle size. If either max or min is set to 0 then this doesn't do anything. Needs to be saved to take effect.",
                     new AcceptableValueRange<float>(0f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(CustomWeaponScaleMinMagnification = config.Bind("Per scope settings", "Weapon Scale Min Magnification", 1f,
+                new ConfigDescription(
+                    "Custom per-scope ribcage scale at minimum magnification. 0 = use global Manual Weapon Scale. Needs to be saved to take effect. Higher values make the weapon appear smaller.",
+                    new AcceptableValueRange<float>(0f, 50f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(CustomWeaponScaleMaxMagnification = config.Bind("Per scope settings", "Weapon Scale Max Magnification", 5f,
+                new ConfigDescription(
+                    "Custom per-scope ribcage scale at maximum magnification. 0 = use global Manual Weapon Scale. Needs to be saved to take effect. Higher values make the weapon appear smaller.",
+                    new AcceptableValueRange<float>(0f, 50f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(CustomWeaponScaleMultiplier = config.Bind("Per scope settings", "Weapon Scale Multiplier", 1f,
+                new ConfigDescription(
+                    "Multiplier applied to both per-scope weapon scale limits. 1 = unchanged. Needs to be saved to take effect.",
+                    new AcceptableValueRange<float>(0.01f, 10f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(CustomVisualRecoilCompensation = config.Bind("Per scope settings", "Visual Recoil Compensation", 0f,
+                new ConfigDescription(
+                    "Custom per-scope visual recoil compensation. 0 = use global Visual Recoil Compensation. Needs to be saved to take effect. Negative values invert direction.",
+                    new AcceptableValueRange<float>(-2f, 2f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
             ConfigEntries.Add(CustomVignetteOpacity = config.Bind("Per scope settings", "Vignette Opacity", 0f,
                 new ConfigDescription(
                     "Custom per-scope vignette opacity. 0 = use Scope Effects default.",
@@ -499,7 +537,7 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Keep the scope shadow visible after leaving ADS until the FOV restore finishes, useful when FOV animation set to 0.",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(ScopeShadowOpacity = config.Bind("Scope Effects", "ScopeShadow Opacity", 0.82f,
                 new ConfigDescription(
                     "Maximum opacity of the scope shadow overlay.",
@@ -514,9 +552,9 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(DebugReticleAfterEverything = config.Bind("Debug", "Draw reticle after everything", false,
                 new ConfigDescription(
-                    "When enabled, reticle is always clear but doesn't get tinted by NVGs",
+                    "Legacy setting. Reticles now always draw after everything and use the after-NVG reticle shader.",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
             RecalcOrder();
         }
         private static void RecalcOrder()
