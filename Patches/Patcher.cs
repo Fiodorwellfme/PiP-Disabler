@@ -14,6 +14,7 @@ namespace PiPDisabler.Patches
             SafeEnable<OpticSightOnEnablePatch>();
             SafeEnable<OpticSightOnDisablePatch>();
             SafeEnable<TacticalRangeFinderOnEnablePatch>();
+            SafeEnable<TacticalRangeFinderIgnoreLocalBodyPatch>();
             SafeEnable<ChangeAimingModePatch>();
             SafeEnable<SetScopeModePatch>();
             SafeEnable<PlayerOnSetInHandsPatch>();

@@ -1084,6 +1084,34 @@ namespace PiPDisabler
             return true;
         }
 
+        private static bool IsTextMeshProOwnedMesh(MeshFilter mf)
+        {
+            if (mf == null || mf.transform == null) return false;
+
+            for (var t = mf.transform; t != null; t = t.parent)
+            {
+                var components = t.GetComponents<Component>();
+                for (int i = 0; i < components.Length; i++)
+                {
+                    var component = components[i];
+                    if (component == null) continue;
+
+                    var type = component.GetType();
+                    string fullName = type.FullName ?? string.Empty;
+                    string name = type.Name ?? string.Empty;
+
+                    if (fullName.StartsWith("TMPro.", StringComparison.Ordinal) ||
+                        name.StartsWith("TMP_", StringComparison.Ordinal) ||
+                        name.StartsWith("TextMeshPro", StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         public static bool TryGetPlane(OpticSight os, Transform scopeRoot, Transform activeMode,
             out Vector3 planePoint, out Vector3 planeNormal, out Vector3 camPos)
         {
@@ -1254,6 +1282,9 @@ namespace PiPDisabler
                 }
 
                 if (ContainsPatronToken(relSearchPath) || ContainsPatronToken(mf.gameObject.name) || ContainsPatronToken(mf.sharedMesh.name))
+                    continue;
+
+                if (IsTextMeshProOwnedMesh(mf))
                     continue;
 
                 var renderer = mf.GetComponent<Renderer>();

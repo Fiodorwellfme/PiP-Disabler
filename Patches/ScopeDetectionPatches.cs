@@ -119,6 +119,156 @@ namespace PiPDisabler.Patches
         }
     }
 
+    internal sealed class TacticalRangeFinderIgnoreLocalBodyPatch : ModulePatch
+    {
+        private static readonly RaycastHit[] RaycastHits = new RaycastHit[64];
+
+        private static readonly FieldInfo DistanceOutputFormatField =
+            AccessTools.Field(typeof(TacticalRangeFinderController), "_distanceOutputFormat");
+        private static readonly FieldInfo NoDistanceTextField =
+            AccessTools.Field(typeof(TacticalRangeFinderController), "_noDistanceText");
+        private static readonly FieldInfo TextOnDisplayField =
+            AccessTools.Field(typeof(TacticalRangeFinderController), "_textOnDisplay");
+        private static readonly FieldInfo BoneToCastRayField =
+            AccessTools.Field(typeof(TacticalRangeFinderController), "_boneToCastRay");
+        private static readonly FieldInfo RayStartOffsetField =
+            AccessTools.Field(typeof(TacticalRangeFinderController), "_rayStartOffset");
+        private static readonly FieldInfo MaxCastDistanceField =
+            AccessTools.Field(typeof(TacticalRangeFinderController), "_maxCastDistance");
+        private static readonly FieldInfo MaskField =
+            AccessTools.Field(typeof(TacticalRangeFinderController), "_mask");
+        private static readonly MethodInfo SetMonospaceTextMethod =
+            AccessTools.Method(typeof(GClass1673), "SetMonospaceText");
+
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(TacticalRangeFinderController), "method_0");
+
+        [PatchPrefix]
+        private static bool Prefix(TacticalRangeFinderController __instance)
+        {
+            if (!Settings.ModEnabled.Value) return true;
+            if (__instance == null) return true;
+
+            try
+            {
+                var bone = BoneToCastRayField?.GetValue(__instance) as Transform;
+                if (bone == null) return true;
+
+                float rayStartOffset = GetFieldFloat(RayStartOffsetField, __instance, 0f);
+                float maxCastDistance = GetFieldFloat(MaxCastDistanceField, __instance, 2500f);
+                int mask = GetMaskBits(__instance);
+
+                Vector3 origin = bone.position + bone.forward * rayStartOffset;
+                int hitCount = Physics.RaycastNonAlloc(new Ray(origin, bone.forward), RaycastHits, maxCastDistance, mask);
+                SortHitsByDistance(RaycastHits, hitCount);
+
+                for (int i = 0; i < hitCount; i++)
+                {
+                    RaycastHit hit = RaycastHits[i];
+                    if (IsLocalPlayerBodyHit(hit.collider))
+                        continue;
+
+                    SetDisplayText(__instance, FormatDistance(__instance, hit.distance));
+                    return false;
+                }
+
+                SetDisplayText(__instance, GetNoDistanceText(__instance));
+                return false;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static bool IsLocalPlayerBodyHit(Collider collider)
+        {
+            if (collider == null) return false;
+
+            try
+            {
+                var player = Helpers.GetLocalPlayer();
+                return player != null && player.HasBodyPartCollider(collider);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void SortHitsByDistance(RaycastHit[] hits, int count)
+        {
+            for (int i = 1; i < count; i++)
+            {
+                RaycastHit current = hits[i];
+                int j = i - 1;
+                while (j >= 0 && hits[j].distance > current.distance)
+                {
+                    hits[j + 1] = hits[j];
+                    j--;
+                }
+                hits[j + 1] = current;
+            }
+        }
+
+        private static string FormatDistance(TacticalRangeFinderController instance, float distance)
+        {
+            int format = GetFieldInt(DistanceOutputFormatField, instance, 0);
+            if (format == 0)
+                return Mathf.RoundToInt(distance).ToString("D4");
+
+            float clamped = Mathf.Clamp(distance, 0f, 999f);
+            return clamped.ToString("000.0");
+        }
+
+        private static string GetNoDistanceText(TacticalRangeFinderController instance)
+        {
+            object value = NoDistanceTextField?.GetValue(instance);
+            return value as string ?? "----";
+        }
+
+        private static void SetDisplayText(TacticalRangeFinderController instance, string text)
+        {
+            object textField = TextOnDisplayField?.GetValue(instance);
+            if (textField == null) return;
+
+            try
+            {
+                SetMonospaceTextMethod?.Invoke(null, new object[] { textField, text, true });
+            }
+            catch
+            {
+                var textProperty = textField.GetType().GetProperty("text");
+                textProperty?.SetValue(textField, text, null);
+            }
+        }
+
+        private static int GetFieldInt(FieldInfo field, TacticalRangeFinderController instance, int fallback)
+        {
+            if (field == null) return fallback;
+            object value = field.GetValue(instance);
+            return value != null ? System.Convert.ToInt32(value) : fallback;
+        }
+
+        private static float GetFieldFloat(FieldInfo field, TacticalRangeFinderController instance, float fallback)
+        {
+            if (field == null) return fallback;
+            object value = field.GetValue(instance);
+            return value is float f ? f : fallback;
+        }
+
+        private static int GetMaskBits(TacticalRangeFinderController instance)
+        {
+            if (MaskField == null) return Physics.DefaultRaycastLayers;
+
+            object value = MaskField.GetValue(instance);
+            if (value is LayerMask layerMask)
+                return layerMask.value;
+
+            return value is int mask ? mask : Physics.DefaultRaycastLayers;
+        }
+    }
+
     internal sealed class ChangeAimingModePatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
