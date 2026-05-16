@@ -111,6 +111,18 @@ namespace PiPDisabler
 
         // Camera alignment state
         private static bool _alignmentActive;
+        private static bool _fireReloadRotationSuppressed;
+        private static bool _fireReloadRotationEntering;
+        private static bool _fireReloadRotationRecovering;
+        private static float _fireReloadRotationEnterStartTime;
+        private static float _fireReloadRotationRecoverStartTime;
+        private static Quaternion _fireReloadRotationEnterStart = Quaternion.identity;
+        private static Quaternion _fireReloadRotationRecoverStart = Quaternion.identity;
+
+        private const string FireReloadStateName = "Hands.FIRE RELOAD";
+        private const int HandsAnimatorLayer = 1;
+        private const float FireReloadRotationEnterDuration = 0.5f;
+        private const float FireReloadRotationRecoverDuration = 0.12f;
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -256,6 +268,7 @@ namespace PiPDisabler
         public static void Hide()
         {
             _alignmentActive = false;
+            ResetFireReloadRotationState();
             _settled = false;
             _stencilOnlyPersistence = false;
             DetachFromCamera();
@@ -264,6 +277,7 @@ namespace PiPDisabler
         public static void OnScopeExit(bool keepStencil)
         {
             _alignmentActive = false;
+            ResetFireReloadRotationState();
             _settled = false;
 
             if (keepStencil && _cmdBuffer != null)
@@ -565,12 +579,99 @@ namespace PiPDisabler
                 Transform swaySource = PiPDisabler.OpticCameraTransform ?? _opticTransform;
                 if (swaySource != null)
                 {
-                    cam.transform.rotation = swaySource.rotation;
+                    bool suppressForFireReload = IsFireReloadStateActive();
+                    if (suppressForFireReload)
+                    {
+                        if (!_fireReloadRotationSuppressed && !_fireReloadRotationEntering)
+                        {
+                            _fireReloadRotationEntering = true;
+                            _fireReloadRotationEnterStartTime = Time.realtimeSinceStartup;
+                            _fireReloadRotationEnterStart = swaySource.rotation;
+                        }
+
+                        _fireReloadRotationRecovering = false;
+
+                        if (_fireReloadRotationEntering)
+                        {
+                            float elapsed = Time.realtimeSinceStartup - _fireReloadRotationEnterStartTime;
+                            float t = Mathf.Clamp01(elapsed / FireReloadRotationEnterDuration);
+                            t = Mathf.SmoothStep(0f, 1f, t);
+                            cam.transform.rotation = Quaternion.Slerp(
+                                _fireReloadRotationEnterStart,
+                                cam.transform.rotation,
+                                t);
+
+                            if (t >= 1f)
+                            {
+                                _fireReloadRotationEntering = false;
+                                _fireReloadRotationSuppressed = true;
+                            }
+                        }
+                        else
+                        {
+                            _fireReloadRotationSuppressed = true;
+                        }
+                    }
+                    else
+                    {
+                        if (_fireReloadRotationSuppressed || _fireReloadRotationEntering)
+                        {
+                            _fireReloadRotationSuppressed = false;
+                            _fireReloadRotationEntering = false;
+                            _fireReloadRotationRecovering = true;
+                            _fireReloadRotationRecoverStartTime = Time.realtimeSinceStartup;
+                            _fireReloadRotationRecoverStart = cam.transform.rotation;
+                        }
+
+                        if (_fireReloadRotationRecovering)
+                        {
+                            float elapsed = Time.realtimeSinceStartup - _fireReloadRotationRecoverStartTime;
+                            float t = Mathf.Clamp01(elapsed / FireReloadRotationRecoverDuration);
+                            t = Mathf.SmoothStep(0f, 1f, t);
+                            cam.transform.rotation = Quaternion.Slerp(
+                                _fireReloadRotationRecoverStart,
+                                swaySource.rotation,
+                                t);
+
+                            if (t >= 1f)
+                                _fireReloadRotationRecovering = false;
+                        }
+                        else
+                        {
+                            cam.transform.rotation = swaySource.rotation;
+                        }
+                    }
                 }
             }
 
             RebuildMatrix(cam);
             RebuildCommandBuffer(cam);
+        }
+
+        private static bool IsFireReloadStateActive()
+        {
+            try
+            {
+                var player = Helpers.GetLocalPlayer();
+                var firearmsAnimator = player?.HandsController?.FirearmsAnimator;
+                return firearmsAnimator != null &&
+                       firearmsAnimator.CurrentStateNameIs(HandsAnimatorLayer, FireReloadStateName);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void ResetFireReloadRotationState()
+        {
+            _fireReloadRotationSuppressed = false;
+            _fireReloadRotationEntering = false;
+            _fireReloadRotationRecovering = false;
+            _fireReloadRotationEnterStartTime = 0f;
+            _fireReloadRotationRecoverStartTime = 0f;
+            _fireReloadRotationEnterStart = Quaternion.identity;
+            _fireReloadRotationRecoverStart = Quaternion.identity;
         }
 
         // ── Centered quad matrix ─────────────────────────────────────────────
