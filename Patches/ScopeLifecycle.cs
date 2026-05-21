@@ -155,9 +155,10 @@ namespace PiPDisabler
                 bool bypassForMode = ShouldBypassForCurrentOptic(os);
                 if (bypassForMode)
                 {
+                    bool wasBypassed = _modBypassedForCurrentScope;
                     _modBypassedForCurrentScope = true;
                     ApplyBypassState(os, reason: "mode switch",
-                        restoreFov: true);
+                        restoreFov: !wasBypassed);
                     return;
                 }
 
@@ -615,9 +616,10 @@ namespace PiPDisabler
             bool shouldBypass = ShouldBypassForCurrentOptic(os);
             if (shouldBypass)
             {
+                bool wasBypassed = _modBypassedForCurrentScope;
                 _modBypassedForCurrentScope = true;
                 ApplyBypassState(os, reason: "set scope mode",
-                    restoreFov: true);
+                    restoreFov: !wasBypassed);
                 return;
             }
 
