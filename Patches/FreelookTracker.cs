@@ -53,9 +53,8 @@ namespace PiPDisabler
         /// </summary>
         private static float _lastAppliedScopedFov;
 
-        // Reflection cache for Player.MouseLookControl
-        private static Func<Player, bool> _getMouseLookControl;
-        private static bool _reflectionSearched;
+        // Direct accessor — MouseLookControl is a public property
+        private static readonly Func<Player, bool> _getMouseLookControl = p => p.MouseLookControl;
 
         /// <summary>True while the player is freelooking during ADS.</summary>
         public static bool IsFreelooking => _isFreelooking;
@@ -71,36 +70,11 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Called once from plugin Awake to cache the reflection accessor.
+        /// Called once from plugin Awake.
         /// </summary>
         public static void Init()
         {
-            try
-            {
-                var prop = AccessTools.Property(typeof(Player), "MouseLookControl");
-                if (prop != null)
-                {
-                    try
-                    {
-                        _getMouseLookControl = (Func<Player, bool>)
-                            Delegate.CreateDelegate(typeof(Func<Player, bool>),
-                                prop.GetGetMethod(true));
-                    }
-                    catch
-                    {
-                        _getMouseLookControl = p => (bool)prop.GetValue(p);
-                    }
-                }
-
-                _reflectionSearched = true;
-                PiPDisablerPlugin.LogInfo(
-                    $"[FreelookTracker] Init: MouseLookControl={prop != null}");
-            }
-            catch (Exception ex)
-            {
-                _reflectionSearched = true;
-                PiPDisablerPlugin.LogError($"[FreelookTracker] Init failed: {ex.Message}");
-            }
+            PiPDisablerPlugin.DebugLogInfo("[FreelookTracker] Init: MouseLookControl is public — direct access.");
         }
 
         /// <summary>
@@ -154,10 +128,17 @@ namespace PiPDisabler
                 _fovBeforeFreelook = _lastAppliedScopedFov;
             }
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[FreelookTracker] Freelook START — cached FOV={_fovBeforeFreelook:F1}°, " +
-                "hiding reticle");
+                "restoring scope meshes, hiding reticle");
 
+            Patches.WeaponScalingPatch.RestoreScaleForFreelook();
+            var os = ScopeLifecycle.ActiveOptic;
+            if (os != null)
+            {
+                MeshSurgeryManager.RestoreForScope(os.transform);
+                LensTransparency.EnsureHidden();
+            }
             ReticleRenderer.Hide();
             ScopeEffectsRenderer.Hide();
         }
@@ -166,7 +147,7 @@ namespace PiPDisabler
         {
             float fovToRestore = _fovBeforeFreelook > 0.5f ? _fovBeforeFreelook : _lastAppliedScopedFov;
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[FreelookTracker] Freelook END — restoring FOV={fovToRestore:F1}°, showing reticle");
 
             // Directly restore the cached FOV (Update path).
@@ -177,7 +158,7 @@ namespace PiPDisabler
                 {
                     if (CameraClass.Exist && CameraClass.Instance != null)
                         CameraClass.Instance.SetFov(fovToRestore,
-                            PiPDisablerPlugin.FovAnimationDuration.Value, false);
+                            Settings.FovAnimationDuration.Value, false);
                 }
                 catch { }
             }
@@ -185,7 +166,17 @@ namespace PiPDisabler
             var os = ScopeLifecycle.ActiveOptic;
             if (os != null)
             {
-                float mag = ZoomController.GetMagnification(os);
+                LensTransparency.HideAllLensSurfaces(os);
+                ReticleRenderer.SetLensMaskEntries(LensTransparency.CollectLensMaskEntries(os));
+
+                var occluderRenderers = LensTransparency.CollectHousingRenderers(os);
+                if (Settings.StencilIncludeWeaponMeshes.Value)
+                    occluderRenderers.AddRange(
+                        LensTransparency.CollectWeaponRenderers(os, occluderRenderers));
+                ReticleRenderer.SetOccluderMaskRenderers(occluderRenderers);
+
+                MeshSurgeryManager.ApplyForOptic(os);
+                float mag = FovController.GetVisualMagnification();
                 ReticleRenderer.Show(os, mag);
                 ScopeEffectsRenderer.Show();
             }
@@ -215,8 +206,7 @@ namespace PiPDisabler
             // Prefer the FOV snapshotted at freelook-enter; fall back to last mod-applied value.
             float fovToRestore = _fovBeforeFreelook > 0.5f ? _fovBeforeFreelook : _lastAppliedScopedFov;
 
-            if (PiPDisablerPlugin.ModEnabled.Value &&
-                PiPDisablerPlugin.EnableZoom.Value &&
+            if (Settings.ModEnabled.Value &&
                 ScopeLifecycle.IsScoped &&
                 !ScopeLifecycle.IsModBypassedForCurrentScope &&
                 fovToRestore > 0.5f)
@@ -227,7 +217,7 @@ namespace PiPDisabler
                 // Quick heuristic: if targetFov <= 35 and we have a cached value, use ours.
                 if (targetFov <= 35.5f)
                 {
-                    PiPDisablerPlugin.LogInfo(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[FreelookTracker] Look interceptor: replacing FOV {targetFov:F1}° → " +
                         $"{fovToRestore:F1}° (pre-freelook snapshot)");
 
@@ -242,12 +232,9 @@ namespace PiPDisabler
 
         private static bool ReadMouseLookControl()
         {
-            if (!_reflectionSearched || _getMouseLookControl == null)
-                return false;
-
             try
             {
-                var player = PiPDisablerPlugin.GetLocalPlayer();
+                var player = Helpers.GetLocalPlayer();
                 if (player == null) return false;
                 return _getMouseLookControl(player);
             }
@@ -294,7 +281,7 @@ namespace PiPDisabler
                     yield return code;
                 }
 
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[PlayerLookPatch] Transpiler: replaced {replaced} SetFov callsite(s)");
             }
         }

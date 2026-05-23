@@ -57,8 +57,7 @@ namespace PiPDisabler.Patches
                 return;
 
             bool modZoomEnabled =
-                PiPDisablerPlugin.ModEnabled.Value &&
-                PiPDisablerPlugin.EnableZoom.Value;
+                Settings.ModEnabled.Value;
 
             bool isAdsOptic = false;
             if (pwa != null && pwa.IsAiming && !pwa.Sprint)
@@ -74,21 +73,18 @@ namespace PiPDisabler.Patches
                 !FreelookTracker.IsFreelooking &&
                 isAdsOptic)
             {
-                float zoomBaseFov = FovController.ZoomBaselineFov;
+                float zoomBaseFov = FovController.MagnificationBaselineFov;
                 float zoomedFov = FovController.ComputeZoomedFov();
+                bool smoothScopeFov = FovController.IsSmoothScopeFovActive();
 
-                if (zoomedFov >= 0.5f && zoomedFov <= zoomBaseFov)
+                if (zoomedFov >= 0.5f && (smoothScopeFov || zoomedFov <= zoomBaseFov))
                 {
                     if (FovController.HasFovChanged(zoomedFov))
                     {
-                        // FOV changed enough — restart lerp to new target.
                         FovController.TrackAppliedFov(zoomedFov);
                         FreelookTracker.CacheAppliedFov(zoomedFov);
-                        // Keep the game's original duration so ADS/unADS speed is unaffected
                         cameraClass.SetFov(zoomedFov, duration, false);
                     }
-                    // Whether or not we called SetFov, suppress EFT's original call
-                    // so the lerp coroutine can run undisturbed to the target.
                     return;
                 }
             }
@@ -110,7 +106,7 @@ namespace PiPDisabler.Patches
             {
                 float restoreFov = ScopeLifecycle.PostExitRestoreFov;
                 if (Mathf.Abs(targetFov - restoreFov) > FovController.FovChangeThreshold)
-                    return; // Let the restore coroutine run undisturbed
+                    return;
             }
 
             cameraClass.SetFov(targetFov, duration, force);

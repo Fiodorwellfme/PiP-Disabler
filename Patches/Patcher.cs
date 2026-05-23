@@ -11,24 +11,39 @@ namespace PiPDisabler.Patches
         {
             if (_enabled) return;
             _enabled = true;
-            // Event-driven scope detection
             SafeEnable<OpticSightOnEnablePatch>();
             SafeEnable<OpticSightOnDisablePatch>();
+            SafeEnable<TacticalRangeFinderOnEnablePatch>();
+            SafeEnable<TacticalRangeFinderIgnoreLocalBodyPatch>();
             SafeEnable<ChangeAimingModePatch>();
             SafeEnable<SetScopeModePatch>();
             SafeEnable<PlayerOnSetInHandsPatch>();
-            // No-PiP
+            SafeEnable<PlayerSetInventoryOpenedPatch>();
+            SafeEnable<OpticCameraManagerEnableOptic_NoPipPatch>();
+            SafeEnable<OpticCameraManagerSetResolution_NoPipPatch>();
+            SafeEnable<CameraClassOnOpticEnabled_NoPipPatch>();
+            SafeEnable<MainCameraLodBiasSetByFovPatch>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterCopyComponentFromOptic_DisablePiP>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterLateUpdate_DisablePiP>();
             SafeEnable<PiPDisabler.OpticSightLensFade_NoPipPatch>();
-            // FOV zoom
             SafeEnable<PWAMethod23Patch>();
-            // Freelook — intercept Player.Look's SetFov(35) stomp
             SafeEnable<PlayerLookPatch>();
-            // Weapon scaling (freeze ribcage scale while scoped)
             SafeEnable<WeaponScalingPatch>();
-            // Fika compatibility patch
+            VisualRecoilCompensationPatch.Enable();
+            SafeEnable<GrassMotionVectorSuppressionPatch>();
+            SafeEnable<PWAWeaponRootZOffsetPatch>();
+            SafeEnable<FireModeSwitchMovementPatch>();
+            SafeEnable<MagnificationSwitchMovementContextPatch>();
+            SafeEnable<ModToggleTriggerMovementPatch>();
+            SafeEnable<SwayVectorVelocityFovScalingPatch>();
+            SafeEnable<SwayComponentVelocityFovScalingPatch>();
+            SafeEnable<SpringVectorAccelerationFovScalingPatch>();
+            SafeEnable<SpringComponentAccelerationFovScalingPatch>();
+            SafeEnable<RecoilReturnToZeroPatch>();
             FikaCompat.Enable();
+            FOVFixCompat.Enable();
+            DERPCompat.Enable();
+
         }
 
         private static void SafeEnable<T>() where T : ModulePatch, new()
@@ -39,7 +54,7 @@ namespace PiPDisabler.Patches
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
+                PiPDisablerPlugin.DebugLogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
             }
         }
     }

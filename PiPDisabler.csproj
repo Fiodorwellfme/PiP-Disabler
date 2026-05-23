@@ -1,20 +1,28 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net472</TargetFramework>
-    <LangVersion>latest</LangVersion>
-    <Nullable>disable</Nullable>
-    <AssemblyName>PiPDisabler</AssemblyName>
-    <RootNamespace>PiPDisabler</RootNamespace>
-    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-  </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="BepInEx\**" />
-    <Compile Remove="images\**" />
-    <EmbeddedResource Remove="BepInEx\**" />
-    <EmbeddedResource Remove="images\**" />
-    <None Remove="BepInEx\**" />
-    <None Remove="images\**" />
-  </ItemGroup>
+	<PropertyGroup>
+		<TargetFramework>net472</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<Nullable>disable</Nullable>
+		<AssemblyName>PiP-Disabler</AssemblyName>
+		<RootNamespace>PiP-Disabler</RootNamespace>
+		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+		<ModName>$(AssemblyName)</ModName>
+		<PackageStagingDir>$(ProjectDir)build\package</PackageStagingDir>
+		<PackagePluginDir>$(PackageStagingDir)\BepInEx\plugins\$(ModName)</PackagePluginDir>
+		<ReleaseDir>$(ProjectDir)Releases</ReleaseDir>
+		<ReleaseZip>$(ReleaseDir)\$(ModName).zip</ReleaseZip>
+	</PropertyGroup>
+	<ItemGroup>
+	  <Compile Remove="build\**" />
+	  <Compile Remove="images\**" />
+	  <Compile Remove="Releases\**" />
+	  <EmbeddedResource Remove="build\**" />
+	  <EmbeddedResource Remove="images\**" />
+	  <EmbeddedResource Remove="Releases\**" />
+	  <None Remove="build\**" />
+	  <None Remove="images\**" />
+	  <None Remove="Releases\**" />
+	</ItemGroup>
 
   <ItemGroup>
     <Reference Include="BepInEx">
@@ -41,6 +49,10 @@
       <HintPath>..\..\EscapeFromTarkov_Data\Managed\Comfort.dll</HintPath>
       <Private>False</Private>
     </Reference>
+	<Reference Include="UnityEngine.PhysicsModule">
+		  <HintPath>..\..\EscapeFromTarkov_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+		  <Private>False</Private>
+	</Reference>
     <Reference Include="UnityEngine">
       <HintPath>..\..\EscapeFromTarkov_Data\Managed\UnityEngine.dll</HintPath>
       <Private>False</Private>
@@ -64,11 +76,22 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
-  <!-- Post-build: copy DLL to BepInEx plugins folder -->
-  <Target Name="CopyToPlugins" AfterTargets="Build" Condition="Exists('..\..\BepInEx\plugins')">
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="..\..\BepInEx\plugins\PiP-Disabler\" />
-    <Message Importance="High" Text="Copied $(TargetFileName) → ..\..\BepInEx\plugins\PiP-Disabler\" />
-  </Target>
+	<Target Name="PostBuild" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+	<MakeDir Directories="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" />
+	<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" />
+	<Copy SourceFiles="$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle" DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" Condition="Exists('$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle')" />
+
+	<RemoveDir Directories="$(PackageStagingDir)" Condition="Exists('$(PackageStagingDir)')" />
+	<MakeDir Directories="$(PackagePluginDir)" />
+	<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PackagePluginDir)" />
+	<Copy SourceFiles="$(ProjectDir)custom_mesh_surgery_settings.json" DestinationFolder="$(PackagePluginDir)" Condition="Exists('$(ProjectDir)custom_mesh_surgery_settings.json')" />
+	<Copy SourceFiles="$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle" DestinationFolder="$(PackagePluginDir)" Condition="Exists('$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle')" />
+
+	<MakeDir Directories="$(ReleaseDir)" />
+	<Delete Files="$(ReleaseZip)" Condition="Exists('$(ReleaseZip)')" />
+
+	<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Compress-Archive -Path '$(PackageStagingDir)\*' -DestinationPath '$(ReleaseZip)' -Force&quot;" />
+</Target>
 </Project>
 
 

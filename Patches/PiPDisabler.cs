@@ -50,7 +50,7 @@ namespace PiPDisabler
         internal static string Debug_LastOpticCameraSetBy;
         internal static int Debug_LastOpticCameraSetFrame;
 
-        
+
         // Track OpticSight.enabled state so we can disable it while scoped and restore on un-scope.
         private static readonly Dictionary<OpticSight, bool> _opticOrigEnabled =
             new Dictionary<OpticSight, bool>(32);
@@ -59,21 +59,12 @@ namespace PiPDisabler
         private static readonly Dictionary<OpticSight, int> _ignoreOnDisableFrame =
             new Dictionary<OpticSight, int>(32);
 
-        private static PropertyInfo _opticCameraManagerProperty;
-        private static bool _opticCameraManagerSearched;
-        private static MemberInfo _currentOpticSightMember;
-        private static bool _currentOpticSightSearched;
-        private static MemberInfo _opticRetriceMember;
-        private static bool _opticRetriceSearched;
-        private static MethodInfo _opticRetriceSetOpticSightMethod;
-        private static bool _opticRetriceSetOpticSightSearched;
-        private static MethodInfo _opticRetriceClearMethod;
-        private static bool _opticRetriceClearSearched;
         private static bool _allowForcedLensFade;
 
-internal static void TickBaseOpticCamera()
+        internal static void TickBaseOpticCamera()
         {
-            if (!PiPDisablerPlugin.DisablePiP.Value) return;
+            if (!ScopeLifecycle.ShouldSuppressVanillaPiPNow())
+                return;
 
             // Any condition that should preserve vanilla PiP must restore and skip disabling.
             if (ShouldAllowVanillaPiP())
@@ -82,7 +73,7 @@ internal static void TickBaseOpticCamera()
                 return;
             }
 
-            // Scan occasionally to find BaseOpticCamera if/when it spawns.
+            // Resolve occasionally in case CameraClass rebuilds the optic camera.
             if (_baseOpticCams.Count == 0 || Time.frameCount >= _nextBaseScanFrame)
             {
                 TryFindBaseOpticCameras();
@@ -99,79 +90,74 @@ internal static void TickBaseOpticCamera()
         }
 
 
-internal static void SetOpticSightEnabled(OpticSight os, bool enabled)
-{
-    if (os == null) return;
-
-    try
-    {
-        if (!enabled)
+        internal static void SetOpticSightEnabled(OpticSight os, bool enabled)
         {
-            // Store baseline once, then force-disable.
-            if (!_opticOrigEnabled.ContainsKey(os))
-                _opticOrigEnabled[os] = os.enabled;
+            if (os == null) return;
 
-            _ignoreOnDisableFrame[os] = Time.frameCount;
-            if (os.enabled) os.enabled = false;
-        }
-        else
-        {
-            if (_opticOrigEnabled.TryGetValue(os, out var wasEnabled))
+            try
             {
-                // Restore to baseline (do not force-enable if baseline was disabled).
-                if (wasEnabled && !os.enabled)
-                    os.enabled = true;
+                if (!enabled)
+                {
+                    // Store baseline once, then force-disable.
+                    if (!_opticOrigEnabled.ContainsKey(os))
+                        _opticOrigEnabled[os] = os.enabled;
 
-                _opticOrigEnabled.Remove(os);
+                    _ignoreOnDisableFrame[os] = Time.frameCount;
+                    if (os.enabled) os.enabled = false;
+                }
+                else
+                {
+                    if (_opticOrigEnabled.TryGetValue(os, out var wasEnabled))
+                    {
+                        // Restore to baseline (do not force-enable if baseline was disabled).
+                        if (wasEnabled && !os.enabled)
+                            os.enabled = true;
+
+                        _opticOrigEnabled.Remove(os);
+                    }
+
+                    _ignoreOnDisableFrame.Remove(os);
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        internal static bool ShouldIgnoreOnDisable(OpticSight os)
+        {
+            if (os == null) return false;
+
+            if (_ignoreOnDisableFrame.TryGetValue(os, out var f))
+            {
+                if (f == Time.frameCount)
+                {
+                    // One-shot suppression (only for the OnDisable we just triggered).
+                    _ignoreOnDisableFrame.Remove(os);
+                    return true;
+                }
+
+                // Stale entry (e.g. scene change) -> clear.
+                if (Time.frameCount - f > 10)
+                    _ignoreOnDisableFrame.Remove(os);
             }
 
-            _ignoreOnDisableFrame.Remove(os);
+            return false;
         }
-    }
-    catch { /* ignore */ }
-}
-
-internal static bool ShouldIgnoreOnDisable(OpticSight os)
-{
-    if (os == null) return false;
-
-    if (_ignoreOnDisableFrame.TryGetValue(os, out var f))
-    {
-        if (f == Time.frameCount)
-        {
-            // One-shot suppression (only for the OnDisable we just triggered).
-            _ignoreOnDisableFrame.Remove(os);
-            return true;
-        }
-
-        // Stale entry (e.g. scene change) -> clear.
-        if (Time.frameCount - f > 10)
-            _ignoreOnDisableFrame.Remove(os);
-    }
-
-    return false;
-}
 
         internal static void CleanupVanillaOpticState(OpticSight opticSight)
         {
             try
             {
-                var manager = GetOpticCameraManager();
-                if (manager != null)
+                if (CameraClass.Exist && CameraClass.Instance != null)
                 {
-                    SetCurrentOpticSight(manager, null);
-
-                    var opticRetrice = GetOpticRetrice(manager);
-                    if (opticRetrice != null)
-                    {
-                        SetOpticRetriceSight(opticRetrice, null);
-                        ClearOpticRetrice(opticRetrice);
-                    }
+                    var mgr = CameraClass.Instance.OpticCameraManager;
+                    mgr.CurrentOpticSight = null;
+                    mgr.OpticRetrice.SetOpticSight(null);
+                    mgr.OpticRetrice.Clear();
                 }
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogVerbose(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[PiPDisabler] Vanilla optic cleanup failed: {ex.Message}");
             }
 
@@ -190,103 +176,18 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
         internal static bool ShouldAllowForcedLensFade()
             => _allowForcedLensFade;
 
-        private static object GetOpticCameraManager()
+        internal static void ForceLensFade(OpticSight opticSight, bool isHide)
         {
-            if (!CameraClass.Exist) return null;
+            if (opticSight == null)
+                return;
 
-            var cameraClass = CameraClass.Instance;
-            if (cameraClass == null) return null;
-
-            if (!_opticCameraManagerSearched)
+            try
             {
-                _opticCameraManagerSearched = true;
-                _opticCameraManagerProperty = cameraClass.GetType().GetProperty(
-                    "OpticCameraManager",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                _allowForcedLensFade = true;
+                opticSight.LensFade(isHide);
             }
-
-            return _opticCameraManagerProperty != null
-                ? _opticCameraManagerProperty.GetValue(cameraClass, null)
-                : null;
-        }
-
-        private static void SetCurrentOpticSight(object manager, object value)
-        {
-            if (manager == null) return;
-
-            if (!_currentOpticSightSearched)
-            {
-                _currentOpticSightSearched = true;
-                var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = manager.GetType();
-                _currentOpticSightMember = (MemberInfo)type.GetProperty("CurrentOpticSight", flags)
-                    ?? type.GetField("CurrentOpticSight", flags);
-            }
-
-            if (_currentOpticSightMember is PropertyInfo property)
-            {
-                property.SetValue(manager, value, null);
-            }
-            else if (_currentOpticSightMember is FieldInfo field)
-            {
-                field.SetValue(manager, value);
-            }
-        }
-
-        private static object GetOpticRetrice(object manager)
-        {
-            if (manager == null) return null;
-
-            if (!_opticRetriceSearched)
-            {
-                _opticRetriceSearched = true;
-                var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = manager.GetType();
-                _opticRetriceMember = (MemberInfo)type.GetProperty("OpticRetrice", flags)
-                    ?? type.GetField("OpticRetrice", flags);
-            }
-
-            if (_opticRetriceMember is PropertyInfo property)
-                return property.GetValue(manager, null);
-            if (_opticRetriceMember is FieldInfo field)
-                return field.GetValue(manager);
-            return null;
-        }
-
-        private static void SetOpticRetriceSight(object opticRetrice, OpticSight opticSight)
-        {
-            if (opticRetrice == null) return;
-
-            if (!_opticRetriceSetOpticSightSearched)
-            {
-                _opticRetriceSetOpticSightSearched = true;
-                _opticRetriceSetOpticSightMethod = opticRetrice.GetType().GetMethod(
-                    "SetOpticSight",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                    null,
-                    new[] { typeof(OpticSight) },
-                    null);
-            }
-
-            _opticRetriceSetOpticSightMethod?.Invoke(opticRetrice, new object[] { opticSight });
-        }
-
-        private static void ClearOpticRetrice(object opticRetrice)
-        {
-            if (opticRetrice == null) return;
-
-            if (!_opticRetriceClearSearched)
-            {
-                _opticRetriceClearSearched = true;
-                _opticRetriceClearMethod = opticRetrice.GetType().GetMethod(
-                    "Clear",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                    null,
-                    Type.EmptyTypes,
-                    null);
-            }
-
-            _opticRetriceClearMethod?.Invoke(opticRetrice, null);
+            catch { }
+            finally { _allowForcedLensFade = false; }
         }
 
         private static void TryFindBaseOpticCameras()
@@ -295,41 +196,29 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
 
             try
             {
-                var cams = Resources.FindObjectsOfTypeAll<Camera>();
-                for (int i = 0; i < cams.Length; i++)
+                if (!CameraClass.Exist || CameraClass.Instance == null)
+                    return;
+
+                var cam = CameraClass.Instance.OpticCameraManager?.Camera;
+                if (cam == null)
+                    return;
+
+                var all = cam.GetComponentsInChildren<Camera>(true);
+                for (int c = 0; c < all.Length; c++)
                 {
-                    var cam = cams[i];
-                    if (cam == null) continue;
+                    var cc = all[c];
+                    if (cc != null && !_baseOpticCams.Contains(cc))
+                        _baseOpticCams.Add(cc);
+                }
 
-                    var go = cam.gameObject;
-                    if (go == null) continue;
+                if (!_baseOpticCams.Contains(cam))
+                    _baseOpticCams.Add(cam);
 
-                    // Skip prefabs/assets.
-                    if (!go.scene.IsValid()) continue;
-
-                    var n = go.name;
-                    if (n == "BaseOpticCamera(Clone)" || n == "BaseOpticCamera")
-                    {
-                        // Collect this camera and any child cameras.
-                        var all = go.GetComponentsInChildren<Camera>(true);
-                        for (int c = 0; c < all.Length; c++)
-                        {
-                            var cc = all[c];
-                            if (cc != null && !_baseOpticCams.Contains(cc))
-                                _baseOpticCams.Add(cc);
-                        }
-
-                        if (!_baseOpticCams.Contains(cam))
-                            _baseOpticCams.Add(cam);
-
-                        if (!_loggedBase)
-                        {
-                            _loggedBase = true;
-                            PiPDisablerPlugin.LogInfo(
-                                $"[PiPDisabler] Found BaseOpticCamera: {n} (cameras: {_baseOpticCams.Count})");
-                        }
-                        break;
-                    }
+                if (!_loggedBase)
+                {
+                    _loggedBase = true;
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[PiPDisabler] Found BaseOpticCamera via OpticCameraManager (cameras: {_baseOpticCams.Count})");
                 }
             }
             catch { /* ignore */ }
@@ -350,17 +239,7 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 var os = field.GetValue(updater) as OpticSight;
                 if (os == null) return false;
 
-                // Name-pattern bypass is independent of AutoDisableForVariableScopes.
-                if (ScopeLifecycle.IsNameBypassed(os))
-                    return true;
-
-                if (!PiPDisablerPlugin.AutoDisableForVariableScopes.Value)
-                    return false;
-
-                if (FovController.IsOpticAdjustable(os))
-                    return true;
-
-                return ScopeLifecycle.IsThermalOrNightVisionOpticForBypass(os);
+                return ScopeLifecycle.ShouldBypassForCurrentOptic(os);
             }
             catch
             {
@@ -381,13 +260,13 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                     if (f.FieldType == typeof(OpticSight))
                     {
                         _opticSightField = f;
-                        PiPDisablerPlugin.LogInfo(
+                        PiPDisablerPlugin.DebugLogInfo(
                             $"[PiPDisabler] Found OpticSight field on OpticComponentUpdater: '{f.Name}'");
                         break;
                     }
                 }
                 if (_opticSightField == null)
-                    PiPDisablerPlugin.LogWarn(
+                    PiPDisablerPlugin.DebugLogInfo(
                         "[PiPDisabler] Could not find any OpticSight field on OpticComponentUpdater!");
             }
             return _opticSightField;
@@ -408,21 +287,21 @@ internal static bool ShouldIgnoreOnDisable(OpticSight os)
                 catch { /* ignore */ }
             }
 
-// Restore OpticSight.enabled states we changed.
-try
-{
-    foreach (var kv in _opticOrigEnabled)
-    {
-        var os = kv.Key;
-        if (os == null) continue;
-        if (kv.Value && !os.enabled)
-            os.enabled = true;
-    }
-}
-catch { /* ignore */ }
+            // Restore OpticSight.enabled states we changed.
+            try
+            {
+                foreach (var kv in _opticOrigEnabled)
+                {
+                    var os = kv.Key;
+                    if (os == null) continue;
+                    if (kv.Value && !os.enabled)
+                        os.enabled = true;
+                }
+            }
+            catch { /* ignore */ }
 
-_opticOrigEnabled.Clear();
-_ignoreOnDisableFrame.Clear();
+            _opticOrigEnabled.Clear();
+            _ignoreOnDisableFrame.Clear();
 
             _cams.Clear();
 
@@ -467,9 +346,8 @@ _ignoreOnDisableFrame.Clear();
 
         private static bool ShouldAllowVanillaPiP()
         {
-            return !PiPDisablerPlugin.ModEnabled.Value
-                || !PiPDisablerPlugin.DisablePiP.Value
-                || ScopeLifecycle.IsModBypassedForCurrentScope
+            return !Settings.ModEnabled.Value
+                || ScopeLifecycle.IsCurrentOrPendingOpticBypassed()
                 || ScopeLifecycle.IsLastOpticNameBypassed();
         }
 
@@ -481,8 +359,7 @@ _ignoreOnDisableFrame.Clear();
             [PatchPostfix]
             private static void Postfix(OpticComponentUpdater __instance)
             {
-                if (!PiPDisablerPlugin.ModEnabled.Value) return;
-                if (!PiPDisablerPlugin.DisablePiP.Value) return;
+                if (!Settings.ModEnabled.Value) return;
                 if (__instance == null) return;
                 if (ShouldSuppressPiPDisableForCurrentOptic(__instance)) return;
 
@@ -505,24 +382,33 @@ _ignoreOnDisableFrame.Clear();
             [PatchPrefix]
             private static bool Prefix(OpticComponentUpdater __instance)
             {
-                if (!PiPDisablerPlugin.ModEnabled.Value) return true;
+                if (!Settings.ModEnabled.Value) return true;
                 if (__instance == null) return true;
+                if (!ScopeLifecycle.ShouldSuppressVanillaPiPNow()) return true;
 
-                if (PiPDisablerPlugin.DisablePiP.Value)
+                OpticCameraTransform = __instance.transform;
+                Debug_LastOpticCameraTransform = OpticCameraTransform;
+                Debug_LastOpticCameraSetBy = __instance.name;
+                Debug_LastOpticCameraSetFrame = Time.frameCount;
+
+                if (!ShouldSuppressPiPDisableForCurrentOptic(__instance))
                 {
-                    OpticCameraTransform = __instance.transform;
-                    Debug_LastOpticCameraTransform = OpticCameraTransform;
-                    Debug_LastOpticCameraSetBy = __instance.name;
-                    Debug_LastOpticCameraSetFrame = Time.frameCount;
-
-                    if (!ShouldSuppressPiPDisableForCurrentOptic(__instance))
-                    {
-                        var cam = __instance.GetComponent<Camera>();
-                        ForceDisable(cam);
-                    }
+                    var cam = __instance.GetComponent<Camera>();
+                    ForceDisable(cam);
                 }
 
                 return true;
+            }
+
+            [PatchPostfix]
+            private static void Postfix()
+            {
+                if (!Settings.ModEnabled.Value) return;
+                if (!ScopeLifecycle.IsScoped) return;
+                if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
+                if (FreelookTracker.IsFreelooking) return;
+
+                ScopeLifecycle.ReapplyFov();
             }
 
             [PatchTranspiler]

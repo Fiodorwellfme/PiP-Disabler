@@ -85,7 +85,7 @@ namespace PiPDisabler
             if (cache.Built && !cache.Dirty && !string.Equals(cache.SettingsSignature, currentSignature, StringComparison.Ordinal))
             {
                 cache.Dirty = true;
-                PiPDisablerPlugin.LogVerbose("[MeshSurgery] Cut settings changed; marking weapon cache dirty.");
+                PiPDisablerPlugin.DebugLogInfo("[MeshSurgery] Cut settings changed; marking weapon cache dirty.");
             }
 
             if (cache.Dirty || !cache.Built)
@@ -212,7 +212,7 @@ namespace PiPDisabler
             var cache = _currentWeaponCache;
             if (cache == null)
             {
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[MeshSurgery][Retry] No current weapon cache — calling ApplyForOptic. frame={Time.frameCount}");
                 ApplyForOptic(os);
                 cache = _currentWeaponCache;
@@ -220,13 +220,13 @@ namespace PiPDisabler
             }
 
             // Force a full rebuild by marking dirty
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[MeshSurgery][Retry] Forcing rebuild: Built={cache.Built} Entries={cache.Entries.Count} frame={Time.frameCount}");
             cache.Dirty = true;
             ApplyForOptic(os);
 
             bool success = HasSuccessfulCut();
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[MeshSurgery][Retry] Result: Entries={cache.Entries.Count} success={success} frame={Time.frameCount}");
             return success;
         }
@@ -272,7 +272,7 @@ namespace PiPDisabler
 
             if (!string.Equals(_currentWeaponId, weaponId, StringComparison.Ordinal))
             {
-                PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Weapon cache switched: '{weapon.TemplateId}' ({weaponId})");
+                PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Weapon cache switched: '{weapon.TemplateId}' ({weaponId})");
             }
 
             _currentWeaponId = weaponId;
@@ -298,7 +298,7 @@ namespace PiPDisabler
             var weaponRootTf = FindWeaponTransform(scopeRoot);
             if (weaponRootTf == null)
             {
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[MeshSurgery][DEBUG] FindWeaponTransform returned null for scopeRoot='{scopeRoot.name}' frame={Time.frameCount}");
                 return;
             }
@@ -308,24 +308,23 @@ namespace PiPDisabler
             if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode,
                 out var planePoint, out var planeNormal, out var camPos))
             {
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[MeshSurgery][DEBUG] TryGetPlane FAILED — no plane found. " +
                     $"os='{os.name}' scopeRoot='{scopeRoot.name}' activeMode='{activeMode.name}' frame={Time.frameCount}");
                 return;
             }
             _lastAttemptPlaneFound = true;
 
-            bool isCylinderMode = PiPDisablerPlugin.GetCutMode() == "Cylinder";
+            bool isCylinderMode = true;
             float plane1Offset = isCylinderMode
-                ? PiPDisablerPlugin.GetPlane1OffsetMeters()
-                : PiPDisablerPlugin.GetPlaneOffsetMeters();
+                ? PerScopeMeshSurgerySettings.GetPlane1OffsetMeters()
+                : PerScopeMeshSurgerySettings.GetPlaneOffsetMeters();
             planePoint += planeNormal * plane1Offset;
 
             var keepSide = DecideKeepPositive(planePoint, planeNormal, camPos)
                 ? MeshPlaneCutter.KeepSide.Positive
                 : MeshPlaneCutter.KeepSide.Negative;
 
-            PlaneVisualizer.Show(planePoint, planeNormal);
 
             RestoreOriginalMeshes(cache);
             DestroyCutMeshes(cache);
@@ -333,11 +332,10 @@ namespace PiPDisabler
 
             var targets = ScopeHierarchy.FindTargetMeshFilters(scopeRoot, activeMode);
             _lastAttemptTargets = targets.Count;
-            float cutRadius = PiPDisablerPlugin.GetCutRadius();
-            bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
+            float cutRadius = 0;
 
-            DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
-            DisableWeaponSphereObjects(scopeRoot, logCandidates);
+            DisableLightEffectMeshesForScope(scopeRoot);
+            DisableWeaponSphereObjects(scopeRoot);
 
             foreach (var mf in targets)
             {
@@ -354,11 +352,11 @@ namespace PiPDisabler
 
                 try
                 {
-                    bool isCylinder = PiPDisablerPlugin.GetCutMode() == "Cylinder";
+                    bool isCylinder = true;
                     Mesh readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
                     if (readable == null)
                     {
-                        PiPDisablerPlugin.LogInfo(
+                        PiPDisablerPlugin.DebugLogInfo(
                             $"[MeshSurgery][DEBUG] MakeReadableMeshCopy returned null for '{originalAsset.name}' " +
                             $"(isReadable={originalAsset.isReadable} verts={originalAsset.vertexCount}) frame={Time.frameCount}");
                         _lastAttemptReadableCopyFailures++;
@@ -368,7 +366,7 @@ namespace PiPDisabler
                     if (!_loggedGpuCopy)
                     {
                         _loggedGpuCopy = true;
-                        PiPDisablerPlugin.LogInfo(
+                        PiPDisablerPlugin.DebugLogInfo(
                             "[MeshSurgery] Created readable mesh copies via GPU buffer. Plane cutting enabled.");
                     }
 
@@ -376,17 +374,16 @@ namespace PiPDisabler
                     bool ok;
                     if (isCylinder)
                     {
-                        float nearR = PiPDisablerPlugin.GetCylinderRadius();
-                        float startOff = PiPDisablerPlugin.GetCutStartOffset();
-                        float cutLen = PiPDisablerPlugin.GetCutLength();
-                        float preserve = PiPDisablerPlugin.GetNearPreserveDepth();
-                        float p2 = PiPDisablerPlugin.GetPlane2PositionNormalized(cutLen);
-                        float r2 = PiPDisablerPlugin.GetPlane2Radius();
-                        float p3 = PiPDisablerPlugin.GetPlane3Position();
-                        float r3 = PiPDisablerPlugin.GetPlane3Radius();
-                        float p4 = PiPDisablerPlugin.GetPlane4Position();
-                        float r4 = PiPDisablerPlugin.GetPlane4Radius();
-
+                        float nearR = PerScopeMeshSurgerySettings.GetPlane1Radius();
+                        float startOff = PerScopeMeshSurgerySettings.GetCutStartOffset();
+                        float cutLen = PerScopeMeshSurgerySettings.GetCutLength();
+                        float preserve = PerScopeMeshSurgerySettings.GetNearPreserveDepth();
+                        float p2 = PerScopeMeshSurgerySettings.GetPlane2PositionNormalized(cutLen);
+                        float r2 = PerScopeMeshSurgerySettings.GetPlane2Radius();
+                        float p3 = PerScopeMeshSurgerySettings.GetPlane3Position();
+                        float r3 = PerScopeMeshSurgerySettings.GetPlane3Radius();
+                        float p4 = PerScopeMeshSurgerySettings.GetPlane4Position();
+                        float r4 = PerScopeMeshSurgerySettings.GetPlane4Radius();
                         ok = MeshPlaneCutter.CutMeshFrustum(readable, mf.transform,
                             planePoint, planeNormal, nearR, r4, startOff, cutLen,
                             keepInside: false, midRadius: r2, midPosition: p2,
@@ -409,7 +406,7 @@ namespace PiPDisabler
                         readable.name = originalAsset.name + "_CUT";
                     }
 
-                    PiPDisablerPlugin.LogVerbose(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
 
                     mf.sharedMesh = readable;
@@ -424,7 +421,7 @@ namespace PiPDisabler
                 }
                 catch (Exception ex)
                 {
-                    PiPDisablerPlugin.LogError(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[MeshSurgery] Failed on '{originalAsset.name}': {ex.Message}");
                 }
             }
@@ -437,14 +434,14 @@ namespace PiPDisabler
 
             if (cache.Entries.Count == 0)
             {
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[MeshSurgery][DEBUG] RebuildCutCache finished with ZERO entries! " +
                     $"targets={targets.Count} os='{os.name}' scopeRoot='{scopeRoot.name}' " +
                     $"activeMode='{activeMode.name}' frame={Time.frameCount}");
             }
             else
             {
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[MeshSurgery][DEBUG] RebuildCutCache OK: {cache.Entries.Count} entries from {targets.Count} targets. frame={Time.frameCount}");
             }
         }
@@ -455,8 +452,6 @@ namespace PiPDisabler
             if (weaponRootTf == null)
             {
                 cache.Dirty = true;
-                if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
-                    PiPDisablerPlugin.LogInfo("[MeshSurgery][DEBUG] Reapply cache failed: weapon root missing, forcing rebuild.");
                 return;
             }
 
@@ -464,14 +459,11 @@ namespace PiPDisabler
             if (!TryRebindEntries(cache, weaponRootTf))
             {
                 cache.Dirty = true;
-                if (PiPDisablerPlugin.GetDebugMeshSurgeryLifecycle())
-                    PiPDisablerPlugin.LogInfo("[MeshSurgery][DEBUG] Reapply cache failed: entry rebind failed, forcing rebuild.");
                 return;
             }
 
-            bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
-            DisableLightEffectMeshesForScope(scopeRoot, logCandidates);
-            DisableWeaponSphereObjects(scopeRoot, logCandidates);
+            DisableLightEffectMeshesForScope(scopeRoot);
+            DisableWeaponSphereObjects(scopeRoot);
 
             foreach (var entry in cache.Entries)
             {
@@ -561,7 +553,7 @@ namespace PiPDisabler
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.LogVerbose($"[MeshSurgery] Failed to bind inventory events: {ex.Message}");
+                PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Failed to bind inventory events: {ex.Message}");
             }
         }
 
@@ -746,20 +738,19 @@ namespace PiPDisabler
         {
             return string.Join("|", new[]
             {
-                PiPDisablerPlugin.GetCutMode() ?? string.Empty,
-                PiPDisablerPlugin.GetPlaneOffsetMeters().ToString("F4"),
-                PiPDisablerPlugin.GetPlane1OffsetMeters().ToString("F4"),
-                PiPDisablerPlugin.GetCylinderRadius().ToString("F4"),
-                PiPDisablerPlugin.GetCutStartOffset().ToString("F4"),
-                PiPDisablerPlugin.GetCutLength().ToString("F4"),
-                PiPDisablerPlugin.GetNearPreserveDepth().ToString("F4"),
-                PiPDisablerPlugin.GetPlane2PositionNormalized(PiPDisablerPlugin.GetCutLength()).ToString("F4"),
-                PiPDisablerPlugin.GetPlane2Radius().ToString("F4"),
-                PiPDisablerPlugin.GetPlane3Position().ToString("F4"),
-                PiPDisablerPlugin.GetPlane3Radius().ToString("F4"),
-                PiPDisablerPlugin.GetPlane4Position().ToString("F4"),
-                PiPDisablerPlugin.GetPlane4Radius().ToString("F4"),
-                PiPDisablerPlugin.GetCutRadius().ToString("F4")
+                "Cylinder",
+                PerScopeMeshSurgerySettings.GetPlaneOffsetMeters().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetPlane1OffsetMeters().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetPlane1Radius().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetCutStartOffset().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetCutLength().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetNearPreserveDepth().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetPlane2PositionNormalized(PerScopeMeshSurgerySettings.GetCutLength()).ToString("F4"),
+                PerScopeMeshSurgerySettings.GetPlane2Radius().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetPlane3Position().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetPlane3Radius().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetPlane4Position().ToString("F4"),
+                PerScopeMeshSurgerySettings.GetPlane4Radius().ToString("F4"),
             });
         }
 
@@ -773,7 +764,7 @@ namespace PiPDisabler
             return null;
         }
 
-        private static void DisableWeaponSphereObjects(Transform scopeRoot, bool logCandidates)
+        private static void DisableWeaponSphereObjects(Transform scopeRoot)
         {
             var weaponRoot = FindWeaponTransform(scopeRoot);
             if (weaponRoot == null) return;
@@ -794,11 +785,6 @@ namespace PiPDisabler
                 {
                     go.SetActive(false);
                     st.DisabledByUs = true;
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] disable sphere path='{ScopeHierarchy.GetRelativePath(go.transform, weaponRoot)}' go='{go.name}'");
-                    }
                 }
             }
         }
@@ -833,7 +819,7 @@ namespace PiPDisabler
             }
         }
 
-        private static void DisableLightEffectMeshesForScope(Transform scopeRoot, bool logCandidates)
+        private static void DisableLightEffectMeshesForScope(Transform scopeRoot)
         {
             var lightFxTargets = ScopeHierarchy.FindLightEffectMeshFilters(scopeRoot);
             if (lightFxTargets.Count == 0) return;
@@ -853,11 +839,6 @@ namespace PiPDisabler
                 {
                     go.SetActive(false);
                     st.DisabledByUs = true;
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] disable lightEffect path='{ScopeHierarchy.GetRelativePath(go.transform, scopeRoot)}' go='{go.name}'");
-                    }
                 }
             }
         }
@@ -922,7 +903,7 @@ namespace PiPDisabler
             {
                 if (HasDirectChild(t, "backLens") || HasDirectChild(t, "backlens"))
                 {
-                    PiPDisablerPlugin.LogVerbose(
+                    PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeHierarchy] FindScopeRoot fallback (backLens child): '{t.name}'");
                     return t;
                 }
@@ -936,14 +917,14 @@ namespace PiPDisabler
                     var lo = t.name.ToLowerInvariant();
                     if (lo.Contains("scope"))
                     {
-                        PiPDisablerPlugin.LogVerbose(
+                        PiPDisablerPlugin.DebugLogInfo(
                             $"[ScopeHierarchy] FindScopeRoot fallback (name match): '{t.name}'");
                         return t;
                     }
                 }
             }
 
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeHierarchy] FindScopeRoot FAILED for '{any?.name}' — no scope root found");
             return null;
         }
@@ -1103,6 +1084,34 @@ namespace PiPDisabler
             return true;
         }
 
+        private static bool IsTextMeshProOwnedMesh(MeshFilter mf)
+        {
+            if (mf == null || mf.transform == null) return false;
+
+            for (var t = mf.transform; t != null; t = t.parent)
+            {
+                var components = t.GetComponents<Component>();
+                for (int i = 0; i < components.Length; i++)
+                {
+                    var component = components[i];
+                    if (component == null) continue;
+
+                    var type = component.GetType();
+                    string fullName = type.FullName ?? string.Empty;
+                    string name = type.Name ?? string.Empty;
+
+                    if (fullName.StartsWith("TMPro.", StringComparison.Ordinal) ||
+                        name.StartsWith("TMP_", StringComparison.Ordinal) ||
+                        name.StartsWith("TextMeshPro", StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         public static bool TryGetPlane(OpticSight os, Transform scopeRoot, Transform activeMode,
             out Vector3 planePoint, out Vector3 planeNormal, out Vector3 camPos)
         {
@@ -1114,7 +1123,7 @@ namespace PiPDisabler
             try { viewerTf = os != null ? os.ScopeTransform : null; } catch { }
 
             if (viewerTf != null) camPos = viewerTf.position;
-            else { var mc = PiPDisablerPlugin.GetMainCamera(); camPos = mc != null ? mc.transform.position : activeMode.position; }
+            else { var mc = Helpers.GetMainCamera(); camPos = mc != null ? mc.transform.position : activeMode.position; }
 
             // Find the best reference transform for the cut plane.
             Transform refTransform = null;
@@ -1169,7 +1178,7 @@ namespace PiPDisabler
 
             if (refTransform == null)
             {
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[ScopeHierarchy][DEBUG] TryGetPlane: ALL fallbacks failed. " +
                     $"os='{(os != null ? os.name : "null")}' activeMode='{activeMode.name}' " +
                     $"scopeRoot='{scopeRoot.name}' frame={Time.frameCount}. " +
@@ -1180,7 +1189,7 @@ namespace PiPDisabler
             // Determine the plane normal based on config.
             planeNormal = GetConfiguredNormal(refTransform);
 
-            PiPDisablerPlugin.LogInfo(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeHierarchy][DEBUG] TryGetPlane OK: ref='{refTransform.name}', " +
                 $"planePoint={planePoint:F4}, normal={planeNormal:F3}, " +
                 $"frame={Time.frameCount}");
@@ -1188,25 +1197,9 @@ namespace PiPDisabler
             return true;
         }
 
-        /// <summary>
-        /// Returns the plane normal based on the PlaneNormalAxis config.
-        /// Auto = transform.forward (game default).
-        /// X/Y/Z/-X/-Y/-Z = that local axis of the reference transform.
-        /// </summary>
         private static Vector3 GetConfiguredNormal(Transform refTransform)
         {
-            string axis = PiPDisablerPlugin.GetPlaneNormalAxis() ?? "Auto";
-
-            switch (axis)
-            {
-                case "X":  return  refTransform.right;
-                case "-X": return -refTransform.right;
-                case "Y":  return  refTransform.up;
-                case "-Y": return -refTransform.up;
-                case "Z":  return  refTransform.forward;
-                case "-Z": return -refTransform.forward;
-                default:   return  refTransform.forward; // "Auto"
-            }
+            return -refTransform.up;
         }
 
         public static List<MeshFilter> FindLightEffectMeshFilters(Transform scopeRoot)
@@ -1230,7 +1223,7 @@ namespace PiPDisabler
                 break;
             }
 
-            if (PiPDisablerPlugin.GetExpandSearchToWeaponRoot())
+            if (PerScopeMeshSurgerySettings.GetExpandSearchToWeaponRoot())
             {
                 for (var p = searchRoot.parent; p != null; p = p.parent)
                 {
@@ -1255,7 +1248,6 @@ namespace PiPDisabler
         public static List<MeshFilter> FindTargetMeshFilters(Transform scopeRoot, Transform activeMode)
         {
             if (scopeRoot == null) return new List<MeshFilter>();
-            bool logCandidates = PiPDisablerPlugin.GetDebugLogCutCandidates();
 
             Transform searchRoot = null;
             for (var p = scopeRoot; p != null; p = p.parent)
@@ -1269,7 +1261,7 @@ namespace PiPDisabler
 
             if (searchRoot == null)
             {
-                PiPDisablerPlugin.LogInfo(
+                PiPDisablerPlugin.DebugLogInfo(
                     $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters could not find weapon root for '{scopeRoot.name}'");
                 return new List<MeshFilter>();
             }
@@ -1277,72 +1269,34 @@ namespace PiPDisabler
             var result = new List<MeshFilter>(64);
             int inspected = 0;
 
-            if (logCandidates)
-            {
-                PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters searchRoot='{searchRoot.name}' scopeRoot='{scopeRoot.name}' activeMode='{(activeMode != null ? activeMode.name : "<null>")}'");
-            }
-
             foreach (var mf in searchRoot.GetComponentsInChildren<MeshFilter>(true))
             {
                 if (!mf || !mf.sharedMesh) continue;
                 inspected++;
 
                 string relSearchPath = null;
-                if (logCandidates)
-                    relSearchPath = GetRelativePath(mf.transform, searchRoot);
 
                 if (IsVolatileWeaponPath(relSearchPath))
                 {
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip volatile path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
-                    }
                     continue;
                 }
 
-                if (ContainsPatronToken(relSearchPath)
-                    || ContainsPatronToken(mf.gameObject.name)
-                    || ContainsPatronToken(mf.sharedMesh.name))
-                {
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip patron path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
-                    }
+                if (ContainsPatronToken(relSearchPath) || ContainsPatronToken(mf.gameObject.name) || ContainsPatronToken(mf.sharedMesh.name))
                     continue;
-                }
+
+                if (IsTextMeshProOwnedMesh(mf))
+                    continue;
 
                 var renderer = mf.GetComponent<Renderer>();
                 if (renderer != null && LensTransparency.IsLensSurfaceRenderer(renderer))
-                {
-                    if (logCandidates)
-                    {
-                        PiPDisablerPlugin.LogInfo(
-                            $"[MeshSurgery][DebugCandidates] skip lens path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
-                    }
                     continue;
-                }
 
                 result.Add(mf);
-
-                if (logCandidates)
-                {
-                    PiPDisablerPlugin.LogInfo(
-                        $"[MeshSurgery][DebugCandidates] cuttable path='{relSearchPath}' go='{mf.gameObject.name}' mesh='{mf.sharedMesh.name}' verts={mf.sharedMesh.vertexCount} active={mf.gameObject.activeInHierarchy}");
-                }
             }
 
-            PiPDisablerPlugin.LogVerbose(
+            PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeHierarchy] FindTargets from '{searchRoot.name}': " +
                 $"{result.Count} targets");
-
-            if (logCandidates)
-            {
-                PiPDisablerPlugin.LogInfo(
-                    $"[MeshSurgery][DebugCandidates] FindTargetMeshFilters summary inspected={inspected} cuttable={result.Count}");
-            }
 
             return result;
         }
@@ -1367,31 +1321,6 @@ namespace PiPDisabler
         }
 
         /// <summary>
-        /// Find all scope roots under a search root that are NOT the active scope root.
-        /// A scope root is any transform with mode_* children.
-        /// </summary>
-        private static void CollectOtherScopeRoots(Transform searchRoot, Transform activeScopeRoot,
-            List<Transform> results)
-        {
-            var stack = new Stack<Transform>();
-            stack.Push(searchRoot);
-            while (stack.Count > 0)
-            {
-                var t = stack.Pop();
-                if (t == null) continue;
-
-                // If this is a likely scope root (not just any mode_* device) and it's not
-                // the active one, record it so we can skip sibling scope subtrees.
-                if (t != activeScopeRoot && IsLikelyScopeRootForExclusion(t))
-                {
-                    results.Add(t);
-                    continue; // don't recurse into other scopes
-                }
-
-                for (int i = 0; i < t.childCount; i++)
-                    stack.Push(t.GetChild(i));
-            }
-        }
 
     }
 }
