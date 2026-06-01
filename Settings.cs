@@ -56,7 +56,6 @@ namespace PiPDisabler
         public static ConfigEntry<float> MeshReticleMinimumStrokePixels;
         public static ConfigEntry<bool> ExpandSearchToWeaponRoot;
         public static ConfigEntry<bool> DebugShowHousingMask;
-        public static ConfigEntry<bool> StencilIncludeWeaponMeshes;
 
         // --- Custom Mesh Surgery settings (per-scope authoring) ---
         public static ConfigEntry<KeyCode> SaveCustomMeshSurgerySettingsKey;
@@ -95,6 +94,15 @@ namespace PiPDisabler
         public static ConfigEntry<bool>  DebugShowScopeShadowMask;
         public static ConfigEntry<bool>  ScopeShadowPersistOnUnscope;
         public static ConfigEntry<float> ScopeShadowOpacity;
+        public static ConfigEntry<bool>  OutsideScopeBlurEnabled;
+        public static ConfigEntry<int>   OutsideScopeBlurDownsample;
+        public static ConfigEntry<int>   OutsideScopeBlurIterations;
+        public static ConfigEntry<float> OutsideScopeBlurRadius;
+        public static ConfigEntry<float> OutsideScopeBlurOpacity;
+        public static ConfigEntry<float> OutsideScopeBlurDarkening;
+        public static ConfigEntry<bool>  OutsideScopeBlurRadialGateEnabled;
+        public static ConfigEntry<float> OutsideScopeBlurRadialGateStart;
+        public static ConfigEntry<float> OutsideScopeBlurRadialGateSoftness;
 
         // --- Weapon Scaling ---
         public static ConfigEntry<float> ManualWeaponScale;
@@ -379,13 +387,6 @@ namespace PiPDisabler
                     "Render a red overlay wherever the lens stencil mask is.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(StencilIncludeWeaponMeshes = config.Bind("Global Mesh Surgery settings", "StencilIncludeWeaponMeshes", true, //Really useful ? We're only rendering the reticle on the lens mask area
-                new ConfigDescription(
-                    "Include weapon body renderers (found under the 'weapon' transform) in the\n" +
-                "stencil mask alongside the scope housing.  Prevents the reticle from\n" +
-                "bleeding through the weapon mesh at screen centre.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true })));
 
             // --- Custom Mesh Surgery settings ---
             ConfigEntries.Add(SaveCustomMeshSurgerySettingsKey = config.Bind("Per scope settings", "Save custom settings key", KeyCode.None,
@@ -545,7 +546,7 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Overlay a fullscreen black shadow everywhere except the lens mask.",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(DebugShowScopeShadowMask = config.Bind("Debug", "DebugShowScopeShadowMask", false,
                 new ConfigDescription(
                     "Render the shadow lens mask as a green overlay for debugging.",
@@ -561,7 +562,51 @@ namespace PiPDisabler
                     "Maximum opacity of the scope shadow overlay.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-
+            ConfigEntries.Add(OutsideScopeBlurEnabled = config.Bind("Scope Effects", "Outside Scope Blur", false,
+                new ConfigDescription(
+                    "Apply a masked dual Kawase blur outside the visible scope lens.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(OutsideScopeBlurDownsample = config.Bind("Scope Effects", "Outside Scope Blur Downsample", 1,
+                new ConfigDescription(
+                    "Downsample divisor for outside-scope blur. Higher values are faster but softer/blockier.",
+                    new AcceptableValueRange<int>(1, 4),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurIterations = config.Bind("Scope Effects", "Outside Scope Blur Iterations", 3,
+                new ConfigDescription(
+                    "Dual Kawase chain depth outside the scope lens.",
+                    new AcceptableValueRange<int>(1, 6),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(OutsideScopeBlurRadius = config.Bind("Scope Effects", "Outside Scope Blur Radius", 2f,
+                new ConfigDescription(
+                    "Dual Kawase sample offset in current-pass pixels.",
+                    new AcceptableValueRange<float>(0.25f, 6f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(OutsideScopeBlurOpacity = config.Bind("Scope Effects", "Outside Scope Blur Opacity", 1f,
+                new ConfigDescription(
+                    "Blend strength of the blurred outside-scope image.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(OutsideScopeBlurDarkening = config.Bind("Scope Effects", "Outside Scope Blur Darkening", 0.3f,
+                new ConfigDescription(
+                    "Extra darkening applied to the blurred outside-scope image.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(OutsideScopeBlurRadialGateEnabled = config.Bind("Scope Effects", "Outside Scope Blur Radial Gate", true,
+                new ConfigDescription(
+                    "Fade in outside-scope blur by screen distance from the lens center.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(OutsideScopeBlurRadialGateStart = config.Bind("Scope Effects", "Outside Scope Blur Radial Gate Start", 3f,
+                new ConfigDescription(
+                    "Distance from lens center, in lens radii, where outside-scope blur starts.",
+                    new AcceptableValueRange<float>(0.5f, 3f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(OutsideScopeBlurRadialGateSoftness = config.Bind("Scope Effects", "Outside Scope Blur Radial Gate Softness", 0.6f,
+                new ConfigDescription(
+                    "Fade width for the radial blur gate, in lens radii.",
+                    new AcceptableValueRange<float>(0.01f, 2f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
             // --- Debug ---
             ConfigEntries.Add(DebugLogging = config.Bind("Debug", "Debug logging", false,
                 new ConfigDescription(

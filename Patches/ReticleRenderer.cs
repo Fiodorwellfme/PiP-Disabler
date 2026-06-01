@@ -756,9 +756,10 @@ namespace PiPDisabler
             const float referenceLensDistance = 0.075f;
             float referenceTanHalfFov = Mathf.Max(0.01f, Mathf.Tan(referenceFovDeg * Mathf.Deg2Rad * 0.5f));
 
-            float angularSize = _baseScale / referenceLensDistance;
-            float ndcSize = angularSize / referenceTanHalfFov;
-            ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
+        float angularSize = _baseScale / referenceLensDistance;
+        float ndcSize = angularSize / referenceTanHalfFov;
+        ndcSize *= Settings.GlobalReticleScalingMultiplier.Value;
+        ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
             Vector3 pos = new Vector3(0f, 0f, 0.5f);
             float aspect = GetActiveAspect(cam);
@@ -1035,6 +1036,15 @@ namespace PiPDisabler
         /// </summary>
         private static Rect GetSceneViewport(Camera cam)
         {
+            var ssaa = cam != null ? cam.GetComponent<SSAA>() : null;
+            if (ssaa != null)
+            {
+                int outputWidth = ssaa.GetOutputWidth();
+                int outputHeight = ssaa.GetOutputHeight();
+                if (outputWidth > 0 && outputHeight > 0)
+                    return new Rect(0f, 0f, outputWidth, outputHeight);
+            }
+
             return new Rect(0f, 0f,
                 Mathf.Max(1f, cam.pixelWidth),
                 Mathf.Max(1f, cam.pixelHeight));

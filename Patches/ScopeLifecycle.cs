@@ -915,9 +915,6 @@ namespace PiPDisabler
             var lensMaskEntries = CollectStencilEntries(os);
             ReticleRenderer.SetLensMaskEntries(lensMaskEntries);
             var occluderRenderers = LensTransparency.CollectHousingRenderers(os);
-            if (Settings.StencilIncludeWeaponMeshes.Value)
-                occluderRenderers.AddRange(
-                    LensTransparency.CollectWeaponRenderers(os, occluderRenderers));
             ReticleRenderer.SetOccluderMaskRenderers(occluderRenderers);
 
             // 3. Get magnification for reticle scaling and zoom

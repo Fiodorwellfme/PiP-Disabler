@@ -78,7 +78,7 @@ namespace PiPDisabler
                 return Settings.ReticleBaseSize.Value;
 
             float multiplier = entry.ReticleSizeMultiplier > 0f ? entry.ReticleSizeMultiplier : 1f;
-            return entry.ReticleBaseSize * multiplier * Settings.GlobalReticleScalingMultiplier.Value;
+            return entry.ReticleBaseSize * multiplier;
         }
         internal static float GetMeshReticleMinScale() => ActiveScopeOverride != null ? ActiveScopeOverride.MeshReticleMinScale : Settings.MeshReticleMinScale.Value;
         internal static float GetMeshReticleMaxScale() => ActiveScopeOverride != null ? ActiveScopeOverride.MeshReticleMaxScale : Settings.MeshReticleMaxScale.Value;
@@ -91,8 +91,8 @@ namespace PiPDisabler
                 return false;
 
             float multiplier = entry.WeaponScaleMultiplier > 0f ? entry.WeaponScaleMultiplier : 1f;
-            minMagnificationScale = entry.WeaponScaleMinMagnification * multiplier * 1/Settings.GlobalScopeScalingMultiplier.Value;
-            maxMagnificationScale = entry.WeaponScaleMaxMagnification * multiplier * 1/Settings.GlobalScopeScalingMultiplier.Value;
+            minMagnificationScale = entry.WeaponScaleMinMagnification * multiplier;
+            maxMagnificationScale = entry.WeaponScaleMaxMagnification * multiplier;
             return true;
         }
         internal static float GetVignetteOpacity() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteOpacity ?? 0f, Settings.VignetteOpacity.Value);

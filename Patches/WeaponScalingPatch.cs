@@ -66,13 +66,16 @@ namespace PiPDisabler.Patches
             }
         }
 
-        private static float GetManualScale()
-        {
-            if (!PerScopeMeshSurgerySettings.TryGetWeaponScale(out float minScale, out float maxScale))
-                return Settings.ManualWeaponScale.Value;
+    private static float GetManualScale()
+    {
+        if (!PerScopeMeshSurgerySettings.TryGetWeaponScale(out float minScale, out float maxScale))
+            return Settings.ManualWeaponScale.Value * Settings.GlobalScopeScalingMultiplier.Value;
 
-            if (TryGetSingleModeScale(minScale, out float singleModeScale))
-                return singleModeScale;
+        minScale *= Settings.GlobalScopeScalingMultiplier.Value;
+        maxScale *= Settings.GlobalScopeScalingMultiplier.Value;
+
+        if (TryGetSingleModeScale(minScale, out float singleModeScale))
+            return singleModeScale;
 
             float t = GetCurrentMagnificationT();
             return Mathf.Lerp(minScale, maxScale, t);
