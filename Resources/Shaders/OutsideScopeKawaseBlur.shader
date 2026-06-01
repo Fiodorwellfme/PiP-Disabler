@@ -199,5 +199,44 @@ Shader "Hidden/PiPDisabler/OutsideScopeKawaseBlur"
             }
             ENDCG
         }
+
+        Pass
+        {
+            Name "CompositeLens"
+
+            Stencil
+            {
+                Ref 1
+                Comp Equal
+                Pass Keep
+                ReadMask 255
+                WriteMask 0
+            }
+
+            Blend SrcAlpha OneMinusSrcAlpha
+
+            CGPROGRAM
+            #pragma vertex vert_img
+            #pragma fragment frag
+            #include "UnityCG.cginc"
+
+            sampler2D _BlurTex;
+            float _Opacity;
+            float _Darkening;
+            float _FlipY;
+
+            fixed4 frag(v2f_img i) : SV_Target
+            {
+                float2 uv = i.uv;
+                if (_FlipY > 0.5)
+                    uv.y = 1.0 - uv.y;
+
+                fixed4 c = tex2D(_BlurTex, uv);
+                c.rgb *= 1.0 - saturate(_Darkening);
+                c.a = saturate(_Opacity);
+                return c;
+            }
+            ENDCG
+        }
     }
 }

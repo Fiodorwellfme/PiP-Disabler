@@ -103,6 +103,8 @@ namespace PiPDisabler
         public static ConfigEntry<bool>  OutsideScopeBlurRadialGateEnabled;
         public static ConfigEntry<float> OutsideScopeBlurRadialGateStart;
         public static ConfigEntry<float> OutsideScopeBlurRadialGateSoftness;
+        public static ConfigEntry<bool>  NvgLensFocalBlurEnabled;
+        public static ConfigEntry<float> NvgLensFocalBlurRadiusMultiplier;
 
         // --- Weapon Scaling ---
         public static ConfigEntry<float> ManualWeaponScale;
@@ -251,12 +253,12 @@ namespace PiPDisabler
             ConfigEntries.Add(ManualLodBias = config.Bind("Graphics", "Manual LOD Bias", 0f,
                 new ConfigDescription(
                     "Manual LOD bias while scoped.\n" +
-                    "0 = auto (Magnification * Auto LOD bias multiplier).",
+                    "0 = auto (Magnification * Auto LOD bias multiplier). \n High values will impact performance !",
                     new AcceptableValueRange<float>(0f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(AutoLodBiasMultiplier = config.Bind("Graphics", "Auto LOD bias multiplier", 2f,
+            ConfigEntries.Add(AutoLodBiasMultiplier = config.Bind("Graphics", "Auto LOD bias multiplier", 0.5f,
                 new ConfigDescription(
-                    "Self explanatory",
+                    "Self explanatory \n High values will impact performance !",
                     new AcceptableValueRange<float>(0.01f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(SuppressFireModeSwitchMovement = config.Bind("Hacks", "Suppress Fire Mode Switch Movement", true,
@@ -561,51 +563,61 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Maximum opacity of the scope shadow overlay.",
                     new AcceptableValueRange<float>(0f, 1f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(OutsideScopeBlurEnabled = config.Bind("Scope Effects", "Outside Scope Blur", false,
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurEnabled = config.Bind("General", "Depth of field", false,
                 new ConfigDescription(
                     "Apply a masked dual Kawase blur outside the visible scope lens.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(OutsideScopeBlurDownsample = config.Bind("Scope Effects", "Outside Scope Blur Downsample", 1,
+            ConfigEntries.Add(OutsideScopeBlurDownsample = config.Bind("Scope Effects", "Depth of field Blur Downsample", 1,
                 new ConfigDescription(
                     "Downsample divisor for outside-scope blur. Higher values are faster but softer/blockier.",
                     new AcceptableValueRange<int>(1, 4),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(OutsideScopeBlurIterations = config.Bind("Scope Effects", "Outside Scope Blur Iterations", 3,
+            ConfigEntries.Add(OutsideScopeBlurIterations = config.Bind("Scope Effects", "Depth of field Blur Iterations", 3,
                 new ConfigDescription(
                     "Dual Kawase chain depth outside the scope lens.",
                     new AcceptableValueRange<int>(1, 6),
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(OutsideScopeBlurRadius = config.Bind("Scope Effects", "Outside Scope Blur Radius", 2f,
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurRadius = config.Bind("Scope Effects", "Depth of field Blur Radius", 2f,
                 new ConfigDescription(
                     "Dual Kawase sample offset in current-pass pixels.",
                     new AcceptableValueRange<float>(0.25f, 6f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
-            ConfigEntries.Add(OutsideScopeBlurOpacity = config.Bind("Scope Effects", "Outside Scope Blur Opacity", 1f,
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(OutsideScopeBlurOpacity = config.Bind("Scope Effects", "Depth of field Blur Opacity", 1f,
                 new ConfigDescription(
                     "Blend strength of the blurred outside-scope image.",
                     new AcceptableValueRange<float>(0f, 1f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(OutsideScopeBlurDarkening = config.Bind("Scope Effects", "Outside Scope Blur Darkening", 0.3f,
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurDarkening = config.Bind("Scope Effects", "Depth of field Blur Darkening", 0.3f,
                 new ConfigDescription(
                     "Extra darkening applied to the blurred outside-scope image.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(OutsideScopeBlurRadialGateEnabled = config.Bind("Scope Effects", "Outside Scope Blur Radial Gate", true,
+            ConfigEntries.Add(OutsideScopeBlurRadialGateEnabled = config.Bind("Scope Effects", "Depth of field Blur Radial Gate", true,
                 new ConfigDescription(
                     "Fade in outside-scope blur by screen distance from the lens center.",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(OutsideScopeBlurRadialGateStart = config.Bind("Scope Effects", "Outside Scope Blur Radial Gate Start", 3f,
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurRadialGateStart = config.Bind("Scope Effects", "Depth of field Blur Radial Gate Start", 3f,
                 new ConfigDescription(
                     "Distance from lens center, in lens radii, where outside-scope blur starts.",
                     new AcceptableValueRange<float>(0.5f, 3f),
-                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
-            ConfigEntries.Add(OutsideScopeBlurRadialGateSoftness = config.Bind("Scope Effects", "Outside Scope Blur Radial Gate Softness", 0.6f,
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(OutsideScopeBlurRadialGateSoftness = config.Bind("Scope Effects", "Depth of field Blur Radial Gate Softness", 0.6f,
                 new ConfigDescription(
                     "Fade width for the radial blur gate, in lens radii.",
                     new AcceptableValueRange<float>(0.01f, 2f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(NvgLensFocalBlurEnabled = config.Bind("General", "NVG Lens Blur", false,
+                new ConfigDescription(
+                    "Blurs the image in the lens to mimic IRL NVG behaviour.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(NvgLensFocalBlurRadiusMultiplier = config.Bind("Scope Effects", "NVG Lens Blur Multiplier", 2.5f,
+                new ConfigDescription(
+                    "Multiplier for the NVG lens blur, higher means more blurrr.",
+                    new AcceptableValueRange<float>(1f, 6f),
                     new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
             // --- Debug ---
             ConfigEntries.Add(DebugLogging = config.Bind("Debug", "Debug logging", false,

@@ -65,6 +65,7 @@ namespace PiPDisabler
         private static readonly int BlurViewportAspectId = Shader.PropertyToID("_ViewportAspect");
         private static readonly int BlurRadialGateStartId = Shader.PropertyToID("_RadialGateStart");
         private static readonly int BlurRadialGateSoftnessId = Shader.PropertyToID("_RadialGateSoftness");
+        private static readonly int NightVisionOnId = Shader.PropertyToID("_NightVisionOn");
         private static readonly int[] KawaseChainIds =
         {
             Shader.PropertyToID("_PiPDisablerOutsideBlur0"),
@@ -119,7 +120,7 @@ namespace PiPDisabler
                 _shadowActive = false;
             }
 
-            if (Settings.OutsideScopeBlurEnabled.Value)
+            if (Settings.OutsideScopeBlurEnabled.Value || Settings.NvgLensFocalBlurEnabled.Value)
             {
                 EnsureOutsideBlurMaterial();
                 _outsideBlurActive = _outsideBlurMat != null;
@@ -422,6 +423,9 @@ namespace PiPDisabler
                     _cmdBuffer.DrawMesh(stencilMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
             }
 
+            if (useStencil && IsNvgLensFocalBlurActive)
+                ReticleRenderer.AppendReticleForNvgLensBlur(_cmdBuffer, viewport);
+
             if (_outsideBlurActive && useStencil && _outsideBlurMat != null)
                 AppendOutsideScopeBlur(viewport, stencilMesh, cam, effectsTarget);
 
@@ -656,6 +660,11 @@ namespace PiPDisabler
             if (opacity <= 0f)
                 return;
 
+            bool nvgLensFocalBlur = ShouldApplyNvgLensFocalBlur();
+            bool standardOutsideBlur = Settings.OutsideScopeBlurEnabled.Value;
+            if (!standardOutsideBlur && !nvgLensFocalBlur)
+                return;
+
             int levels = Mathf.Min(iterations, KawaseChainIds.Length - 1);
 
             KawaseWidths[0] = Mathf.Max(1, Mathf.RoundToInt(viewport.width / downsample));
@@ -702,12 +711,15 @@ namespace PiPDisabler
             _cmdBuffer.SetRenderTarget(effectsTarget);
             SetEffectsViewport(viewport);
             _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-            _cmdBuffer.DrawMesh(
-                fullScreenMesh,
-                Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f)),
-                _outsideBlurMat,
-                0,
-                2);
+            if (standardOutsideBlur)
+            {
+                _cmdBuffer.DrawMesh(
+                    fullScreenMesh,
+                    Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f)),
+                    _outsideBlurMat,
+                    0,
+                    2);
+            }
             _cmdBuffer.DrawMesh(
                 fullScreenMesh,
                 Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f)),
@@ -715,8 +727,59 @@ namespace PiPDisabler
                 0,
                 3);
 
+            if (nvgLensFocalBlur)
+            {
+                float lensRadius = radius * Settings.NvgLensFocalBlurRadiusMultiplier.Value;
+                for (int i = 1; i <= levels; i++)
+                {
+                    _outsideBlurMat.SetVector(BlurTexelSizeId, new Vector4(
+                        1f / KawaseWidths[i - 1],
+                        1f / KawaseHeights[i - 1],
+                        KawaseWidths[i - 1],
+                        KawaseHeights[i - 1]));
+                    _outsideBlurMat.SetFloat(BlurOffsetId, lensRadius);
+                    _cmdBuffer.Blit(KawaseChainIds[i - 1], KawaseChainIds[i], _outsideBlurMat, 0);
+                }
+
+                for (int i = levels - 1; i >= 0; i--)
+                {
+                    _outsideBlurMat.SetVector(BlurTexelSizeId, new Vector4(
+                        1f / KawaseWidths[i + 1],
+                        1f / KawaseHeights[i + 1],
+                        KawaseWidths[i + 1],
+                        KawaseHeights[i + 1]));
+                    _outsideBlurMat.SetFloat(BlurOffsetId, lensRadius);
+                    _cmdBuffer.Blit(KawaseChainIds[i + 1], KawaseChainIds[i], _outsideBlurMat, 1);
+                }
+
+                _cmdBuffer.SetGlobalTexture(BlurTextureId, KawaseChainIds[0]);
+                _cmdBuffer.SetRenderTarget(effectsTarget);
+                SetEffectsViewport(viewport);
+                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                _cmdBuffer.DrawMesh(
+                    fullScreenMesh,
+                    Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f)),
+                    _outsideBlurMat,
+                    0,
+                    4);
+            }
+
             for (int i = 0; i <= levels; i++)
                 _cmdBuffer.ReleaseTemporaryRT(KawaseChainIds[i]);
+        }
+
+        internal static bool IsNvgLensFocalBlurActive
+        {
+            get
+            {
+                return Settings.NvgLensFocalBlurEnabled.Value &&
+                       Shader.GetGlobalFloat(NightVisionOnId) > 0.5f;
+            }
+        }
+
+        private static bool ShouldApplyNvgLensFocalBlur()
+        {
+            return IsNvgLensFocalBlurActive;
         }
 
         private static void ApplyOutsideBlurRadialGate(Rect viewport, Camera cam)
