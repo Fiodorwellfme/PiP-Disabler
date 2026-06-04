@@ -97,16 +97,20 @@ namespace PiPDisabler.Patches
                 isAdsOptic)
                 return;
 
-            // After scope exit, RestoreFov starts a coroutine toward the player's base
-            // FOV. EFT's method_23 keeps firing with SetFov(35°), which would kill that
-            // coroutine immediately and cause the FOV to flash. Suppress any call whose
-            // target differs significantly from our restore target for the duration of
-            // the animation.
+            // After scope exit, RestoreFov protects the ADS transition FOV. Once ADS
+            // ends, EFT's normal base-FOV write must be allowed through immediately.
             if (ScopeLifecycle.HasPostExitRestore)
             {
-                float restoreFov = ScopeLifecycle.PostExitRestoreFov;
-                if (Mathf.Abs(targetFov - restoreFov) > FovController.FovChangeThreshold)
-                    return;
+                if (pwa != null && !pwa.IsAiming)
+                {
+                    ScopeLifecycle.ClearPostExitRestore();
+                }
+                else
+                {
+                    float restoreFov = ScopeLifecycle.PostExitRestoreFov;
+                    if (Mathf.Abs(targetFov - restoreFov) > FovController.FovChangeThreshold)
+                        return;
+                }
             }
 
             cameraClass.SetFov(targetFov, duration, force);

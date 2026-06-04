@@ -35,6 +35,11 @@ namespace PiPDisabler
             _postExitRestoreFov > 0.5f &&
             Time.realtimeSinceStartup < _postExitRestoreExpiry;
         public static float PostExitRestoreFov => _postExitRestoreFov;
+        public static void ClearPostExitRestore()
+        {
+            _postExitRestoreFov = 0f;
+            _postExitRestoreExpiry = 0f;
+        }
 
         private static readonly HashSet<string> _scopeBlacklistNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static string _scopeBlacklistRawCached;

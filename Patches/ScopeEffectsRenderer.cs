@@ -162,6 +162,48 @@ namespace PiPDisabler
                 AttachToCamera();
         }
 
+        public static void RefreshSettings()
+        {
+            if (!_effectsVisible)
+                return;
+
+            EnsureStencilDebugMaterial();
+
+            if (Settings.VignetteEnabled.Value)
+            {
+                EnsureVignetteMeshAndMat();
+                RefreshVignetteTexture();
+                _vigActive = true;
+            }
+            else
+            {
+                _vigActive = false;
+            }
+
+            if (Settings.ScopeShadowEnabled.Value)
+            {
+                EnsureShadowMeshAndMat();
+                RefreshShadowTexture();
+                _shadowActive = true;
+            }
+            else
+            {
+                _shadowActive = false;
+            }
+
+            if (Settings.OutsideScopeBlurEnabled.Value || Settings.NvgLensFocalBlurEnabled.Value)
+            {
+                EnsureOutsideBlurMaterial();
+                _outsideBlurActive = _outsideBlurMat != null;
+            }
+            else
+            {
+                _outsideBlurActive = false;
+            }
+
+            AttachToCamera();
+        }
+
         public static void Hide()
         {
             _effectsVisible = false;

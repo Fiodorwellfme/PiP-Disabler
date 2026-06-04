@@ -630,8 +630,46 @@ namespace PiPDisabler
                     "Legacy setting. Reticles now always draw after everything and use the after-NVG reticle shader.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
+            RegisterVisualEffectLiveUpdates();
             RecalcOrder();
         }
+
+        private static void RegisterVisualEffectLiveUpdates()
+        {
+            CustomVignetteOpacity.SettingChanged += OnCustomVisualEffectSettingChanged;
+            CustomVignetteRadius.SettingChanged += OnCustomVisualEffectSettingChanged;
+            CustomVignetteSoftness.SettingChanged += OnCustomVisualEffectSettingChanged;
+
+            VignetteEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            VignetteOpacity.SettingChanged += OnVisualEffectSettingChanged;
+            VignetteRadius.SettingChanged += OnVisualEffectSettingChanged;
+            VignetteSoftness.SettingChanged += OnVisualEffectSettingChanged;
+            ScopeShadowEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            ScopeShadowOpacity.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurDownsample.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurIterations.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurRadius.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurOpacity.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurDarkening.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurRadialGateEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurRadialGateStart.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurRadialGateSoftness.SettingChanged += OnVisualEffectSettingChanged;
+            NvgLensFocalBlurEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            NvgLensFocalBlurRadiusMultiplier.SettingChanged += OnVisualEffectSettingChanged;
+        }
+
+        private static void OnCustomVisualEffectSettingChanged(object sender, System.EventArgs args)
+        {
+            PerScopeMeshSurgerySettings.SaveActiveScopeVisualSettings();
+            ScopeEffectsRenderer.RefreshSettings();
+        }
+
+        private static void OnVisualEffectSettingChanged(object sender, System.EventArgs args)
+        {
+            ScopeEffectsRenderer.RefreshSettings();
+        }
+
         private static void RecalcOrder()
         {
             // Set the Order field for all settings, to avoid unnecessary changes when adding new settings
