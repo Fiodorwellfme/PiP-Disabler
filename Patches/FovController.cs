@@ -9,7 +9,6 @@ namespace PiPDisabler
 {
     internal static class FovController
     {
-        public static float ZoomBaselineFov => Settings.BaselineFOV.Value;
         private static SightComponent _cachedSightComponent;
         private static OpticSight _cachedSightComponentForOptic;
         private static float _cachedMagnification;
@@ -23,6 +22,19 @@ namespace PiPDisabler
 
         private static float _lastAppliedFov;
         public const float FovChangeThreshold = 0.05f; // degrees
+
+        public static float MagnificationBaselineFov
+        {
+            get
+            {
+                if (!Settings.FOVFixBehaviour.Value)
+                    return Settings.BaselineFOV.Value;
+
+                var player = Helpers.GetLocalPlayer();
+                var pwa = player?.ProceduralWeaponAnimation;
+                return pwa.Single_2;
+            }
+        }
 
         /// <summary>
         /// Returns true when <paramref name="newFov"/> differs from the last
@@ -58,7 +70,7 @@ namespace PiPDisabler
             float oneXTargetFov = GetOneXTargetFov();
             float resultFov = magnification <= 1.01f
                 ? oneXTargetFov
-                : MagnificationToFov(magnification, ZoomBaselineFov);
+                : MagnificationToFov(magnification, MagnificationBaselineFov);
 
             // Log on change
             string source = _lastLoggedSource ?? "?";
@@ -67,7 +79,7 @@ namespace PiPDisabler
                 _lastLoggedMag = magnification;
                 string mapping = magnification <= 1.01f
                     ? $"(1x override={oneXTargetFov:F1}°)"
-                    : $"(baseline={ZoomBaselineFov:F0}°)";
+                    : $"(baseline={MagnificationBaselineFov:F0}°)";
                 PiPDisablerPlugin.DebugLogInfo(
                     $"[FovController] mag={magnification:F2}x → mainFov={resultFov:F1}° " +
                     $"{mapping} [{source}]");
@@ -98,7 +110,7 @@ namespace PiPDisabler
         public static float GetEffectiveMagnificationUncached()
         {
             if (TryGetVariableTemplateFov(out float variableFov, out _, out _, out _))
-                return FovToMagnification(variableFov, ZoomBaselineFov);
+                return FovToMagnification(variableFov, MagnificationBaselineFov);
 
             float templateMag = GetTemplateZoom();
             return templateMag;
@@ -119,7 +131,7 @@ namespace PiPDisabler
         public static float GetVisualMagnificationUncached()
         {
             if (TryGetVariableTemplateFov(out float variableFov, out _, out _, out _))
-                return FovToMagnification(variableFov, ZoomBaselineFov);
+                return FovToMagnification(variableFov, MagnificationBaselineFov);
 
             float targetMag = GetTemplateZoom();
             if (targetMag <= 0.1f)
@@ -132,7 +144,7 @@ namespace PiPDisabler
             if (currentFov <= 0.1f)
                 return targetMag;
 
-            float fovMag = FovToMagnification(currentFov, ZoomBaselineFov);
+            float fovMag = FovToMagnification(currentFov, MagnificationBaselineFov);
             var range = GetTemplateZoomRange();
             float minMag = Mathf.Min(range.min, range.max);
             float maxMag = Mathf.Max(range.min, range.max);
@@ -214,6 +226,12 @@ namespace PiPDisabler
             {
                 if (Mathf.Abs(currentZoom - 1f) <= 0.01f)
                 {
+                    // FOV Fix behaviour
+                    if (Settings.FOVFixBehaviour.Value)
+                    {
+                        return pwa.Single_2;
+                    }
+
                     // Single-entry 1x mode uses vanilla ADS offset behavior.
                     if (modeCount == 1 && pwa != null)
                         return Mathf.Max(1f, pwa.Single_2 - 15f);
@@ -224,7 +242,7 @@ namespace PiPDisabler
             }
 
             if (pwa == null)
-                return ZoomBaselineFov;
+                return MagnificationBaselineFov;
 
             return Mathf.Max(1f, pwa.Single_2);
         }
@@ -316,8 +334,8 @@ namespace PiPDisabler
             zoomPosition = Mathf.Clamp01(Mathf.InverseLerp(opticHigh, opticLow, clampedCurrent));
 
             // Optic FOV only supplies position; template zooms define the output FOV.
-            wideFov = MagnificationToFov(wideZoom, ZoomBaselineFov);
-            narrowFov = MagnificationToFov(narrowZoom, ZoomBaselineFov);
+            wideFov = MagnificationToFov(wideZoom, MagnificationBaselineFov);
+            narrowFov = MagnificationToFov(narrowZoom, MagnificationBaselineFov);
             fov = Mathf.Lerp(wideFov, narrowFov, zoomPosition);
             return true;
         }

@@ -66,13 +66,16 @@ namespace PiPDisabler.Patches
             }
         }
 
-        private static float GetManualScale()
-        {
-            if (!PerScopeMeshSurgerySettings.TryGetWeaponScale(out float minScale, out float maxScale))
-                return Settings.ManualWeaponScale.Value;
+    private static float GetManualScale()
+    {
+        if (!PerScopeMeshSurgerySettings.TryGetWeaponScale(out float minScale, out float maxScale))
+            return Settings.ManualWeaponScale.Value * Settings.GlobalScopeScalingMultiplier.Value;
 
-            if (TryGetSingleModeScale(minScale, out float singleModeScale))
-                return singleModeScale;
+        minScale *= Settings.GlobalScopeScalingMultiplier.Value;
+        maxScale *= Settings.GlobalScopeScalingMultiplier.Value;
+
+        if (TryGetSingleModeScale(minScale, out float singleModeScale))
+            return singleModeScale;
 
             float t = GetCurrentMagnificationT();
             return Mathf.Lerp(minScale, maxScale, t);
@@ -120,7 +123,7 @@ namespace PiPDisabler.Patches
                 return FovController.GetVisualMagnification();
 
             float currentFov = Mathf.Max(0.1f, CameraClass.Instance.Fov);
-            float baseFovRad = FovController.ZoomBaselineFov * Mathf.Deg2Rad;
+            float baseFovRad = FovController.MagnificationBaselineFov * Mathf.Deg2Rad;
             float currentFovRad = currentFov * Mathf.Deg2Rad;
             return Mathf.Max(1f, Mathf.Tan(baseFovRad * 0.5f) / Mathf.Tan(currentFovRad * 0.5f));
         }

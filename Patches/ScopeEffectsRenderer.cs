@@ -1,3 +1,4 @@
+using System.IO;
 using EFT.CameraControl;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -5,11 +6,11 @@ using UnityEngine.Rendering;
 namespace PiPDisabler
 {
     /// <summary>
-    /// Renders scope vignette and shadow effects via a CommandBuffer injected at
-    /// CameraEvent.AfterEverything on the main FPS camera.
+    /// Renders scope vignette, shadow, and outside-scope blur after scene
+    /// rendering on the main FPS camera.
     ///
-    /// The effects render on the final camera target so they follow the same
-    /// after-postfx path as the reticle overlay.
+    /// Effects render into SSAA's active scene target when render scaling is
+    /// enabled, matching Tarkov's native post-process command buffers.
     ///
     /// ── VIGNETTE ───────────────────────────────────────────────────────────────
     /// Screen-space quad centred in view with fixed on-screen size.
@@ -45,6 +46,39 @@ namespace PiPDisabler
         private static bool       _effectsVisible;
         private static bool       _persistShadowUntilFovRestore;
 
+        // ── Outside-scope dual Kawase blur ────────────────────────────────
+        private static Material   _outsideBlurMat;
+        private static AssetBundle _effectsShaderBundle;
+        private static bool       _outsideBlurActive;
+        private static bool       _outsideBlurShaderMissingLogged;
+        private const string EffectsShaderBundleName = "pipdisabler_effect_shaders.bundle";
+        private const string OutsideBlurShaderName = "Hidden/PiPDisabler/OutsideScopeKawaseBlur";
+        private static readonly int BlurTexelSizeId = Shader.PropertyToID("_TexelSize");
+        private static readonly int BlurOffsetId = Shader.PropertyToID("_Offset");
+        private static readonly int BlurOpacityId = Shader.PropertyToID("_Opacity");
+        private static readonly int BlurDarkeningId = Shader.PropertyToID("_Darkening");
+        private static readonly int BlurFlipYId = Shader.PropertyToID("_FlipY");
+        private static readonly int BlurTextureId = Shader.PropertyToID("_BlurTex");
+        private static readonly int BlurRadialGateEnabledId = Shader.PropertyToID("_RadialGateEnabled");
+        private static readonly int BlurLensCenterId = Shader.PropertyToID("_LensCenter");
+        private static readonly int BlurLensSizeId = Shader.PropertyToID("_LensSize");
+        private static readonly int BlurViewportAspectId = Shader.PropertyToID("_ViewportAspect");
+        private static readonly int BlurRadialGateStartId = Shader.PropertyToID("_RadialGateStart");
+        private static readonly int BlurRadialGateSoftnessId = Shader.PropertyToID("_RadialGateSoftness");
+        private static readonly int NightVisionOnId = Shader.PropertyToID("_NightVisionOn");
+        private static readonly int[] KawaseChainIds =
+        {
+            Shader.PropertyToID("_PiPDisablerOutsideBlur0"),
+            Shader.PropertyToID("_PiPDisablerOutsideBlur1"),
+            Shader.PropertyToID("_PiPDisablerOutsideBlur2"),
+            Shader.PropertyToID("_PiPDisablerOutsideBlur3"),
+            Shader.PropertyToID("_PiPDisablerOutsideBlur4"),
+            Shader.PropertyToID("_PiPDisablerOutsideBlur5"),
+            Shader.PropertyToID("_PiPDisablerOutsideBlur6")
+        };
+        private static readonly int[] KawaseWidths = new int[KawaseChainIds.Length];
+        private static readonly int[] KawaseHeights = new int[KawaseChainIds.Length];
+
         // ── Shared stencil debug ───────────────────────────────────────────
         private static Material   _stencilDebugMat;
         private static bool       _hasStencilSupport;
@@ -52,8 +86,8 @@ namespace PiPDisabler
         // ── CommandBuffer ───────────────────────────────────────────────────
         private static CommandBuffer _cmdBuffer;
         private static Camera        _attachedCamera;
-        private static CameraEvent   _attachedEvent = CameraEvent.AfterEverything;
-        private const CameraEvent EffectsCameraEvent = CameraEvent.AfterEverything;
+        private static CameraEvent   _attachedEvent = EffectsCameraEvent;
+        private const CameraEvent EffectsCameraEvent = CameraEvent.AfterForwardAlpha;
         private static bool          _preCullRegistered;
 
         // ─────────────────────────────────────────────────────────────────────
@@ -86,6 +120,16 @@ namespace PiPDisabler
                 _shadowActive = false;
             }
 
+            if (Settings.OutsideScopeBlurEnabled.Value || Settings.NvgLensFocalBlurEnabled.Value)
+            {
+                EnsureOutsideBlurMaterial();
+                _outsideBlurActive = _outsideBlurMat != null;
+            }
+            else
+            {
+                _outsideBlurActive = false;
+            }
+
             _effectsVisible = true;
             _persistShadowUntilFovRestore = false;
 
@@ -100,7 +144,7 @@ namespace PiPDisabler
             ReattachToSceneEvent();
 
             PiPDisablerPlugin.DebugLogInfo(
-                $"[ScopeEffects] Showing: vignette={_vigActive} shadow={_shadowActive} (CommandBuffer)");
+                $"[ScopeEffects] Showing: vignette={_vigActive} shadow={_shadowActive} blur={_outsideBlurActive} (CommandBuffer)");
         }
 
         /// <summary>Per-frame update — call from ScopeLifecycle.Tick().</summary>
@@ -118,6 +162,48 @@ namespace PiPDisabler
                 AttachToCamera();
         }
 
+        public static void RefreshSettings()
+        {
+            if (!_effectsVisible)
+                return;
+
+            EnsureStencilDebugMaterial();
+
+            if (Settings.VignetteEnabled.Value)
+            {
+                EnsureVignetteMeshAndMat();
+                RefreshVignetteTexture();
+                _vigActive = true;
+            }
+            else
+            {
+                _vigActive = false;
+            }
+
+            if (Settings.ScopeShadowEnabled.Value)
+            {
+                EnsureShadowMeshAndMat();
+                RefreshShadowTexture();
+                _shadowActive = true;
+            }
+            else
+            {
+                _shadowActive = false;
+            }
+
+            if (Settings.OutsideScopeBlurEnabled.Value || Settings.NvgLensFocalBlurEnabled.Value)
+            {
+                EnsureOutsideBlurMaterial();
+                _outsideBlurActive = _outsideBlurMat != null;
+            }
+            else
+            {
+                _outsideBlurActive = false;
+            }
+
+            AttachToCamera();
+        }
+
         public static void Hide()
         {
             _effectsVisible = false;
@@ -131,6 +217,7 @@ namespace PiPDisabler
         public static bool OnScopeExit(bool allowShadowPersist)
         {
             _vigActive = false;
+            _outsideBlurActive = false;
 
             bool keepShadow =
                 allowShadowPersist &&
@@ -156,6 +243,7 @@ namespace PiPDisabler
             _effectsVisible = false;
             _vigActive = false;
             _shadowActive = false;
+            _outsideBlurActive = false;
             _persistShadowUntilFovRestore = false;
             DetachFromCamera();
         }
@@ -313,7 +401,7 @@ namespace PiPDisabler
                 return;
             }
 
-            if (!_vigActive && !_shadowActive)
+            if (!_vigActive && !_shadowActive && !_outsideBlurActive)
             {
                 _cmdBuffer.Clear();
                 return;
@@ -322,7 +410,7 @@ namespace PiPDisabler
             // Rebuild matrices in pure screen-space
             if (_vigActive)
                 RebuildVignetteMatrix(cam);
-            if (_shadowActive)
+            if (_shadowActive || _outsideBlurActive)
                 RebuildShadowMatrix(cam);
 
             RebuildCommandBuffer(cam);
@@ -356,15 +444,10 @@ namespace PiPDisabler
         private static void RebuildCommandBuffer(Camera cam)
         {
             _cmdBuffer.Clear();
-            bool isAfterEverything = _attachedEvent == CameraEvent.AfterEverything;
-            Rect viewport = isAfterEverything
-                ? GetDisplayViewport(cam)
-                : GetSceneViewport(cam);
-
-            if (isAfterEverything)
-                _cmdBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-
-            _cmdBuffer.SetViewport(viewport);
+            Rect viewport = GetEffectsViewport(cam);
+            RenderTargetIdentifier effectsTarget = GetEffectsTarget(cam);
+            _cmdBuffer.SetRenderTarget(effectsTarget);
+            SetEffectsViewport(viewport);
 
             Mesh stencilMesh = GetStencilMesh();
             bool useStencil = _hasStencilSupport &&
@@ -381,6 +464,16 @@ namespace PiPDisabler
                 if (Settings.DebugShowScopeShadowMask.Value && _stencilDebugMat != null)
                     _cmdBuffer.DrawMesh(stencilMesh, fullScreenMatrix, _stencilDebugMat, 0, -1);
             }
+
+            if (useStencil && IsNvgLensFocalBlurActive)
+                ReticleRenderer.AppendReticleForNvgLensBlur(_cmdBuffer, viewport);
+
+            if (_outsideBlurActive && useStencil && _outsideBlurMat != null)
+                AppendOutsideScopeBlur(viewport, stencilMesh, cam, effectsTarget);
+
+            _cmdBuffer.SetRenderTarget(effectsTarget);
+            SetEffectsViewport(viewport);
+            _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
 
             // Draw shadow first (behind vignette in render order)
             if (_shadowActive && useStencil && _shadowMat != null && _shadowMesh != null)
@@ -540,15 +633,266 @@ namespace PiPDisabler
                 $"[ScopeEffects] Shadow texture rebuilt: opacity={opac:F2}");
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // Outside-scope Kawase blur
+        // ─────────────────────────────────────────────────────────────────────
+
+        private static void EnsureOutsideBlurMaterial()
+        {
+            if (_outsideBlurMat != null) return;
+
+            Shader shader = FindOutsideBlurShader();
+            if (shader == null)
+            {
+                if (!_outsideBlurShaderMissingLogged)
+                {
+                    _outsideBlurShaderMissingLogged = true;
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[ScopeEffects] Missing shader '{OutsideBlurShaderName}'. Outside scope blur disabled.");
+                }
+                return;
+            }
+
+            _outsideBlurMat = new Material(shader)
+            {
+                renderQueue = 3030
+            };
+        }
+
+        private static Shader FindOutsideBlurShader()
+        {
+            Shader shader = Shader.Find(OutsideBlurShaderName);
+            if (shader != null)
+                return shader;
+
+            if (_effectsShaderBundle == null)
+            {
+                string pluginDir = Path.GetDirectoryName(typeof(PiPDisablerPlugin).Assembly.Location);
+                string bundlePath = Path.Combine(pluginDir ?? string.Empty, EffectsShaderBundleName);
+                if (File.Exists(bundlePath))
+                    _effectsShaderBundle = AssetBundle.LoadFromFile(bundlePath);
+            }
+
+            if (_effectsShaderBundle == null)
+                return null;
+
+            foreach (Shader bundledShader in _effectsShaderBundle.LoadAllAssets<Shader>())
+            {
+                if (bundledShader != null && bundledShader.name == OutsideBlurShaderName)
+                    return bundledShader;
+            }
+
+            return null;
+        }
+
+        private static void AppendOutsideScopeBlur(
+            Rect viewport,
+            Mesh fullScreenMesh,
+            Camera cam,
+            RenderTargetIdentifier effectsTarget)
+        {
+            if (fullScreenMesh == null)
+                return;
+
+            int downsample = Mathf.Clamp(Settings.OutsideScopeBlurDownsample.Value, 1, 4);
+            int iterations = Mathf.Clamp(Settings.OutsideScopeBlurIterations.Value, 1, 6);
+            float radius = Mathf.Clamp(Settings.OutsideScopeBlurRadius.Value, 0.25f, 6f);
+            float opacity = Mathf.Clamp01(Settings.OutsideScopeBlurOpacity.Value);
+            float darkening = Mathf.Clamp01(Settings.OutsideScopeBlurDarkening.Value);
+            if (opacity <= 0f)
+                return;
+
+            bool nvgLensFocalBlur = ShouldApplyNvgLensFocalBlur();
+            bool standardOutsideBlur = Settings.OutsideScopeBlurEnabled.Value;
+            if (!standardOutsideBlur && !nvgLensFocalBlur)
+                return;
+
+            int levels = Mathf.Min(iterations, KawaseChainIds.Length - 1);
+
+            KawaseWidths[0] = Mathf.Max(1, Mathf.RoundToInt(viewport.width / downsample));
+            KawaseHeights[0] = Mathf.Max(1, Mathf.RoundToInt(viewport.height / downsample));
+
+            _cmdBuffer.GetTemporaryRT(
+                KawaseChainIds[0], KawaseWidths[0], KawaseHeights[0],
+                0, FilterMode.Bilinear, RenderTextureFormat.Default);
+            _cmdBuffer.Blit(effectsTarget, KawaseChainIds[0]);
+
+            for (int i = 1; i <= levels; i++)
+            {
+                KawaseWidths[i] = Mathf.Max(1, KawaseWidths[i - 1] / 2);
+                KawaseHeights[i] = Mathf.Max(1, KawaseHeights[i - 1] / 2);
+
+                _cmdBuffer.GetTemporaryRT(
+                    KawaseChainIds[i], KawaseWidths[i], KawaseHeights[i],
+                    0, FilterMode.Bilinear, RenderTextureFormat.Default);
+                _outsideBlurMat.SetVector(BlurTexelSizeId, new Vector4(
+                    1f / KawaseWidths[i - 1],
+                    1f / KawaseHeights[i - 1],
+                    KawaseWidths[i - 1],
+                    KawaseHeights[i - 1]));
+                _outsideBlurMat.SetFloat(BlurOffsetId, radius);
+                _cmdBuffer.Blit(KawaseChainIds[i - 1], KawaseChainIds[i], _outsideBlurMat, 0);
+            }
+
+            for (int i = levels - 1; i >= 0; i--)
+            {
+                _outsideBlurMat.SetVector(BlurTexelSizeId, new Vector4(
+                    1f / KawaseWidths[i + 1],
+                    1f / KawaseHeights[i + 1],
+                    KawaseWidths[i + 1],
+                    KawaseHeights[i + 1]));
+                _outsideBlurMat.SetFloat(BlurOffsetId, radius);
+                _cmdBuffer.Blit(KawaseChainIds[i + 1], KawaseChainIds[i], _outsideBlurMat, 1);
+            }
+
+            _outsideBlurMat.SetFloat(BlurOpacityId, opacity);
+            _outsideBlurMat.SetFloat(BlurDarkeningId, darkening);
+            _outsideBlurMat.SetFloat(BlurFlipYId, 0f);
+            ApplyOutsideBlurRadialGate(viewport, cam);
+            _cmdBuffer.SetGlobalTexture(BlurTextureId, KawaseChainIds[0]);
+            _cmdBuffer.SetRenderTarget(effectsTarget);
+            SetEffectsViewport(viewport);
+            _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+            if (standardOutsideBlur)
+            {
+                _cmdBuffer.DrawMesh(
+                    fullScreenMesh,
+                    Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f)),
+                    _outsideBlurMat,
+                    0,
+                    2);
+            }
+            _cmdBuffer.DrawMesh(
+                fullScreenMesh,
+                Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f)),
+                _outsideBlurMat,
+                0,
+                3);
+
+            if (nvgLensFocalBlur)
+            {
+                float lensRadius = radius * Settings.NvgLensFocalBlurRadiusMultiplier.Value;
+                for (int i = 1; i <= levels; i++)
+                {
+                    _outsideBlurMat.SetVector(BlurTexelSizeId, new Vector4(
+                        1f / KawaseWidths[i - 1],
+                        1f / KawaseHeights[i - 1],
+                        KawaseWidths[i - 1],
+                        KawaseHeights[i - 1]));
+                    _outsideBlurMat.SetFloat(BlurOffsetId, lensRadius);
+                    _cmdBuffer.Blit(KawaseChainIds[i - 1], KawaseChainIds[i], _outsideBlurMat, 0);
+                }
+
+                for (int i = levels - 1; i >= 0; i--)
+                {
+                    _outsideBlurMat.SetVector(BlurTexelSizeId, new Vector4(
+                        1f / KawaseWidths[i + 1],
+                        1f / KawaseHeights[i + 1],
+                        KawaseWidths[i + 1],
+                        KawaseHeights[i + 1]));
+                    _outsideBlurMat.SetFloat(BlurOffsetId, lensRadius);
+                    _cmdBuffer.Blit(KawaseChainIds[i + 1], KawaseChainIds[i], _outsideBlurMat, 1);
+                }
+
+                _cmdBuffer.SetGlobalTexture(BlurTextureId, KawaseChainIds[0]);
+                _cmdBuffer.SetRenderTarget(effectsTarget);
+                SetEffectsViewport(viewport);
+                _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                _cmdBuffer.DrawMesh(
+                    fullScreenMesh,
+                    Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f)),
+                    _outsideBlurMat,
+                    0,
+                    4);
+            }
+
+            for (int i = 0; i <= levels; i++)
+                _cmdBuffer.ReleaseTemporaryRT(KawaseChainIds[i]);
+        }
+
+        internal static bool IsNvgLensFocalBlurActive
+        {
+            get
+            {
+                return Settings.NvgLensFocalBlurEnabled.Value &&
+                       Shader.GetGlobalFloat(NightVisionOnId) > 0.5f;
+            }
+        }
+
+        private static bool ShouldApplyNvgLensFocalBlur()
+        {
+            return IsNvgLensFocalBlurActive;
+        }
+
+        private static void ApplyOutsideBlurRadialGate(Rect viewport, Camera cam)
+        {
+            if (!Settings.OutsideScopeBlurRadialGateEnabled.Value ||
+                cam == null ||
+                !ReticleRenderer.TryGetLensMaskClipBounds(cam, out Vector2 center, out Vector2 size))
+            {
+                _outsideBlurMat.SetFloat(BlurRadialGateEnabledId, 0f);
+                return;
+            }
+
+            float aspect = viewport.height > 0f ? viewport.width / viewport.height : 1f;
+            _outsideBlurMat.SetFloat(BlurRadialGateEnabledId, 1f);
+            _outsideBlurMat.SetVector(BlurLensCenterId, new Vector4(center.x, center.y, 0f, 0f));
+            _outsideBlurMat.SetVector(BlurLensSizeId, new Vector4(size.x, size.y, 0f, 0f));
+            _outsideBlurMat.SetFloat(BlurViewportAspectId, aspect);
+            _outsideBlurMat.SetFloat(BlurRadialGateStartId, Mathf.Max(0f, Settings.OutsideScopeBlurRadialGateStart.Value));
+            _outsideBlurMat.SetFloat(BlurRadialGateSoftnessId, Mathf.Max(0.001f, Settings.OutsideScopeBlurRadialGateSoftness.Value));
+        }
+
         private static Rect GetSceneViewport(Camera cam)
         {
+            var ssaa = cam != null ? cam.GetComponent<SSAA>() : null;
+            if (ssaa != null)
+            {
+                int inputWidth = ssaa.GetInputWidth();
+                int inputHeight = ssaa.GetInputHeight();
+                if (inputWidth > 0 && inputHeight > 0)
+                    return new Rect(0f, 0f, inputWidth, inputHeight);
+            }
+
             return new Rect(0f, 0f,
                 Mathf.Max(1f, cam.pixelWidth),
                 Mathf.Max(1f, cam.pixelHeight));
         }
 
         private static Rect GetDisplayViewport(Camera cam)
-            => Helpers.GetDisplayViewport(cam);
+        {
+            var ssaa = cam != null ? cam.GetComponent<SSAA>() : null;
+            if (ssaa != null)
+            {
+                int outputWidth = ssaa.GetOutputWidth();
+                int outputHeight = ssaa.GetOutputHeight();
+                if (outputWidth > 0 && outputHeight > 0)
+                    return new Rect(0f, 0f, outputWidth, outputHeight);
+            }
+
+            return Helpers.GetDisplayViewport(cam);
+        }
+
+        private static Rect GetEffectsViewport(Camera cam)
+        {
+            return _attachedEvent == CameraEvent.AfterEverything
+                ? GetDisplayViewport(cam)
+                : GetSceneViewport(cam);
+        }
+
+        private static RenderTargetIdentifier GetEffectsTarget(Camera cam)
+        {
+            var ssaa = cam != null ? cam.GetComponent<SSAA>() : null;
+            return ssaa != null
+                ? ssaa.GetRTIdentifier()
+                : new RenderTargetIdentifier(BuiltinRenderTextureType.CameraTarget);
+        }
+
+        private static void SetEffectsViewport(Rect viewport)
+        {
+            if (_attachedEvent != CameraEvent.AfterEverything)
+                _cmdBuffer.SetViewport(viewport);
+        }
 
         // ─────────────────────────────────────────────────────────────────────
         // Shared helpers
@@ -576,7 +920,7 @@ namespace PiPDisabler
             if (!Settings.ScopeShadowEnabled.Value) return false;
 
             bool hasActiveOptic = false;
-            float currentFov = FovController.ZoomBaselineFov;
+            float currentFov = FovController.MagnificationBaselineFov;
 
             if (CameraClass.Exist && CameraClass.Instance != null)
             {
@@ -587,7 +931,7 @@ namespace PiPDisabler
                     : CameraClass.Instance.Fov;
             }
 
-            return hasActiveOptic || currentFov < FovController.ZoomBaselineFov;
+            return hasActiveOptic || currentFov < FovController.MagnificationBaselineFov;
         }
 
         private static void EnsureStencilDebugMaterial()

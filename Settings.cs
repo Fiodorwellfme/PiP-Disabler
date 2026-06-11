@@ -24,7 +24,10 @@ namespace PiPDisabler
         public static ConfigEntry<float> PostSprintAimGateDuration;
         public static ConfigEntry<bool> BypassDuringStanceTransitions;
         public static ConfigEntry<float> PostStanceAimGateDuration;
-
+        public static ConfigEntry<bool> FOVFixBehaviour;
+        public static ConfigEntry<float> GlobalScopeScalingMultiplier;
+        public static ConfigEntry<float> GlobalReticleScalingMultiplier;
+        
         // --- Optimization ---
         public static ConfigEntry<float> AutoLodBiasMultiplier;
         public static ConfigEntry<bool> KeepScopedLodBiasUntilInventory;
@@ -53,7 +56,6 @@ namespace PiPDisabler
         public static ConfigEntry<float> MeshReticleMinimumStrokePixels;
         public static ConfigEntry<bool> ExpandSearchToWeaponRoot;
         public static ConfigEntry<bool> DebugShowHousingMask;
-        public static ConfigEntry<bool> StencilIncludeWeaponMeshes;
 
         // --- Custom Mesh Surgery settings (per-scope authoring) ---
         public static ConfigEntry<KeyCode> SaveCustomMeshSurgerySettingsKey;
@@ -92,6 +94,17 @@ namespace PiPDisabler
         public static ConfigEntry<bool>  DebugShowScopeShadowMask;
         public static ConfigEntry<bool>  ScopeShadowPersistOnUnscope;
         public static ConfigEntry<float> ScopeShadowOpacity;
+        public static ConfigEntry<bool>  OutsideScopeBlurEnabled;
+        public static ConfigEntry<int>   OutsideScopeBlurDownsample;
+        public static ConfigEntry<int>   OutsideScopeBlurIterations;
+        public static ConfigEntry<float> OutsideScopeBlurRadius;
+        public static ConfigEntry<float> OutsideScopeBlurOpacity;
+        public static ConfigEntry<float> OutsideScopeBlurDarkening;
+        public static ConfigEntry<bool>  OutsideScopeBlurRadialGateEnabled;
+        public static ConfigEntry<float> OutsideScopeBlurRadialGateStart;
+        public static ConfigEntry<float> OutsideScopeBlurRadialGateSoftness;
+        public static ConfigEntry<bool>  NvgLensFocalBlurEnabled;
+        public static ConfigEntry<float> NvgLensFocalBlurRadiusMultiplier;
 
         // --- Weapon Scaling ---
         public static ConfigEntry<float> ManualWeaponScale;
@@ -152,6 +165,21 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "When pressed while scoped, add/remove the current scope to the whitelist.",
                     null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(FOVFixBehaviour = config.Bind("General", "FOV Fix Behaviour", true,
+                new ConfigDescription(
+                    "If this is enabled, 1x FOV will be set to the game settings FOV",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(GlobalScopeScalingMultiplier = config.Bind("General", "Global Scope Scaling Multiplier", 1f,
+                new ConfigDescription(
+                    "Multiplies the scaling of all scopes, useful if you feel like the scopes are too small or too large.",
+                    new AcceptableValueRange<float>(0.25f, 3f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(GlobalReticleScalingMultiplier = config.Bind("General", "Global Reticle Scaling Multiplier", 1f,
+                new ConfigDescription(
+                    "Multiplies the scaling of all reticles, useful if you feel like the reticles are too small or too large.",
+                    new AcceptableValueRange<float>(0.5f, 2f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(ScopeAlignmentAngleTolerance = config.Bind("Hacks", "ADS Scope Alignment Angle Tolerance", 2f,
                 new ConfigDescription(
@@ -225,12 +253,12 @@ namespace PiPDisabler
             ConfigEntries.Add(ManualLodBias = config.Bind("Graphics", "Manual LOD Bias", 0f,
                 new ConfigDescription(
                     "Manual LOD bias while scoped.\n" +
-                    "0 = auto (Magnification * Auto LOD bias multiplier).",
+                    "0 = auto (Magnification * Auto LOD bias multiplier). \n High values will impact performance !",
                     new AcceptableValueRange<float>(0f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(AutoLodBiasMultiplier = config.Bind("Graphics", "Auto LOD bias multiplier", 2f,
+            ConfigEntries.Add(AutoLodBiasMultiplier = config.Bind("Graphics", "Auto LOD bias multiplier", 0.5f,
                 new ConfigDescription(
-                    "Self explanatory",
+                    "Self explanatory \n High values will impact performance !",
                     new AcceptableValueRange<float>(0.01f, 20f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(SuppressFireModeSwitchMovement = config.Bind("Hacks", "Suppress Fire Mode Switch Movement", true,
@@ -359,13 +387,6 @@ namespace PiPDisabler
             ConfigEntries.Add(DebugShowHousingMask = config.Bind("Debug", "DebugShowHousingMask", false,
                 new ConfigDescription(
                     "Render a red overlay wherever the lens stencil mask is.",
-                    null,
-                    new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(StencilIncludeWeaponMeshes = config.Bind("Global Mesh Surgery settings", "StencilIncludeWeaponMeshes", true, //Really useful ? We're only rendering the reticle on the lens mask area
-                new ConfigDescription(
-                    "Include weapon body renderers (found under the 'weapon' transform) in the\n" +
-                "stencil mask alongside the scope housing.  Prevents the reticle from\n" +
-                "bleeding through the weapon mesh at screen centre.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
 
@@ -527,7 +548,7 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Overlay a fullscreen black shadow everywhere except the lens mask.",
                     null,
-                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(DebugShowScopeShadowMask = config.Bind("Debug", "DebugShowScopeShadowMask", false,
                 new ConfigDescription(
                     "Render the shadow lens mask as a green overlay for debugging.",
@@ -542,8 +563,62 @@ namespace PiPDisabler
                 new ConfigDescription(
                     "Maximum opacity of the scope shadow overlay.",
                     new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurEnabled = config.Bind("General", "Depth of field", false,
+                new ConfigDescription(
+                    "Apply a masked dual Kawase blur outside the visible scope lens.",
+                    null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-
+            ConfigEntries.Add(OutsideScopeBlurDownsample = config.Bind("Scope Effects", "Depth of field Blur Downsample", 1,
+                new ConfigDescription(
+                    "Downsample divisor for outside-scope blur. Higher values are faster but softer/blockier.",
+                    new AcceptableValueRange<int>(1, 4),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurIterations = config.Bind("Scope Effects", "Depth of field Blur Iterations", 3,
+                new ConfigDescription(
+                    "Dual Kawase chain depth outside the scope lens.",
+                    new AcceptableValueRange<int>(1, 6),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurRadius = config.Bind("Scope Effects", "Depth of field Blur Radius", 2f,
+                new ConfigDescription(
+                    "Dual Kawase sample offset in current-pass pixels.",
+                    new AcceptableValueRange<float>(0.25f, 6f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(OutsideScopeBlurOpacity = config.Bind("Scope Effects", "Depth of field Blur Opacity", 1f,
+                new ConfigDescription(
+                    "Blend strength of the blurred outside-scope image.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurDarkening = config.Bind("Scope Effects", "Depth of field Blur Darkening", 0.3f,
+                new ConfigDescription(
+                    "Extra darkening applied to the blurred outside-scope image.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(OutsideScopeBlurRadialGateEnabled = config.Bind("Scope Effects", "Depth of field Blur Radial Gate", true,
+                new ConfigDescription(
+                    "Fade in outside-scope blur by screen distance from the lens center.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(OutsideScopeBlurRadialGateStart = config.Bind("Scope Effects", "Depth of field Blur Radial Gate Start", 3f,
+                new ConfigDescription(
+                    "Distance from lens center, in lens radii, where outside-scope blur starts.",
+                    new AcceptableValueRange<float>(0.5f, 3f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(OutsideScopeBlurRadialGateSoftness = config.Bind("Scope Effects", "Depth of field Blur Radial Gate Softness", 0.6f,
+                new ConfigDescription(
+                    "Fade width for the radial blur gate, in lens radii.",
+                    new AcceptableValueRange<float>(0.01f, 2f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
+            ConfigEntries.Add(NvgLensFocalBlurEnabled = config.Bind("General", "NVG Lens Blur", false,
+                new ConfigDescription(
+                    "Blurs the image in the lens to mimic IRL NVG behaviour.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(NvgLensFocalBlurRadiusMultiplier = config.Bind("Scope Effects", "NVG Lens Blur Multiplier", 2.5f,
+                new ConfigDescription(
+                    "Multiplier for the NVG lens blur, higher means more blurrr.",
+                    new AcceptableValueRange<float>(1f, 6f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ShowRangeAsPercent = false })));
             // --- Debug ---
             ConfigEntries.Add(DebugLogging = config.Bind("Debug", "Debug logging", false,
                 new ConfigDescription(
@@ -555,8 +630,46 @@ namespace PiPDisabler
                     "Legacy setting. Reticles now always draw after everything and use the after-NVG reticle shader.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
+            RegisterVisualEffectLiveUpdates();
             RecalcOrder();
         }
+
+        private static void RegisterVisualEffectLiveUpdates()
+        {
+            CustomVignetteOpacity.SettingChanged += OnCustomVisualEffectSettingChanged;
+            CustomVignetteRadius.SettingChanged += OnCustomVisualEffectSettingChanged;
+            CustomVignetteSoftness.SettingChanged += OnCustomVisualEffectSettingChanged;
+
+            VignetteEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            VignetteOpacity.SettingChanged += OnVisualEffectSettingChanged;
+            VignetteRadius.SettingChanged += OnVisualEffectSettingChanged;
+            VignetteSoftness.SettingChanged += OnVisualEffectSettingChanged;
+            ScopeShadowEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            ScopeShadowOpacity.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurDownsample.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurIterations.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurRadius.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurOpacity.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurDarkening.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurRadialGateEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurRadialGateStart.SettingChanged += OnVisualEffectSettingChanged;
+            OutsideScopeBlurRadialGateSoftness.SettingChanged += OnVisualEffectSettingChanged;
+            NvgLensFocalBlurEnabled.SettingChanged += OnVisualEffectSettingChanged;
+            NvgLensFocalBlurRadiusMultiplier.SettingChanged += OnVisualEffectSettingChanged;
+        }
+
+        private static void OnCustomVisualEffectSettingChanged(object sender, System.EventArgs args)
+        {
+            PerScopeMeshSurgerySettings.SaveActiveScopeVisualSettings();
+            ScopeEffectsRenderer.RefreshSettings();
+        }
+
+        private static void OnVisualEffectSettingChanged(object sender, System.EventArgs args)
+        {
+            ScopeEffectsRenderer.RefreshSettings();
+        }
+
         private static void RecalcOrder()
         {
             // Set the Order field for all settings, to avoid unnecessary changes when adding new settings

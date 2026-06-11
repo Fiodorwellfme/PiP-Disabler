@@ -695,9 +695,9 @@ namespace PiPDisabler
                 if (currentMag < 1f) currentMag = _lastMag;
                 float meshZoomScale = Mathf.Lerp(1f, Mathf.Max(1f, currentMag), zoomPosition);
                 float normalizedScale = Settings.MeshReticleNormalizedScale.Value;
-                float meshScale = _baseScale * meshZoomScale * _meshReticleBoundsScale * normalizedScale;
-                float minMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMinScale();
-                float maxMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMaxScale();
+                float meshScale = _baseScale * meshZoomScale * _meshReticleBoundsScale * normalizedScale * Settings.GlobalReticleScalingMultiplier.Value;
+                float minMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMinScale() * Settings.GlobalReticleScalingMultiplier.Value;
+                float maxMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMaxScale() * Settings.GlobalReticleScalingMultiplier.Value;
                 if (minMeshScale > 0f && maxMeshScale > 0f)
                 {
                     if (maxMeshScale < minMeshScale)
@@ -756,9 +756,10 @@ namespace PiPDisabler
             const float referenceLensDistance = 0.075f;
             float referenceTanHalfFov = Mathf.Max(0.01f, Mathf.Tan(referenceFovDeg * Mathf.Deg2Rad * 0.5f));
 
-            float angularSize = _baseScale / referenceLensDistance;
-            float ndcSize = angularSize / referenceTanHalfFov;
-            ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
+        float angularSize = _baseScale / referenceLensDistance;
+        float ndcSize = angularSize / referenceTanHalfFov;
+        ndcSize *= Settings.GlobalReticleScalingMultiplier.Value;
+        ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
 
             Vector3 pos = new Vector3(0f, 0f, 0.5f);
             float aspect = GetActiveAspect(cam);
@@ -832,7 +833,7 @@ namespace PiPDisabler
             {
                 AppendLensStencilMask(_cmdBuffer, _reticleMesh, cam);
 
-                if (!_stencilOnlyPersistence)
+                if (!_stencilOnlyPersistence && !ScopeEffectsRenderer.IsNvgLensFocalBlurActive)
                 {
                     // ── Step 3: draw reticle only inside the visible lens (clip-space) ──
                     _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
@@ -851,54 +852,72 @@ namespace PiPDisabler
             {
                 // Original path — no stencil.
                 _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                DrawActiveReticle();
+                if (!ScopeEffectsRenderer.IsNvgLensFocalBlurActive)
+                    DrawActiveReticle();
             }
 
             _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
         }
 
+        public static bool AppendReticleForNvgLensBlur(CommandBuffer cmd, Rect viewport)
+        {
+            if (!ScopeEffectsRenderer.IsNvgLensFocalBlurActive) return false;
+            if (cmd == null || !HasLensStencilMask) return false;
+            if (GetActiveReticleMesh() == null || GetActiveReticleMaterial() == null) return false;
+
+            _reticlePixelSize = GetClipPixelSize(viewport);
+            cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+            DrawActiveReticle(cmd);
+            return true;
+        }
+
         private static void DrawActiveReticle()
+        {
+            DrawActiveReticle(_cmdBuffer);
+        }
+
+        private static void DrawActiveReticle(CommandBuffer cmd)
         {
             if (!HasLensStencilMask) return;
 
             Mesh mesh = GetActiveReticleMesh();
             Material material = GetActiveReticleMaterial();
-            if (mesh == null || material == null) return;
+            if (cmd == null || mesh == null || material == null) return;
 
             ApplyAfterNvgProperties(material);
 
             if (_reticleSource == ReticleSource.Mesh && Settings.MeshReticleMinimumStrokeEnabled.Value)
-                DrawMeshReticleWithMinimumStroke(mesh, material);
+                DrawMeshReticleWithMinimumStroke(cmd, mesh, material);
             else
-                DrawReticleMesh(mesh, material, _reticleMatrix);
+                DrawReticleMesh(cmd, mesh, material, _reticleMatrix);
         }
 
-        private static void DrawMeshReticleWithMinimumStroke(Mesh mesh, Material material)
+        private static void DrawMeshReticleWithMinimumStroke(CommandBuffer cmd, Mesh mesh, Material material)
         {
             float minimumPixels = Settings.MeshReticleMinimumStrokePixels.Value;
             if (minimumPixels <= 0f || _reticlePixelSize.x <= 0f || _reticlePixelSize.y <= 0f)
             {
-                DrawReticleMesh(mesh, material, _reticleMatrix);
+                DrawReticleMesh(cmd, mesh, material, _reticleMatrix);
                 return;
             }
 
             float pixelRadius = Mathf.Clamp((minimumPixels - 1f) * 0.5f, 0f, 1.5f);
             if (pixelRadius > 0f)
             {
-                DrawReticleMesh(mesh, material, OffsetReticleMatrix(-_reticlePixelSize.x * pixelRadius, 0f));
-                DrawReticleMesh(mesh, material, OffsetReticleMatrix( _reticlePixelSize.x * pixelRadius, 0f));
-                DrawReticleMesh(mesh, material, OffsetReticleMatrix(0f, -_reticlePixelSize.y * pixelRadius));
-                DrawReticleMesh(mesh, material, OffsetReticleMatrix(0f,  _reticlePixelSize.y * pixelRadius));
+                DrawReticleMesh(cmd, mesh, material, OffsetReticleMatrix(-_reticlePixelSize.x * pixelRadius, 0f));
+                DrawReticleMesh(cmd, mesh, material, OffsetReticleMatrix( _reticlePixelSize.x * pixelRadius, 0f));
+                DrawReticleMesh(cmd, mesh, material, OffsetReticleMatrix(0f, -_reticlePixelSize.y * pixelRadius));
+                DrawReticleMesh(cmd, mesh, material, OffsetReticleMatrix(0f,  _reticlePixelSize.y * pixelRadius));
             }
 
-            DrawReticleMesh(mesh, material, _reticleMatrix);
+            DrawReticleMesh(cmd, mesh, material, _reticleMatrix);
         }
 
-        private static void DrawReticleMesh(Mesh mesh, Material material, Matrix4x4 matrix)
+        private static void DrawReticleMesh(CommandBuffer cmd, Mesh mesh, Material material, Matrix4x4 matrix)
         {
             int subMeshCount = Mathf.Max(1, mesh.subMeshCount);
             for (int subMesh = 0; subMesh < subMeshCount; subMesh++)
-                _cmdBuffer.DrawMesh(mesh, matrix, material, subMesh, -1);
+                cmd.DrawMesh(mesh, matrix, material, subMesh, -1);
         }
 
         private static Matrix4x4 OffsetReticleMatrix(float clipX, float clipY)
@@ -1035,6 +1054,15 @@ namespace PiPDisabler
         /// </summary>
         private static Rect GetSceneViewport(Camera cam)
         {
+            var ssaa = cam != null ? cam.GetComponent<SSAA>() : null;
+            if (ssaa != null)
+            {
+                int outputWidth = ssaa.GetOutputWidth();
+                int outputHeight = ssaa.GetOutputHeight();
+                if (outputWidth > 0 && outputHeight > 0)
+                    return new Rect(0f, 0f, outputWidth, outputHeight);
+            }
+
             return new Rect(0f, 0f,
                 Mathf.Max(1f, cam.pixelWidth),
                 Mathf.Max(1f, cam.pixelHeight));

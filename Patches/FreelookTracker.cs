@@ -170,9 +170,6 @@ namespace PiPDisabler
                 ReticleRenderer.SetLensMaskEntries(LensTransparency.CollectLensMaskEntries(os));
 
                 var occluderRenderers = LensTransparency.CollectHousingRenderers(os);
-                if (Settings.StencilIncludeWeaponMeshes.Value)
-                    occluderRenderers.AddRange(
-                        LensTransparency.CollectWeaponRenderers(os, occluderRenderers));
                 ReticleRenderer.SetOccluderMaskRenderers(occluderRenderers);
 
                 MeshSurgeryManager.ApplyForOptic(os);

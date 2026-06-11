@@ -47,6 +47,7 @@ namespace PiPDisabler
         private static ScopeMeshSurgerySettingsFile _file = new ScopeMeshSurgerySettingsFile();
         private static bool _loaded;
         private static string _activeScopeKey;
+        private static bool _syncingCustomConfig;
 
         private static string FilePath => Path.Combine(GetPluginRootDirectory(), "custom_mesh_surgery_settings.json");
 
@@ -95,9 +96,9 @@ namespace PiPDisabler
             maxMagnificationScale = entry.WeaponScaleMaxMagnification * multiplier;
             return true;
         }
-        internal static float GetVignetteOpacity() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteOpacity ?? 0f, Settings.VignetteOpacity.Value);
-        internal static float GetVignetteRadius() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteRadius ?? 0f, Settings.VignetteRadius.Value);
-        internal static float GetVignetteSoftness() => GetPositiveOrDefault(ActiveScopeOverride?.VignetteSoftness ?? 0f, Settings.VignetteSoftness.Value);
+        internal static float GetVignetteOpacity() => GetPositiveOrDefault(GetLiveVignetteValue(Settings.CustomVignetteOpacity.Value, ActiveScopeOverride?.VignetteOpacity ?? 0f), Settings.VignetteOpacity.Value);
+        internal static float GetVignetteRadius() => GetPositiveOrDefault(GetLiveVignetteValue(Settings.CustomVignetteRadius.Value, ActiveScopeOverride?.VignetteRadius ?? 0f), Settings.VignetteRadius.Value);
+        internal static float GetVignetteSoftness() => GetPositiveOrDefault(GetLiveVignetteValue(Settings.CustomVignetteSoftness.Value, ActiveScopeOverride?.VignetteSoftness ?? 0f), Settings.VignetteSoftness.Value);
         internal static float GetVisualRecoilCompensation()
         {
             var entry = ActiveScopeOverride;
@@ -122,10 +123,18 @@ namespace PiPDisabler
         private static void SyncCustomConfigFromOverride()
         {
             var entry = GetActiveOverride();
-            if (entry == null) return;
 
             try
             {
+                _syncingCustomConfig = true;
+                if (entry == null)
+                {
+                    Settings.CustomVignetteOpacity.Value = 0f;
+                    Settings.CustomVignetteRadius.Value = 0f;
+                    Settings.CustomVignetteSoftness.Value = 0f;
+                    return;
+                }
+
                 Settings.CustomPlaneOffsetMeters.Value = entry.PlaneOffsetMeters;
                 Settings.CustomPlane1Radius.Value = entry.Plane1Radius;
                 Settings.CustomPlane1OffsetMeters.Value = entry.Plane1OffsetMeters;
@@ -155,6 +164,10 @@ namespace PiPDisabler
             catch (Exception ex)
             {
                 PiPDisablerPlugin.DebugLogInfo($"[CustomMeshSettings] Failed to sync Custom config entries from override: {ex.Message}");
+            }
+            finally
+            {
+                _syncingCustomConfig = false;
             }
         }
 
@@ -235,6 +248,20 @@ namespace PiPDisabler
             return true;
         }
 
+        internal static void SaveActiveScopeVisualSettings()
+        {
+            if (_syncingCustomConfig || string.IsNullOrWhiteSpace(_activeScopeKey))
+                return;
+
+            EnsureLoaded();
+
+            var target = GetOrCreateEntry(_activeScopeKey);
+            target.VignetteOpacity = Settings.CustomVignetteOpacity.Value;
+            target.VignetteRadius = Settings.CustomVignetteRadius.Value;
+            target.VignetteSoftness = Settings.CustomVignetteSoftness.Value;
+            WriteToDisk();
+        }
+
 
         internal static bool DeleteCustomSettingsForScope(string scopeKey)
         {
@@ -258,6 +285,51 @@ namespace PiPDisabler
             }
 
             return false;
+        }
+
+        private static ScopeMeshSurgerySettingsEntry GetOrCreateEntry(string scopeKey)
+        {
+            for (int i = 0; i < _file.Entries.Count; i++)
+            {
+                var candidate = _file.Entries[i];
+                if (candidate == null || string.IsNullOrWhiteSpace(candidate.ScopeKey))
+                    continue;
+                if (string.Equals(candidate.ScopeKey, scopeKey, StringComparison.OrdinalIgnoreCase))
+                    return candidate;
+            }
+
+            var target = new ScopeMeshSurgerySettingsEntry { ScopeKey = scopeKey };
+            CopyGlobalSettingsTo(target);
+            _file.Entries.Add(target);
+            return target;
+        }
+
+        private static void CopyGlobalSettingsTo(ScopeMeshSurgerySettingsEntry target)
+        {
+            target.PlaneOffsetMeters = Settings.PlaneOffsetMeters.Value;
+            target.Plane1Radius = Settings.Plane1Radius.Value;
+            target.Plane1OffsetMeters = Settings.Plane1OffsetMeters.Value;
+            target.Plane2Position = Settings.Plane2Position.Value;
+            target.Plane2Radius = Settings.Plane2Radius.Value;
+            target.Plane3Position = Settings.Plane3Position.Value;
+            target.Plane3Radius = Settings.Plane3Radius.Value;
+            target.Plane4Position = Settings.Plane4Position.Value;
+            target.Plane4Radius = Settings.Plane4Radius.Value;
+            target.CutStartOffset = Settings.CutStartOffset.Value;
+            target.CutLength = Settings.CutLength.Value;
+            target.NearPreserveDepth = Settings.NearPreserveDepth.Value;
+            target.ReticleBaseSize = Settings.ReticleBaseSize.Value;
+            target.ReticleSizeMultiplier = 1f;
+            target.MeshReticleMinScale = Settings.MeshReticleMinScale.Value;
+            target.MeshReticleMaxScale = Settings.MeshReticleMaxScale.Value;
+            target.WeaponScaleMinMagnification = 0f;
+            target.WeaponScaleMaxMagnification = 0f;
+            target.WeaponScaleMultiplier = 1f;
+            target.VisualRecoilCompensation = 0f;
+            target.VignetteOpacity = Settings.CustomVignetteOpacity.Value;
+            target.VignetteRadius = Settings.CustomVignetteRadius.Value;
+            target.VignetteSoftness = Settings.CustomVignetteSoftness.Value;
+            target.ExpandSearchToWeaponRoot = Settings.ExpandSearchToWeaponRoot.Value;
         }
 
         private static void EnsureLoaded()
@@ -299,6 +371,11 @@ namespace PiPDisabler
         private static float GetPositiveOrDefault(float value, float defaultValue)
         {
             return value > 0f ? value : defaultValue;
+        }
+
+        private static float GetLiveVignetteValue(float liveValue, float savedValue)
+        {
+            return string.IsNullOrWhiteSpace(_activeScopeKey) ? savedValue : liveValue;
         }
 
         private static string GetPluginRootDirectory()

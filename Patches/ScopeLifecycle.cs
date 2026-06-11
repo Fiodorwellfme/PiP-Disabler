@@ -35,6 +35,11 @@ namespace PiPDisabler
             _postExitRestoreFov > 0.5f &&
             Time.realtimeSinceStartup < _postExitRestoreExpiry;
         public static float PostExitRestoreFov => _postExitRestoreFov;
+        public static void ClearPostExitRestore()
+        {
+            _postExitRestoreFov = 0f;
+            _postExitRestoreExpiry = 0f;
+        }
 
         private static readonly HashSet<string> _scopeBlacklistNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static string _scopeBlacklistRawCached;
@@ -915,9 +920,6 @@ namespace PiPDisabler
             var lensMaskEntries = CollectStencilEntries(os);
             ReticleRenderer.SetLensMaskEntries(lensMaskEntries);
             var occluderRenderers = LensTransparency.CollectHousingRenderers(os);
-            if (Settings.StencilIncludeWeaponMeshes.Value)
-                occluderRenderers.AddRange(
-                    LensTransparency.CollectWeaponRenderers(os, occluderRenderers));
             ReticleRenderer.SetOccluderMaskRenderers(occluderRenderers);
 
             // 3. Get magnification for reticle scaling and zoom
@@ -1051,7 +1053,7 @@ namespace PiPDisabler
                 if (_modBypassedForCurrentScope) return;
                 if (!CameraClass.Exist) return;
 
-                float zoomBaseFov = FovController.ZoomBaselineFov;
+                float zoomBaseFov = FovController.MagnificationBaselineFov;
                 float zoomedFov = FovController.ComputeZoomedFov();
                 bool smoothScopeFov = FovController.IsSmoothScopeFovActive();
 
