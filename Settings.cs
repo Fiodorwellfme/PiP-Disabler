@@ -166,7 +166,7 @@ namespace PiPDisabler
                     "When pressed while scoped, add/remove the current scope to the whitelist.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
-            ConfigEntries.Add(FOVFixBehaviour = config.Bind("General", "FOV Fix Behaviour", true,
+            ConfigEntries.Add(FOVFixBehaviour = config.Bind("General", "FOV Fix Behaviour", false,
                 new ConfigDescription(
                     "If this is enabled, 1x FOV will be set to the game settings FOV",
                     null,
@@ -564,7 +564,7 @@ namespace PiPDisabler
                     "Maximum opacity of the scope shadow overlay.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(OutsideScopeBlurEnabled = config.Bind("General", "Depth of field", false,
+            ConfigEntries.Add(OutsideScopeBlurEnabled = config.Bind("General", "Depth of field", true,
                 new ConfigDescription(
                     "Apply a masked dual Kawase blur outside the visible scope lens.",
                     null,
