@@ -33,8 +33,8 @@ namespace PiPDisabler.Patches
             float fov = 0f;
             try
             {
-                if (CameraClass.Exist && CameraClass.Instance != null)
-                    fov = CameraClass.Instance.Fov;
+                if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
+                    fov = EFT.CameraControl.CameraManager.Instance.Fov;
             }
             catch { }
 
@@ -52,8 +52,8 @@ namespace PiPDisabler.Patches
         {
             try
             {
-                if (CameraClass.Exist && CameraClass.Instance != null)
-                    _controller = CameraClass.Instance.CameraLodBiasController_0;
+                if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
+                    _controller = EFT.CameraControl.CameraManager.Instance._cameraLodBiasController;
             }
             catch { }
 

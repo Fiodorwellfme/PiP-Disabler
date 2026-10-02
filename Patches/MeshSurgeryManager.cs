@@ -580,7 +580,7 @@ namespace PiPDisabler
             _inventoryEventSource = null;
         }
 
-        private static void OnItemAdded(GEventArgs2 args)
+        private static void OnItemAdded(EFT.InventoryLogic.AddItemEventArgs args)
         {
             if (args == null || args.Status != CommandStatus.Succeed)
                 return;
@@ -588,12 +588,12 @@ namespace PiPDisabler
             MarkCacheDirtyIfMeaningful(args.Item, args.To);
         }
 
-        private static void OnItemRemoved(GEventArgs3 args)
+        private static void OnItemRemoved(EFT.InventoryLogic.AddItemEventArgs args)
         {
             if (args == null || args.Status != CommandStatus.Succeed)
                 return;
 
-            MarkCacheDirtyIfMeaningful(args.Item, args.From);
+            MarkCacheDirtyIfMeaningful(args.Item, args.To);
         }
 
         private static void MarkCacheDirtyIfMeaningful(Item item, ItemAddress address)
@@ -725,10 +725,10 @@ namespace PiPDisabler
                 slot.ID == EWeaponModType.mod_magazine.ToString())
                 return true;
 
-            if (item is MagazineItemClass)
+            if (item is EFT.InventoryLogic.Magazine)
                 return true;
 
-            if (item is AmmoItemClass)
+            if (item is EFT.InventoryLogic.Ammo)
                 return true;
 
             return false;

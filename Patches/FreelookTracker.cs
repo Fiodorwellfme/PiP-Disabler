@@ -118,8 +118,8 @@ namespace PiPDisabler
             // Snapshot the current camera FOV so we can restore it precisely on exit.
             try
             {
-                if (CameraClass.Exist && CameraClass.Instance != null)
-                    _fovBeforeFreelook = CameraClass.Instance.Fov;
+                if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
+                    _fovBeforeFreelook = EFT.CameraControl.CameraManager.Instance.Fov;
                 else if (_lastAppliedScopedFov > 0.5f)
                     _fovBeforeFreelook = _lastAppliedScopedFov;
             }
@@ -156,8 +156,8 @@ namespace PiPDisabler
             {
                 try
                 {
-                    if (CameraClass.Exist && CameraClass.Instance != null)
-                        CameraClass.Instance.SetFov(fovToRestore,
+                    if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
+                        EFT.CameraControl.CameraManager.Instance.SetFov(fovToRestore,
                             Settings.FovAnimationDuration.Value, false);
                 }
                 catch { }
@@ -189,7 +189,7 @@ namespace PiPDisabler
         /// The signature matches CameraClass.SetFov(float, float, bool) exactly
         /// so the transpiler can do a simple callvirt→call swap.
         /// </summary>
-        public static void LookSetFovInterceptor(CameraClass cameraClass, float targetFov, float duration, bool force)
+        public static void LookSetFovInterceptor(EFT.CameraControl.CameraManager cameraClass, float targetFov, float duration, bool force)
         {
             if (cameraClass == null)
                 return;
@@ -261,7 +261,7 @@ namespace PiPDisabler
             [PatchTranspiler]
             private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
             {
-                var setFov = AccessTools.Method(typeof(CameraClass), nameof(CameraClass.SetFov));
+                var setFov = AccessTools.Method(typeof(EFT.CameraControl.CameraManager), nameof(EFT.CameraControl.CameraManager.SetFov));
                 var replacement = AccessTools.Method(typeof(FreelookTracker),
                     nameof(FreelookTracker.LookSetFovInterceptor));
 

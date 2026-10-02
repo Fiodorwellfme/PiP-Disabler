@@ -19,12 +19,12 @@ namespace PiPDisabler.Patches
             return !ScopeLifecycle.ShouldBypassForCurrentOptic(opticSight);
         }
 
-        public static void EnsureRenderTextureForVanilla(GClass3687 manager)
+        public static void EnsureRenderTextureForVanilla(EFT.CameraControl.OpticCameraManager manager)
         {
             if (manager == null || manager.Camera == null)
                 return;
 
-            if (manager.RenderTexture_0 != null && manager.Camera.targetTexture != null)
+            if (manager._renderTexture != null && manager.Camera.targetTexture != null)
                 return;
 
             try
@@ -40,10 +40,10 @@ namespace PiPDisabler.Patches
 
         public static void RestoreVanillaOpticState(OpticSight opticSight)
         {
-            if (opticSight == null || !CameraClass.Exist || CameraClass.Instance == null)
+            if (opticSight == null || !EFT.CameraControl.CameraManager.Exist || EFT.CameraControl.CameraManager.Instance == null)
                 return;
 
-            var manager = CameraClass.Instance.OpticCameraManager;
+            var manager = EFT.CameraControl.CameraManager.Instance.OpticCameraManager;
             if (manager == null)
                 return;
 
@@ -54,7 +54,7 @@ namespace PiPDisabler.Patches
                 if (opticSight.CameraData != null)
                 {
                     manager.OpticRetrice?.SetOpticSight(opticSight);
-                    manager.OpticComponentUpdater_0?.CopyComponentFromOptic(opticSight);
+                    manager._updater?.CopyComponentFromOptic(opticSight);
                 }
 
                 global::PiPDisabler.PiPDisabler.ForceLensFade(opticSight, false);
@@ -66,7 +66,7 @@ namespace PiPDisabler.Patches
                 }
 
                 EnsureRenderTextureForVanilla(manager);
-                CameraClass.Instance.method_10();
+                EFT.CameraControl.CameraManager.Instance.method_10();
             }
             catch (Exception ex)
             {
@@ -75,7 +75,7 @@ namespace PiPDisabler.Patches
             }
         }
 
-        public static void ReleaseRenderTexture(GClass3687 manager)
+        public static void ReleaseRenderTexture(EFT.CameraControl.OpticCameraManager manager)
         {
             if (manager == null)
                 return;
@@ -85,14 +85,14 @@ namespace PiPDisabler.Patches
                 if (manager.Camera != null)
                     manager.Camera.targetTexture = null;
 
-                if (manager.RenderTexture_0 != null)
+                if (manager._renderTexture != null)
                 {
-                    manager.RenderTexture_0.Release();
-                    UnityEngine.Object.Destroy(manager.RenderTexture_0);
-                    manager.RenderTexture_0 = null;
+                    manager._renderTexture.Release();
+                    UnityEngine.Object.Destroy(manager._renderTexture);
+                    manager._renderTexture = null;
                 }
 
-                Shader.SetGlobalTexture(GClass3687.Int_0, null);
+                Shader.SetGlobalTexture(EFT.CameraControl.OpticCameraManager._camTexId, null);
             }
             catch (Exception ex)
             {
@@ -108,10 +108,10 @@ namespace PiPDisabler.Patches
     internal sealed class OpticCameraManagerEnableOptic_NoPipPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(GClass3687), "method_2");
+            => AccessTools.Method(typeof(EFT.CameraControl.OpticCameraManager), "method_2");
 
         [PatchPrefix]
-        private static bool Prefix(GClass3687 __instance, OpticSight opticSight)
+        private static bool Prefix(EFT.CameraControl.OpticCameraManager __instance, OpticSight opticSight)
         {
             if (__instance == null)
                 return true;
@@ -127,8 +127,8 @@ namespace PiPDisabler.Patches
                 __instance.CurrentOpticSight = null;
                 __instance.OpticRetrice?.SetOpticSight(null);
 
-                if (opticSight?.CameraData != null && __instance.OpticComponentUpdater_0 != null)
-                    __instance.OpticComponentUpdater_0.CopyComponentFromOptic(opticSight);
+                if (opticSight?.CameraData != null && __instance._updater != null)
+                    __instance._updater.CopyComponentFromOptic(opticSight);
 
                 if (__instance.Camera != null)
                     __instance.Camera.gameObject.SetActive(true);
@@ -151,10 +151,10 @@ namespace PiPDisabler.Patches
     internal sealed class OpticCameraManagerSetResolution_NoPipPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(GClass3687), nameof(GClass3687.SetResolution));
+            => AccessTools.Method(typeof(EFT.CameraControl.OpticCameraManager), nameof(EFT.CameraControl.OpticCameraManager.SetResolution));
 
         [PatchPostfix]
-        private static void Postfix(GClass3687 __instance)
+        private static void Postfix(EFT.CameraControl.OpticCameraManager __instance)
         {
             if (VanillaOpticSuppression.ShouldKeepSetResolution())
                 return;
@@ -166,7 +166,7 @@ namespace PiPDisabler.Patches
     internal sealed class CameraClassOnOpticEnabled_NoPipPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(CameraClass), "method_10");
+            => AccessTools.Method(typeof(EFT.CameraControl.CameraManager), "method_10");
 
         [PatchPrefix]
         private static bool Prefix()
@@ -174,7 +174,7 @@ namespace PiPDisabler.Patches
             if (!Settings.ModEnabled.Value || ScopeLifecycle.IsCurrentOrPendingOpticBypassed())
                 return true;
 
-            var currentOptic = CameraClass.Instance?.OpticCameraManager?.CurrentOpticSight;
+            var currentOptic = EFT.CameraControl.CameraManager.Instance?.OpticCameraManager?.CurrentOpticSight;
             if (currentOptic != null && ScopeLifecycle.ShouldBypassForCurrentOptic(currentOptic))
                 return true;
 

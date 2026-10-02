@@ -2,10 +2,12 @@ using Bsg.GameSettings;
 using Comfort.Common;
 using System.Reflection;
 using EFT;
+using EFT.Settings;
 using EFT.CameraControl;
 using HarmonyLib;
 using SPT.Reflection.Patching;
 using UnityEngine;
+using EFT.Animations;
 
 namespace PiPDisabler.Patches
 {
@@ -28,13 +30,27 @@ namespace PiPDisabler.Patches
         public static void UpdateScale()
         {
             if (!_isActive) return;
+            float scale = GetManualScale();
+            if (Settings.FOVFixBehaviour.Value && CameraManager.Instance.Fov > 35)
+            {
+                // float minMagnificationScale = PerScopeMeshSurgerySettings.ActiveScopeOverride.WeaponScaleMinMagnification;
+                float t = Mathf.InverseLerp(35f, 75f, CameraManager.Instance.Fov);
+                scale = Mathf.Lerp(1, 0.65f, t);
+            }
+            PiPDisablerPlugin.DebugLogInfo($"The scale target is {scale}");
+            if (Settings.FOVFixBehaviour.Value && CameraManager.Instance.Fov == Singleton<SettingsManager>.Instance.Game.Settings.FieldOfView.Value) 
+            {
+                PiPDisablerPlugin.DebugLogInfo($"Scale wasn't updated because at 1x and FOVFixBehaviour is on. Current FOV is {CameraManager.Instance.Fov}");
+                return;
+            }
             var player = GetMainPlayer();
             if (player == null) return;
 
-            float scale = GetManualScale();
+            
             player.RibcageScaleCurrentTarget = scale;
             player.RibcageScaleCurrent = scale;
             LogScale(scale);
+            PiPDisablerPlugin.DebugLogInfo($"Scale was updated, it is now {scale}");
         }
 
         public static void RestoreScale()
@@ -119,10 +135,10 @@ namespace PiPDisabler.Patches
 
         private static float GetCurrentFovMagnification()
         {
-            if (!CameraClass.Exist)
+            if (!EFT.CameraControl.CameraManager.Exist)
                 return FovController.GetVisualMagnification();
 
-            float currentFov = Mathf.Max(0.1f, CameraClass.Instance.Fov);
+            float currentFov = Mathf.Max(0.1f, EFT.CameraControl.CameraManager.Instance.Fov);
             float baseFovRad = FovController.MagnificationBaselineFov * Mathf.Deg2Rad;
             float currentFovRad = currentFov * Mathf.Deg2Rad;
             return Mathf.Max(1f, Mathf.Tan(baseFovRad * 0.5f) / Mathf.Tan(currentFovRad * 0.5f));
@@ -139,7 +155,7 @@ namespace PiPDisabler.Patches
 
         private static int GetVanillaSettingsFov()
         {
-            return (int)Singleton<SharedGameSettingsClass>.Instance.Game.Settings.FieldOfView;
+            return (int)Singleton<EFT.Settings.SettingsManager>.Instance.Game.Settings.FieldOfView;
         }
 
         [PatchPostfix]
@@ -150,7 +166,11 @@ namespace PiPDisabler.Patches
             if (!ScopeLifecycle.IsScoped) return;
             if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
             if (!_isActive) return;
-
+            if (Settings.FOVFixBehaviour.Value && CameraManager.Instance.Fov == Singleton<SettingsManager>.Instance.Game.Settings.FieldOfView.Value) 
+            {
+                PiPDisablerPlugin.DebugLogInfo("The scale postfix didn't change the scale because at 1x and FOVFixBehaviour is on");
+                return;
+            }
             float scale = GetManualScale();
             __instance.RibcageScaleCurrentTarget = scale;
             __instance.RibcageScaleCurrent = scale;

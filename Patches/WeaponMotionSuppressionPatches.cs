@@ -39,7 +39,7 @@ namespace PiPDisabler.Patches
                 return;
 
             WeaponSoundPlayer soundPlayer = null;
-            foreach (IActorEvents eventsConsumer in firearmsAnimator.EventsConsumers)
+            foreach (IEventsConsumer eventsConsumer in firearmsAnimator._eventsConsumers)
             {
                 soundPlayer = eventsConsumer as WeaponSoundPlayer;
                 if (soundPlayer != null)
@@ -63,7 +63,7 @@ namespace PiPDisabler.Patches
             WeaponMotionSuppressionState.ShouldApply(Settings.SuppressMagnificationSwitchMovement.Value);
 
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(Player.FirearmController), "SetScopeMode", new[] { typeof(FirearmScopeStateStruct[]) });
+            => AccessTools.Method(typeof(Player.FirearmController), "SetScopeMode", new[] { typeof(EFT.ScopeState[]) });
 
         [PatchPrefix]
         private static void Prefix()

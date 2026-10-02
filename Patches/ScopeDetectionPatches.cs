@@ -138,7 +138,7 @@ namespace PiPDisabler.Patches
         private static readonly FieldInfo MaskField =
             AccessTools.Field(typeof(TacticalRangeFinderController), "_mask");
         private static readonly MethodInfo SetMonospaceTextMethod =
-            AccessTools.Method(typeof(GClass1673), "SetMonospaceText");
+            AccessTools.Method(typeof(EFT.StringExtensions), "SetMonospaceText");
 
         protected override MethodBase GetTargetMethod()
             => AccessTools.Method(typeof(TacticalRangeFinderController), "method_0");
@@ -333,7 +333,7 @@ namespace PiPDisabler.Patches
             => AccessTools.Method(typeof(Player), "OnSetInHands");
 
         [PatchPostfix]
-        private static void Postfix(Player __instance, GEventArgs9 eventArgs)
+        private static void Postfix(Player __instance, EFT.InventoryLogic.SetInHandsEventArgs eventArgs)
         {
             if (!Settings.ModEnabled.Value) return;
             if (__instance == null || eventArgs == null || eventArgs.Status != CommandStatus.Succeed) return;

@@ -147,9 +147,9 @@ namespace PiPDisabler
         {
             try
             {
-                if (CameraClass.Exist && CameraClass.Instance != null)
+                if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
                 {
-                    var mgr = CameraClass.Instance.OpticCameraManager;
+                    var mgr = EFT.CameraControl.CameraManager.Instance.OpticCameraManager;
                     mgr.CurrentOpticSight = null;
                     mgr.OpticRetrice.SetOpticSight(null);
                     mgr.OpticRetrice.Clear();
@@ -196,10 +196,10 @@ namespace PiPDisabler
 
             try
             {
-                if (!CameraClass.Exist || CameraClass.Instance == null)
+                if (!EFT.CameraControl.CameraManager.Exist || EFT.CameraControl.CameraManager.Instance == null)
                     return;
 
-                var cam = CameraClass.Instance.OpticCameraManager?.Camera;
+                var cam = EFT.CameraControl.CameraManager.Instance.OpticCameraManager?.Camera;
                 if (cam == null)
                     return;
 
@@ -347,8 +347,8 @@ namespace PiPDisabler
         private static bool ShouldAllowVanillaPiP()
         {
             return !Settings.ModEnabled.Value
-                || ScopeLifecycle.IsCurrentOrPendingOpticBypassed()
-                || ScopeLifecycle.IsLastOpticNameBypassed();
+                || ScopeLifecycle.IsCurrentOrPendingOpticBypassed();
+                // || ScopeLifecycle.IsLastOpticNameBypassed();
         }
 
         internal sealed class OpticComponentUpdaterCopyComponentFromOptic_DisablePiP : ModulePatch

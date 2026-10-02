@@ -51,7 +51,7 @@ namespace PiPDisabler
 
         private static string FilePath => Path.Combine(GetPluginRootDirectory(), "custom_mesh_surgery_settings.json");
 
-        private static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => GetActiveOverride();
+        public static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => GetActiveOverride();
 
         internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : Settings.PlaneOffsetMeters.Value;
         internal static float GetPlane1Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1Radius : Settings.Plane1Radius.Value;
