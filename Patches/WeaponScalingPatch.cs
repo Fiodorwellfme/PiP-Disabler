@@ -23,9 +23,16 @@ namespace PiPDisabler.Patches
         }
         public static void CaptureBaseState()
         {
+            CameraManager.Instance.OnFovChanged -= OnFovChanged;
             var os = ScopeLifecycle.ActiveOptic;
             if (os == null) { _isActive = false; return; }
             _isActive = true;
+            CameraManager.Instance.OnFovChanged += OnFovChanged;
+        }
+
+        private static void OnFovChanged(float currentFov)
+        {
+            if (_isActive) UpdateScale();
         }
         public static void UpdateScale()
         {
@@ -55,6 +62,7 @@ namespace PiPDisabler.Patches
 
         public static void RestoreScale()
         {
+            CameraManager.Instance.OnFovChanged -= OnFovChanged;
             _isActive = false;
             RestoreVanillaScale();
         }
