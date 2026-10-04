@@ -15,9 +15,9 @@ namespace PiPDisabler
         {
             try
             {
-                if (CameraClass.Exist)
+                if (EFT.CameraControl.CameraManager.Exist)
                 {
-                    var cam = CameraClass.Instance.Camera;
+                    var cam = EFT.CameraControl.CameraManager.Instance.Camera;
                     if (cam != null) return cam;
                 }
             }

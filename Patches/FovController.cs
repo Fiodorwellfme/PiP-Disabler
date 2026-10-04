@@ -1,6 +1,8 @@
 using System;
 using System.Reflection;
 using EFT.CameraControl;
+using EFT.Settings;
+using Comfort.Common;
 using EFT.InventoryLogic;
 using HarmonyLib;
 using UnityEngine;
@@ -20,19 +22,16 @@ namespace PiPDisabler
         private static bool _smvcSearched;
 
 
-        private static float _lastAppliedFov;
+        public static float _lastAppliedFov;
         public const float FovChangeThreshold = 0.05f; // degrees
 
         public static float MagnificationBaselineFov
         {
             get
             {
-                if (!Settings.FOVFixBehaviour.Value)
+                //if (!Settings.FOVFixBehaviour.Value)
                     return Settings.BaselineFOV.Value;
-
-                var player = Helpers.GetLocalPlayer();
-                var pwa = player?.ProceduralWeaponAnimation;
-                return pwa.Single_2;
+                //return Singleton<SettingsManager>.Instance.Game.Settings.FieldOfView.Value;
             }
         }
 
@@ -137,10 +136,10 @@ namespace PiPDisabler
             if (targetMag <= 0.1f)
                 return 1f;
 
-            if (!CameraClass.Exist || CameraClass.Instance == null)
+            if (!EFT.CameraControl.CameraManager.Exist || EFT.CameraControl.CameraManager.Instance == null)
                 return targetMag;
 
-            float currentFov = CameraClass.Instance.Fov;
+            float currentFov = EFT.CameraControl.CameraManager.Instance.Fov;
             if (currentFov <= 0.1f)
                 return targetMag;
 
@@ -229,12 +228,12 @@ namespace PiPDisabler
                     // FOV Fix behaviour
                     if (Settings.FOVFixBehaviour.Value)
                     {
-                        return pwa.Single_2;
+                        return Singleton<SettingsManager>.Instance.Game.Settings.FieldOfView.Value;
                     }
 
                     // Single-entry 1x mode uses vanilla ADS offset behavior.
                     if (modeCount == 1 && pwa != null)
-                        return Mathf.Max(1f, pwa.Single_2 - 15f);
+                        return Mathf.Max(1f, pwa. FieldOfView - 15f);
 
                     // 1x inside a multi-mode stack stays fixed at optic FOV.
                     return 35f;
@@ -244,7 +243,7 @@ namespace PiPDisabler
             if (pwa == null)
                 return MagnificationBaselineFov;
 
-            return Mathf.Max(1f, pwa.Single_2);
+            return Mathf.Max(1f, pwa.FieldOfView);
         }
 
         private static bool TryGetCurrentTemplateZoomEntry(OpticSight os, out float zoom, out int modeCount)
@@ -259,7 +258,7 @@ namespace PiPDisabler
             var state = GetCurrentScopeState(os);
             if (state.index < 0 || state.mode < 0) return false;
 
-            var zooms = sc.Template?.Zooms;
+            var zooms = sc._template?.Zooms;
             if (zooms == null || state.index >= zooms.Length) return false;
 
             var modeZooms = zooms[state.index];

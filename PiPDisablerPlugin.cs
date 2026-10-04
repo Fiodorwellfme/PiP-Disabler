@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace PiPDisabler
 {
-    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "1.5.0")]
+    [BepInPlugin("com.fiodor.pipdisabler", "PiP-Disabler", "2.0.0")]
     [BepInDependency("com.fontaine.fovfix", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.Shibatsu.DynamicExternalResolution", BepInDependency.DependencyFlags.SoftDependency)]
 
@@ -43,7 +43,7 @@ namespace PiPDisabler
             Patches.Patcher.Enable();
             ScopeLifecycle.Init();
             FreelookTracker.Init();
-            Settings.ModEnabled.SettingChanged += OnModEnabledChanged;
+            // Settings.ModEnabled.SettingChanged += OnModEnabledChanged;
             Settings.ScopeBlacklistNames.SettingChanged += OnScopeListSettingsChanged;
             Settings.ScopeWhitelistNames.SettingChanged += OnWhitelistSettingsChanged;
         }
@@ -59,25 +59,27 @@ namespace PiPDisabler
             Patches.VisualRecoilCompensationPatch.Disable();
             PiPDisabler.RestoreAllCameras();
 
-            Settings.ModEnabled.SettingChanged -= OnModEnabledChanged;
+            // Settings.ModEnabled.SettingChanged -= OnModEnabledChanged;
             Settings.ScopeBlacklistNames.SettingChanged -= OnScopeListSettingsChanged;
             Settings.ScopeWhitelistNames.SettingChanged -= OnWhitelistSettingsChanged;
         }
 
-        private static void OnModEnabledChanged(object sender, EventArgs e)
-        {
-            if (!Settings.ModEnabled.Value)
-            {
-                ScopeLifecycle.ForceExit();
-                CameraSettingsManager.ForceRestore();
-                LensTransparency.FullRestoreAll();
-                PiPDisabler.RestoreAllCameras();
-            }
-            else
-            {
-                ScopeLifecycle.SyncState();
-            }
-        }
+        // private void OnModEnabledChanged(object sender, EventArgs e)
+        // {
+        //     if (!Settings.ModEnabled.Value)
+        //     {
+        //         DebugLogInfo("Mod disabled through hotkey");
+        //         ScopeLifecycle.ForceExit();
+        //         CameraSettingsManager.ForceRestore();
+        //         LensTransparency.FullRestoreAll();
+        //         PiPDisabler.RestoreAllCameras();
+        //     }
+        //     else
+        //     {
+
+        //         ScopeLifecycle.SyncState();
+        //     }
+        // }
 
         private static void OnWhitelistSettingsChanged(object sender, EventArgs e)
         {
@@ -86,7 +88,6 @@ namespace PiPDisabler
 
         private static void OnScopeListSettingsChanged(object sender, EventArgs e)
         {
-            if (!Settings.ModEnabled.Value) return;
             if (ScopeLifecycle.IsScoped)
             {
                 ScopeLifecycle.ForceExit();

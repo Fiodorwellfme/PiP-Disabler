@@ -17,7 +17,7 @@ namespace PiPDisabler.Patches
     {
         protected override MethodBase GetTargetMethod()
             => AccessTools.Method(typeof(ProceduralWeaponAnimation),
-                nameof(ProceduralWeaponAnimation.method_23));
+                nameof(ProceduralWeaponAnimation.OnAimOrPoseChanged));
 
         [PatchPrefix]
         private static void Prefix(ProceduralWeaponAnimation __instance)
@@ -35,7 +35,7 @@ namespace PiPDisabler.Patches
         [PatchTranspiler]
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
-            var setFov = AccessTools.Method(typeof(CameraClass), nameof(CameraClass.SetFov));
+            var setFov = AccessTools.Method(typeof(EFT.CameraControl.CameraManager), nameof(EFT.CameraControl.CameraManager.SetFov));
             var replacement = AccessTools.Method(typeof(PWAMethod23Patch), nameof(SetFovWithOverride));
 
             foreach (var code in instructions)
@@ -50,7 +50,7 @@ namespace PiPDisabler.Patches
             }
         }
 
-        private static void SetFovWithOverride(CameraClass cameraClass, float targetFov, float duration, bool force)
+        private static void SetFovWithOverride(EFT.CameraControl.CameraManager cameraClass, float targetFov, float duration, bool force)
         {
             var pwa = FovOverrideContext.CurrentPwa;
             if (cameraClass == null)
@@ -84,6 +84,7 @@ namespace PiPDisabler.Patches
                         FovController.TrackAppliedFov(zoomedFov);
                         FreelookTracker.CacheAppliedFov(zoomedFov);
                         cameraClass.SetFov(zoomedFov, duration, false);
+                        WeaponScalingPatch.UpdateScale();
                     }
                     return;
                 }

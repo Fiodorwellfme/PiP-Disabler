@@ -35,8 +35,6 @@ namespace PiPDisabler.Patches
 
         private static bool SetResolutionAimPrefix()
         {
-            if (!Settings.ModEnabled.Value)
-                return true;
 
             if (ScopeLifecycle.IsCurrentOrPendingOpticBypassed() || ScopeLifecycle.IsLastOpticNameBypassed())
             {

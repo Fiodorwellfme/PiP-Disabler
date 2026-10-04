@@ -76,8 +76,7 @@ namespace PiPDisabler.Patches
             player = null;
             pwa = null;
 
-            if (!Settings.ModEnabled.Value ||
-                !ScopeLifecycle.IsScoped ||
+            if (!ScopeLifecycle.IsScoped ||
                 ScopeLifecycle.IsModBypassedForCurrentScope ||
                 FreelookTracker.IsFreelooking)
             {

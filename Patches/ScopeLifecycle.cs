@@ -1,6 +1,8 @@
 using EFT;
 using EFT.Animations;
 using EFT.CameraControl;
+using Comfort.Common;
+using EFT.Settings;
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
@@ -608,7 +610,6 @@ namespace PiPDisabler
         {
             RefreshScopeAimTransformsForModeSwitch();
             if (!_isScoped) return;
-            if (!Settings.ModEnabled.Value) return;
 
             PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeLifecycle] SetScopeMode fired while scoped frame={Time.frameCount}");
@@ -669,6 +670,7 @@ namespace PiPDisabler
                 return true;
             }
 
+
             if (ShouldBypassByBlacklist(os))
             {
                 return true;
@@ -706,6 +708,11 @@ namespace PiPDisabler
 
         private static bool ShouldBypassByBlacklist(OpticSight os)
         {
+            if (!Settings.ModEnabled.Value)
+            {
+                return true; 
+            } 
+            
             RefreshScopeBlacklistCache();
             if (_scopeBlacklistNames.Count == 0)
                 return false;
@@ -1051,7 +1058,7 @@ namespace PiPDisabler
             try
             {
                 if (_modBypassedForCurrentScope) return;
-                if (!CameraClass.Exist) return;
+                if (!EFT.CameraControl.CameraManager.Exist) return;
 
                 float zoomBaseFov = FovController.MagnificationBaselineFov;
                 float zoomedFov = FovController.ComputeZoomedFov();
@@ -1069,7 +1076,8 @@ namespace PiPDisabler
                         return;
 
                     FovController.TrackAppliedFov(zoomedFov);
-                    CameraClass.Instance.SetFov(zoomedFov, duration, false);
+                    EFT.CameraControl.CameraManager.Instance.SetFov(zoomedFov, duration, false);
+                    Patches.WeaponScalingPatch.UpdateScale();
                     FreelookTracker.CacheAppliedFov(zoomedFov);
                     PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
@@ -1077,13 +1085,26 @@ namespace PiPDisabler
                 else if (isTransition && !smoothScopeFov && zoomedFov >= zoomBaseFov)
                 {
                     // High-to-low mode switch where new mode has no zoom:
+                    if (Settings.FOVFixBehaviour.Value) 
+                    {
+                        int baseFov = Singleton<SettingsManager>.Instance.Game.Settings.FieldOfView.Value;
+                        float duration_FOVFix = Settings.FovAnimationDuration.Value;
+                        FovController.TrackAppliedFov(baseFov);
+                        EFT.CameraControl.CameraManager.Instance.SetFov(baseFov, duration_FOVFix, false);
+                        Patches.WeaponScalingPatch.UpdateScale();
+                        FreelookTracker.CacheAppliedFov(baseFov);
+                    }
                     // restore to baseline with configured duration so both directions are consistent
-                    float duration = Settings.FovAnimationDuration.Value;
-                    FovController.TrackAppliedFov(zoomBaseFov);
-                    CameraClass.Instance.SetFov(zoomBaseFov, duration, false);
-                    FreelookTracker.CacheAppliedFov(zoomBaseFov);
-                    PiPDisablerPlugin.DebugLogInfo(
-                        $"[ScopeLifecycle] ApplyFov (restore baseline): {zoomBaseFov:F1}° dur={duration:F2}s");
+                    else if (!Settings.FOVFixBehaviour.Value)
+                    {
+                        float duration = Settings.FovAnimationDuration.Value;
+                        FovController.TrackAppliedFov(zoomBaseFov);
+                        EFT.CameraControl.CameraManager.Instance.SetFov(zoomBaseFov, duration, false);
+                        FreelookTracker.CacheAppliedFov(zoomBaseFov);
+                        Patches.WeaponScalingPatch.UpdateScale();
+                        PiPDisablerPlugin.DebugLogInfo(
+                            $"[ScopeLifecycle] ApplyFov (restore baseline): {zoomBaseFov:F1}° dur={duration:F2}s");
+                    }
                 }
             }
             catch (Exception ex)
@@ -1100,8 +1121,8 @@ namespace PiPDisabler
         {
             try
             {
-                if (!CameraClass.Exist) return;
-                var cc = CameraClass.Instance;
+                if (!EFT.CameraControl.CameraManager.Exist) return;
+                var cc = EFT.CameraControl.CameraManager.Instance;
                 if (cc == null) return;
 
                 var player = GetLocalPlayer();
@@ -1109,7 +1130,7 @@ namespace PiPDisabler
                 var pwa = player.ProceduralWeaponAnimation;
                 if (pwa == null) return;
 
-                float baseFov = pwa.Single_2;
+                float baseFov = pwa.FieldOfView;
                 float targetFov = _restoreOneXFovOnScopeExit
                     ? Mathf.Max(1f, baseFov - 15f)
                     : baseFov;

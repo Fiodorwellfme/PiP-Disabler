@@ -916,19 +916,18 @@ namespace PiPDisabler
         private static bool ShouldKeepPersistedShadowVisible()
         {
             if (!_persistShadowUntilFovRestore) return false;
-            if (!Settings.ModEnabled.Value) return false;
             if (!Settings.ScopeShadowEnabled.Value) return false;
 
             bool hasActiveOptic = false;
             float currentFov = FovController.MagnificationBaselineFov;
 
-            if (CameraClass.Exist && CameraClass.Instance != null)
+            if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
             {
-                hasActiveOptic = CameraClass.Instance.OpticCameraManager != null &&
-                                 CameraClass.Instance.OpticCameraManager.CurrentOpticSight != null;
-                currentFov = CameraClass.Instance.Camera != null
-                    ? CameraClass.Instance.Camera.fieldOfView
-                    : CameraClass.Instance.Fov;
+                hasActiveOptic = EFT.CameraControl.CameraManager.Instance.OpticCameraManager != null &&
+                                 EFT.CameraControl.CameraManager.Instance.OpticCameraManager.CurrentOpticSight != null;
+                currentFov = EFT.CameraControl.CameraManager.Instance.Camera != null
+                    ? EFT.CameraControl.CameraManager.Instance.Camera.fieldOfView
+                    : EFT.CameraControl.CameraManager.Instance.Fov;
             }
 
             return hasActiveOptic || currentFov < FovController.MagnificationBaselineFov;

@@ -34,11 +34,11 @@ namespace PiPDisabler.Patches
         }
 
         private static bool SkipVoidWhenPiPActive()
-            => !Settings.ModEnabled.Value || !ScopeLifecycle.IsScoped || ScopeLifecycle.IsModBypassedForCurrentScope;
+            => !ScopeLifecycle.IsScoped || ScopeLifecycle.IsModBypassedForCurrentScope;
 
         private static bool SkipBoolPatchWhenPiPActive(ref bool __result)
         {
-            if (!Settings.ModEnabled.Value || !ScopeLifecycle.IsScoped || ScopeLifecycle.IsModBypassedForCurrentScope)
+            if (!ScopeLifecycle.IsScoped || ScopeLifecycle.IsModBypassedForCurrentScope)
                 return true;
 
             __result = true;

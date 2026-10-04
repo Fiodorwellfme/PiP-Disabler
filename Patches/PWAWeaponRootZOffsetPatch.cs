@@ -44,13 +44,13 @@ namespace PiPDisabler.Patches
                 return;
             }
 
-            if (!CameraClass.Exist)
+            if (!EFT.CameraControl.CameraManager.Exist)
             {
                 LogState("skip: CameraClass missing");
                 return;
             }
 
-            float currentFov = CameraClass.Instance.Fov;
+            float currentFov = EFT.CameraControl.CameraManager.Instance.Fov;
             float zOffset = GetZOffset(currentFov);
 
             if (Mathf.Approximately(zOffset, 0f))
@@ -68,7 +68,7 @@ namespace PiPDisabler.Patches
         {
             reason = null;
 
-            if (pwa == null || !Settings.ModEnabled.Value)
+            if (pwa == null)
             {
                 reason = pwa == null ? "PWA null" : "mod disabled";
                 return false;
