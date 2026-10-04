@@ -68,7 +68,7 @@ namespace PiPDisabler.Patches
         {
             reason = null;
 
-            if (pwa == null || !Settings.ModEnabled.Value)
+            if (pwa == null)
             {
                 reason = pwa == null ? "PWA null" : "mod disabled";
                 return false;

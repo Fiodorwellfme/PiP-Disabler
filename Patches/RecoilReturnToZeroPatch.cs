@@ -14,9 +14,7 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix(NewRotationRecoilProcess __instance)
         {
-            if (__instance == null ||
-                !Settings.ModEnabled.Value ||
-                !Settings.ForceRecoilReturnToZero.Value)
+            if (__instance == null || !Settings.ForceRecoilReturnToZero.Value)
             {
                 return;
             }

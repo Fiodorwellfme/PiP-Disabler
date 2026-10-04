@@ -13,9 +13,6 @@ namespace PiPDisabler.Patches
 
         public static bool ShouldSuppress(OpticSight opticSight)
         {
-            if (!Settings.ModEnabled.Value)
-                return false;
-
             return !ScopeLifecycle.ShouldBypassForCurrentOptic(opticSight);
         }
 
@@ -102,7 +99,7 @@ namespace PiPDisabler.Patches
         }
 
         public static bool ShouldKeepSetResolution()
-            => _allowSetResolution || !Settings.ModEnabled.Value || ScopeLifecycle.IsCurrentOrPendingOpticBypassed();
+            => _allowSetResolution || ScopeLifecycle.IsCurrentOrPendingOpticBypassed();
     }
 
     internal sealed class OpticCameraManagerEnableOptic_NoPipPatch : ModulePatch
@@ -171,7 +168,7 @@ namespace PiPDisabler.Patches
         [PatchPrefix]
         private static bool Prefix()
         {
-            if (!Settings.ModEnabled.Value || ScopeLifecycle.IsCurrentOrPendingOpticBypassed())
+            if (ScopeLifecycle.IsCurrentOrPendingOpticBypassed())
                 return true;
 
             var currentOptic = EFT.CameraControl.CameraManager.Instance?.OpticCameraManager?.CurrentOpticSight;

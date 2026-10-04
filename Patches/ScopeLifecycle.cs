@@ -610,7 +610,6 @@ namespace PiPDisabler
         {
             RefreshScopeAimTransformsForModeSwitch();
             if (!_isScoped) return;
-            if (!Settings.ModEnabled.Value) return;
 
             PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeLifecycle] SetScopeMode fired while scoped frame={Time.frameCount}");
@@ -671,6 +670,7 @@ namespace PiPDisabler
                 return true;
             }
 
+
             if (ShouldBypassByBlacklist(os))
             {
                 return true;
@@ -708,6 +708,11 @@ namespace PiPDisabler
 
         private static bool ShouldBypassByBlacklist(OpticSight os)
         {
+            if (!Settings.ModEnabled.Value)
+            {
+                return true; 
+            } 
+            
             RefreshScopeBlacklistCache();
             if (_scopeBlacklistNames.Count == 0)
                 return false;

@@ -22,7 +22,6 @@ namespace PiPDisabler.Patches
                 $"[Patch] OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"enabled={__instance?.enabled} frame={Time.frameCount}");
 
-            if (!Settings.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticEnabled(__instance);
         }
     }
@@ -39,7 +38,6 @@ namespace PiPDisabler.Patches
                 $"[Patch] OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"frame={Time.frameCount}");
 
-            if (!Settings.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticDisabled(__instance);
         }
     }
@@ -52,7 +50,6 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix(TacticalRangeFinderController __instance)
         {
-            if (!Settings.ModEnabled.Value) return;
             if (__instance == null) return;
 
             var opticSight = ResolveRangeFinderOptic(__instance.transform);
@@ -146,7 +143,6 @@ namespace PiPDisabler.Patches
         [PatchPrefix]
         private static bool Prefix(TacticalRangeFinderController __instance)
         {
-            if (!Settings.ModEnabled.Value) return true;
             if (__instance == null) return true;
 
             try
@@ -277,7 +273,6 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix()
         {
-            if (!Settings.ModEnabled.Value) return;
 
             PiPDisablerPlugin.DebugLogInfo(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
@@ -314,7 +309,6 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix()
         {
-            if (!Settings.ModEnabled.Value) return;
 
             PiPDisablerPlugin.DebugLogInfo(
                 $"[Patch] SetScopeMode frame={Time.frameCount}");
@@ -335,7 +329,6 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix(Player __instance, EFT.InventoryLogic.SetInHandsEventArgs eventArgs)
         {
-            if (!Settings.ModEnabled.Value) return;
             if (__instance == null || eventArgs == null || eventArgs.Status != CommandStatus.Succeed) return;
 
             var localPlayer = Helpers.GetLocalPlayer();

@@ -916,7 +916,6 @@ namespace PiPDisabler
         private static bool ShouldKeepPersistedShadowVisible()
         {
             if (!_persistShadowUntilFovRestore) return false;
-            if (!Settings.ModEnabled.Value) return false;
             if (!Settings.ScopeShadowEnabled.Value) return false;
 
             bool hasActiveOptic = false;
