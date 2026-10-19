@@ -25,7 +25,6 @@ namespace PiPDisabler
         public static ConfigEntry<bool> BypassDuringStanceTransitions;
         public static ConfigEntry<float> PostStanceAimGateDuration;
         public static ConfigEntry<bool> FOVFixBehaviour;
-         public static ConfigEntry<float> StanceIdleThreshold;
         public static ConfigEntry<float> GlobalScopeScalingMultiplier;
         public static ConfigEntry<float> GlobalReticleScalingMultiplier;
         
