@@ -209,7 +209,7 @@ namespace PiPDisabler
                     "Be aware that 1x is always forced to 35° for stepped optics.",
                     new AcceptableValueRange<float>(20f, 35f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(FovAnimationDuration = config.Bind("General", "FOV Animation Duration", 1f,
+            ConfigEntries.Add(FovAnimationDuration = config.Bind("General", "FOV Animation Duration", 2.5f,
                 new ConfigDescription(
                     "Duration of the FOV transitions during magnification changes.",
                     new AcceptableValueRange<float>(0f, 10f),

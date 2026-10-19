@@ -7,6 +7,7 @@ using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using PiPDisabler.Patches;
 
 namespace PiPDisabler
 {
@@ -244,7 +245,7 @@ namespace PiPDisabler
                 var pwa = player.ProceduralWeaponAnimation;
                 if (pwa == null) { reason = "no PWA"; goto evaluate; }
 
-                if (IsPlayerSprinting(player))
+                if (IsPlayerSprintingOrStanceTransitioning(player))
                 {
                     ArmPostSprintAimGate();
                     reason = "sprinting";
@@ -1225,16 +1226,34 @@ namespace PiPDisabler
             return now < _postSprintAimGateExpiry || now < _postStanceAimGateExpiry;
         }
 
-        private static bool IsPlayerSprinting(Player player)
+        private static bool IsPlayerSprintingOrStanceTransitioning(Player player)
         {
             try
             {
+                PiPDisablerPlugin.DebugLogInfo(
+                        $"[ScopeLifecycle] IsPlayerSprintingOrStanceTransitioning was used");
                 if (player == null)
-                    return false;
+                    {
+                        PiPDisablerPlugin.DebugLogInfo(
+                        $"[IsPlayerSprintingOrStanceTransitioning] player was null");
+                        return false;
+                    }
 
-                if (player.Physical != null && player.Physical.Sprinting)
+                if (StanceOverhaulCompat.IsStanceOverhaulTransitioning(player))
                     return true;
 
+                if (player.Physical != null && player.Physical.Sprinting)
+                {
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[IsPlayerSprintingOrStanceTransitioning] Player was sprinting");
+                    return true;
+                }
+
+
+
+
+                PiPDisablerPlugin.DebugLogInfo(
+                        $"[IsPlayerSprintingOrStanceTransitioning] Ran");
                 var movementContext = player.MovementContext;
                 return movementContext != null &&
                        (movementContext.IsSprintEnabled ||
@@ -1243,6 +1262,8 @@ namespace PiPDisabler
             }
             catch
             {
+                PiPDisablerPlugin.DebugLogInfo(
+                        $"[IsPlayerSprintingOrStanceTransitioning] Error");
                 return false;
             }
         }
