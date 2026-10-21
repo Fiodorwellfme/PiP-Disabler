@@ -58,9 +58,7 @@ namespace PiPDisabler
             new Dictionary<GameObject, SphereState>(32);
         private static bool _loggedGpuCopy;
         private static int _lastCutAttemptFrame;
-        private static object _inventoryEventSource;
-        private static Delegate _addItemHandler;
-        private static Delegate _removeItemHandler;
+        private static InventoryController _inventoryEventSource;
         private static int _lastAttemptTargets;
         private static int _lastAttemptEntries;
         private static int _lastAttemptReadableCopyFailures;
@@ -533,28 +531,10 @@ namespace PiPDisabler
                 return;
 
             UnbindInventoryEvents();
-
-            try
-            {
-                var type = inventory.GetType();
-                var addEvent = type.GetEvent("AddItemEvent");
-                var removeEvent = type.GetEvent("RemoveItemEvent");
-                if (addEvent == null || removeEvent == null)
-                    return;
-
-                _addItemHandler = Delegate.CreateDelegate(addEvent.EventHandlerType, null,
-                    typeof(MeshSurgeryManager).GetMethod(nameof(OnItemAdded), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static));
-                _removeItemHandler = Delegate.CreateDelegate(removeEvent.EventHandlerType, null,
-                    typeof(MeshSurgeryManager).GetMethod(nameof(OnItemRemoved), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static));
-
-                addEvent.AddEventHandler(inventory, _addItemHandler);
-                removeEvent.AddEventHandler(inventory, _removeItemHandler);
-                _inventoryEventSource = inventory;
-            }
-            catch (Exception ex)
-            {
-                PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Failed to bind inventory events: {ex.Message}");
-            }
+            inventory.AddItemEvent += OnItemAdded;
+            inventory.RemoveItemEvent += OnItemRemoved;
+            _inventoryEventSource = inventory;
+            PiPDisablerPlugin.DebugLogInfo("[MeshSurgery] Inventory add/remove event handlers bound.");
         }
 
         private static void UnbindInventoryEvents()
@@ -562,21 +542,8 @@ namespace PiPDisabler
             if (_inventoryEventSource == null)
                 return;
 
-            try
-            {
-                var type = _inventoryEventSource.GetType();
-                var addEvent = type.GetEvent("AddItemEvent");
-                var removeEvent = type.GetEvent("RemoveItemEvent");
-
-                if (addEvent != null && _addItemHandler != null)
-                    addEvent.RemoveEventHandler(_inventoryEventSource, _addItemHandler);
-                if (removeEvent != null && _removeItemHandler != null)
-                    removeEvent.RemoveEventHandler(_inventoryEventSource, _removeItemHandler);
-            }
-            catch { }
-
-            _addItemHandler = null;
-            _removeItemHandler = null;
+            _inventoryEventSource.AddItemEvent -= OnItemAdded;
+            _inventoryEventSource.RemoveItemEvent -= OnItemRemoved;
             _inventoryEventSource = null;
         }
 
@@ -588,12 +555,12 @@ namespace PiPDisabler
             MarkCacheDirtyIfMeaningful(args.Item, args.To);
         }
 
-        private static void OnItemRemoved(EFT.InventoryLogic.AddItemEventArgs args)
+        private static void OnItemRemoved(EFT.InventoryLogic.RemoveItemEventArgs args)
         {
             if (args == null || args.Status != CommandStatus.Succeed)
                 return;
 
-            MarkCacheDirtyIfMeaningful(args.Item, args.To);
+            MarkCacheDirtyIfMeaningful(args.Item, args.From);
         }
 
         private static void MarkCacheDirtyIfMeaningful(Item item, ItemAddress address)
@@ -1274,7 +1241,7 @@ namespace PiPDisabler
                 if (!mf || !mf.sharedMesh) continue;
                 inspected++;
 
-                string relSearchPath = null;
+                string relSearchPath = GetRelativePath(mf.transform, searchRoot);
 
                 if (IsVolatileWeaponPath(relSearchPath))
                 {
@@ -1285,6 +1252,11 @@ namespace PiPDisabler
                     continue;
 
                 if (IsTextMeshProOwnedMesh(mf))
+                    continue;
+
+                // EFT regenerates the combined muzzle-flash mesh, including empty frames.
+                // Leave this effect mesh under the control of muzzle/VFX rendering.
+                if (IsRuntimeMuzzleMesh(mf.gameObject.name, mf.sharedMesh.name))
                     continue;
 
                 var renderer = mf.GetComponent<Renderer>();
@@ -1299,6 +1271,12 @@ namespace PiPDisabler
                 $"{result.Count} targets");
 
             return result;
+        }
+
+        internal static bool IsRuntimeMuzzleMesh(string objectName, string meshName)
+        {
+            return string.Equals(objectName, "MuzzleJetCombinedMesh", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(meshName, "MuzzleJet UpdateOrCreateMesh", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsVolatileWeaponPath(string relativePath)
