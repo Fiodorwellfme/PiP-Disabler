@@ -21,11 +21,14 @@ namespace PiPDisabler
         public static ConfigEntry<string> ScopeWhitelistNames;
         public static ConfigEntry<KeyCode> ScopeWhitelistToggleEntryKey;
         public static ConfigEntry<float> ScopeAlignmentAngleTolerance;
+        public static ConfigEntry<bool> KeepScopeCenteredWithZeroing;
         public static ConfigEntry<float> PostSprintAimGateDuration;
         public static ConfigEntry<bool> BypassDuringStanceTransitions;
         public static ConfigEntry<float> PostStanceAimGateDuration;
         public static ConfigEntry<bool> FOVFixBehaviour;
         public static ConfigEntry<float> GlobalScopeScalingMultiplier;
+        public static ConfigEntry<bool> NormalizeEyeDistance;
+        public static ConfigEntry<float> ReferenceEyeDistanceMm;
         public static ConfigEntry<float> GlobalReticleScalingMultiplier;
         
         // --- Optimization ---
@@ -58,6 +61,20 @@ namespace PiPDisabler
         public static ConfigEntry<bool> DebugShowHousingMask;
 
         // --- Custom Mesh Surgery settings (per-scope authoring) ---
+        public static ConfigEntry<string> CurrentScopeStatus;
+        public static ConfigEntry<float> CustomZoomMultiplier;
+        public static ConfigEntry<float> CustomCutWidthMultiplier;
+        public static ConfigEntry<bool> CustomCutManual;
+        public static ConfigEntry<bool> AutoCutShape;
+        public static ConfigEntry<string> Language;
+        public static ConfigEntry<bool> ReticleFollowsZoom;
+        public static ConfigEntry<float> HoleOffAxisMargin;
+
+        public static ConfigEntry<KeyCode> RecutHoleKey;
+        public static ConfigEntry<bool> PrecutHeldScope;
+        public static ConfigEntry<bool> RecutEveryAim;
+        public static ConfigEntry<bool> PixelHoleMode;
+        public static ConfigEntry<bool> PixelHoleHidesHands;
         public static ConfigEntry<KeyCode> SaveCustomMeshSurgerySettingsKey;
         public static ConfigEntry<KeyCode> DeleteCustomMeshSurgerySettingsKey;
         public static ConfigEntry<float> CustomPlaneOffsetMeters;
@@ -117,6 +134,8 @@ namespace PiPDisabler
         public static ConfigEntry<bool> SuppressMagnificationSwitchMovement;
         public static ConfigEntry<bool> ScaleSwayWithCameraFov;
         public static ConfigEntry<float> SwayStrength;
+        public static ConfigEntry<int> AimWalkSwayReduction;
+        public static ConfigEntry<bool> HeadBobReductionAlways;
         public static ConfigEntry<bool> ForceRecoilReturnToZero;
         // --- Debug ---
         public static ConfigEntry<bool> DebugLogging;
@@ -176,10 +195,37 @@ namespace PiPDisabler
                     "Multiplies the scaling of all scopes, useful if you feel like the scopes are too small or too large.",
                     new AcceptableValueRange<float>(0.25f, 3f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(NormalizeEyeDistance = config.Bind("General", "Same Scope Size On Every Weapon", true,
+                new ConfigDescription(
+                    "The eyepiece sits at a different distance from the eye on each weapon (rail position, mount), so the same scope looked bigger on one rifle than on another. On: once you have aimed for a moment, the eyepiece distance is measured and the weapon scale is corrected so it sits at 'Reference Eye Distance' on every weapon. Measured once per weapon + scope + mount position and kept (BepInEx/plugins/PiP-Disabler/user-data/eye-distance.txt).",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(ReferenceEyeDistanceMm = config.Bind("General", "Reference Eye Distance (mm)", 170f,
+                new ConfigDescription(
+                    "Eyepiece distance from the camera (at weapon scale 1) that every weapon is corrected to. Larger = the scope looks smaller on all weapons. Per-scope weapon scale still applies on top.",
+                    new AcceptableValueRange<float>(80f, 400f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            var languages = new List<string> { Localization.GameOption, Localization.EnglishOption };
+            languages.AddRange(Localization.AvailableCodes());
+            ConfigEntries.Add(Language = config.Bind("General", "Settings Language", Localization.GameOption,
+                new ConfigDescription(
+                    "Language of the F12 settings and messages. Game = follow the game's language when a translation file for it exists (BepInEx/plugins/PiP-Disabler/locales/<game language code>.json), English otherwise. English or a file name = always that one. Close and reopen F12 after changing.",
+                    new AcceptableValueList<string>(languages.ToArray()),
+                    new ConfigurationManagerAttributes { IsAdvanced = false, Order = 1000 })));
+            ConfigEntries.Add(ReticleFollowsZoom = config.Bind("General", "Reticle Follows Zoom Multiplier", true,
+                new ConfigDescription(
+                    "Scale the reticle with the per-scope zoom multiplier, so it keeps the same size relative to the lens and the target.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(GlobalReticleScalingMultiplier = config.Bind("General", "Global Reticle Scaling Multiplier", 1f,
                 new ConfigDescription(
                     "Multiplies the scaling of all reticles, useful if you feel like the reticles are too small or too large.",
                     new AcceptableValueRange<float>(0.5f, 2f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(KeepScopeCenteredWithZeroing = config.Bind("Hacks", "Keep scope centered with zeroing", true,
+                new ConfigDescription(
+                    "Aim the camera along the scope's own axis so changing the zero (range) no longer pushes the scope off screen centre; the reticle moves to the zeroed point instead. Off = old behaviour (camera follows the zeroed optic, scope drifts).",
+                    null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(ScopeAlignmentAngleTolerance = config.Bind("Hacks", "ADS Scope Alignment Angle Tolerance", 2f,
                 new ConfigDescription(
@@ -209,9 +255,44 @@ namespace PiPDisabler
                     "Be aware that 1x is always forced to 35° for stepped optics.",
                     new AcceptableValueRange<float>(20f, 35f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(FovAnimationDuration = config.Bind("General", "FOV Animation Duration", 2.5f,
+            ConfigEntries.Add(AutoCutShape = config.Bind("General", "Automatic Cut Shape", true,
                 new ConfigDescription(
-                    "Duration of the FOV transitions during magnification changes.",
+                    "Cut the hole automatically: removes exactly what the camera sees through the eyepiece lens, keeps what is seen around it. Off = use the hand-set hole values for every scope.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(RecutHoleKey = config.Bind("General", "Re-cut Hole Key", KeyCode.Home,
+                new ConfigDescription(
+                    "While aiming: redo the automatic hole for the current view now (if something looks cut wrong).",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(RecutEveryAim = config.Bind("General", "Re-cut Hole Every Aim", true,
+                new ConfigDescription(
+                    "Does what the re-cut key does on every aim: once the view settles (~0.6 s), the hole is cut again in the background for the current view, so a cut that came out wrong (e.g. after restarting the game) fixes itself. Once per zoom level per aim.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(PixelHoleMode = config.Bind("General", "Pixel Hole", true,
+                new ConfigDescription(
+                    "Instead of cutting the scope body's meshes, hide it per pixel inside the lens circle on screen. Nothing is cut, so zooming, restarting and recoil never need a re-cut and the hole edge is the lens circle itself. On by default. If the scope body vanishes, the sky through the lens looks wrong, or the scope edge smears when turning (TAA/DLSS/FSR), turn it off — the mesh cut is used instead.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(PixelHoleHidesHands = config.Bind("General", "Pixel Hole Hides Hands", true,
+                new ConfigDescription(
+                    "With the pixel hole: your own arms, gloves and watch are hidden inside the lens circle too, so a hand or sleeve never covers the view through the scope. Outside the lens they are drawn as usual. Turning it on takes effect on the next aim.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(HoleOffAxisMargin = config.Bind("General", "Hole Off-axis Margin (mm)", 4f,
+                new ConfigDescription(
+                    "When firing or moving the weapon shifts a few mm off the eyepiece axis and the scope's inside can show at the lens edge. The automatic hole is cut this much wider for that, never past the eyepiece housing's outline. 0 = off.",
+                    new AcceptableValueRange<float>(0f, 10f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(PrecutHeldScope = config.Bind("General", "Pre-cut Held Scope", true,
+                new ConfigDescription(
+                    "Cut the hole for the scope on the weapon in your hands in the background before you aim, so the first aim has no hitch.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(FovAnimationDuration = config.Bind("General", "FOV Animation Duration", 0.35f,
+                new ConfigDescription(
+                    "Duration of the FOV transitions when entering/leaving the scope and changing magnification. Long values feel like flying into the scope; 0.2-0.35 matches the ADS animation, 0 = instant.",
                     new AcceptableValueRange<float>(0f, 10f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(BypassDuringReload = config.Bind("Hacks", "Bypass during reload", true,
@@ -234,6 +315,16 @@ namespace PiPDisabler
                     "Changes the intensity of the sway reduction.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = true })));
+            ConfigEntries.Add(AimWalkSwayReduction = config.Bind("Hacks", "Aim Walk Sway Reduction (%)", 0,
+                new ConfigDescription(
+                    "While aiming a scope: reduces head bob — the whole screen (camera) and the weapon moving with your steps and body — by this percent (helps with motion sickness at high zoom). Goes below the game's own Head bobbing minimum. 0 = vanilla, 100 = none.",
+                    new AcceptableValueRange<int>(0, 100),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(HeadBobReductionAlways = config.Bind("Hacks", "Head Bob Reduction Also When Not Aiming", false,
+                new ConfigDescription(
+                    "Also apply the head bob reduction above when not aiming.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(ManualWeaponScale = config.Bind("Hacks", "Manual Weapon Scale", 1f, //To remove
                 new ConfigDescription(
                     "Direct ribcage compensation scale while scoped. Higher values make the weapon appear smaller.",
@@ -305,12 +396,12 @@ namespace PiPDisabler
                     "Radius (meters) at plane 2.",
                     new AcceptableValueRange<float>(0f, 0.2f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(Plane3Position = config.Bind("Global Mesh Surgery settings", "Plane3Position", 0.55f,
+            ConfigEntries.Add(Plane3Position = config.Bind("Global Mesh Surgery settings", "Plane3Position", 0.41f,
                 new ConfigDescription(
                     "Normalized depth of plane 3 from near (0) to far (1).",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(Plane3Radius = config.Bind("Global Mesh Surgery settings", "Plane3Radius", 0.2f,
+            ConfigEntries.Add(Plane3Radius = config.Bind("Global Mesh Surgery settings", "Plane3Radius", 0.11f,
                 new ConfigDescription(
                     "Radius (meters) at plane 3.",
                     new AcceptableValueRange<float>(0f, 0.2f),
@@ -333,12 +424,12 @@ namespace PiPDisabler
                     "Changing CutLength does NOT move this plane.",
                     new AcceptableValueRange<float>(0f, 0.3f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
-            ConfigEntries.Add(CutLength = config.Bind("Global Mesh Surgery settings", "CutLength", 0.755493f,
+            ConfigEntries.Add(CutLength = config.Bind("Global Mesh Surgery settings", "CutLength", 2f,
                 new ConfigDescription(
                     "How far forward from the near plane the cut extends (toward the objective).\n" +
                     "The far plane is at: nearPlane + (length × boreAxis).\n" +
                     "Only the far plane moves when you change this value.",
-                    new AcceptableValueRange<float>(0.01f, 1f),
+                    new AcceptableValueRange<float>(0.01f, 4f),
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
             ConfigEntries.Add(NearPreserveDepth = config.Bind("Global Mesh Surgery settings", "NearPreserveDepth", 0.02549295f,
                 new ConfigDescription(
@@ -391,6 +482,26 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
 
             // --- Custom Mesh Surgery settings ---
+            ConfigEntries.Add(CurrentScopeStatus = config.Bind("Per scope settings", "Current scope", "",
+                new ConfigDescription(
+                    "Shows the scope you are aiming with, whether the mod or vanilla PiP is drawing it, and whether it has saved per-scope settings.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false, ReadOnly = true, HideDefaultButton = true, CustomDrawer = DrawCurrentScopeStatus })));
+            ConfigEntries.Add(CustomZoomMultiplier = config.Bind("Per scope settings", "Zoom Multiplier", 1f,
+                new ConfigDescription(
+                    "Extra zoom for the scope being aimed (1 = its own magnification, 2 = twice as much). Applied live and saved for that scope.",
+                    new AcceptableValueRange<float>(0.25f, 4f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(CustomCutWidthMultiplier = config.Bind("Per scope settings", "Cut Width Multiplier", 1f,
+                new ConfigDescription(
+                    "Automatic hole: size of the cut relative to the eyepiece lens (1 = exactly the lens). Manual hole: scales the middle and front radii.",
+                    new AcceptableValueRange<float>(0.2f, 2f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(CustomCutManual = config.Bind("Per scope settings", "Use Manual Cut Shape", false,
+                new ConfigDescription(
+                    "This scope uses the hand-set hole values below instead of the automatic hole.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(SaveCustomMeshSurgerySettingsKey = config.Bind("Per scope settings", "Save custom settings key", KeyCode.None,
                 new ConfigDescription(
                     "When pressed while scoped, saves all values from this category for the active scope key into custom_mesh_surgery_settings.json.",
@@ -530,17 +641,17 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(VignetteOpacity = config.Bind("Scope Effects", "Vignette Opacity", 1f,
                 new ConfigDescription(
-                    "Maximum opacity of the lens vignette ring (0=invisible, 1=full black).",
+                    "Maximum opacity of the lens vignette ring (0=invisible, 1=full black). Scopes that have their own value under 'Per scope settings' (40 of the bundled ones, e.g. Vudu) ignore this: aim with the scope and change it there.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(VignetteRadius = config.Bind("Scope Effects", "Vignette Radius", 0.47f,
                 new ConfigDescription(
-                    "Inner clear radius of the lens vignette (0=center starts darkening, 0.5=outer half darkened, 1=edge only).",
+                    "Inner clear radius of the lens vignette (0=center starts darkening, 0.5=outer half darkened, 1=edge only). Scopes that have their own value under 'Per scope settings' (40 of the bundled ones, e.g. Vudu) ignore this: aim with the scope and change it there.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(VignetteSoftness = config.Bind("Scope Effects", "Vignette Softness", 0.80f,
                 new ConfigDescription(
-                    "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
+                    "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient). Scopes that have their own value under 'Per scope settings' (40 of the bundled ones, e.g. Vudu) ignore this: aim with the scope and change it there.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
 
@@ -630,8 +741,26 @@ namespace PiPDisabler
                     "Legacy setting. Reticles now always draw after everything and use the after-NVG reticle shader.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
+            MigrateOldCutDefaults();
             RegisterVisualEffectLiveUpdates();
+            RegisterReapplyOnChange();
+            Language.SettingChanged += (s, e) => Localization.Apply(ConfigEntries);
+            NormalizeEyeDistance.SettingChanged += (s, e) => EyeDistanceNormalizer.OnSettingsChanged();
+            ReferenceEyeDistanceMm.SettingChanged += (s, e) => EyeDistanceNormalizer.OnSettingsChanged();
+            Localization.Apply(ConfigEntries);
             RecalcOrder();
+        }
+
+        /// <summary>
+        /// 2.5.5: the global hole defaults cut far more of the scope's outside than the bundled
+        /// per-scope presets (median of 82). BepInEx keeps old values in the cfg, so values still
+        /// at the old defaults are moved to the new ones once.
+        /// </summary>
+        private static void MigrateOldCutDefaults()
+        {
+            if (Mathf.Approximately(Plane3Position.Value, 0.55f)) Plane3Position.Value = 0.41f;
+            if (Mathf.Approximately(Plane3Radius.Value, 0.2f)) Plane3Radius.Value = 0.11f;
+            if (Mathf.Approximately(CutLength.Value, 0.755493f)) CutLength.Value = 2f;
         }
 
         private static void RegisterVisualEffectLiveUpdates()
@@ -659,9 +788,81 @@ namespace PiPDisabler
             NvgLensFocalBlurRadiusMultiplier.SettingChanged += OnVisualEffectSettingChanged;
         }
 
+        private static void DrawCurrentScopeStatus(ConfigEntryBase entry)
+        {
+            GUILayout.Label(ScopeLifecycle.GetStatusText(), GUILayout.ExpandWidth(true));
+        }
+
+        // Settings whose effect is built on scope enter (FOV, scaling, mesh cut, bypass lists...)
+        // re-apply the current scope shortly after a change, so the change is visible while aiming.
+        // Visual-effect settings already update live; per-scope values apply through the save key.
+        private static void RegisterReapplyOnChange()
+        {
+            var live = new HashSet<ConfigEntryBase>
+            {
+                ModEnabled, FovAnimationDuration, OutsideScopeBlurEnabled, NvgLensFocalBlurEnabled,
+                GlobalScopeScalingMultiplier, GlobalReticleScalingMultiplier
+            };
+
+            // Per-scope values: applied live and auto-saved for the scope being aimed.
+            _perScopeLive.Clear();
+            _perScopeRecut.Clear();
+            foreach (var entry in ConfigEntries)
+            {
+                if (entry == null || entry.Definition.Section != "Per scope settings") continue;
+                if (entry.SettingType == typeof(KeyCode) || entry == CurrentScopeStatus) continue;
+                _perScopeLive.Add(entry);
+            }
+            foreach (var entry in new ConfigEntryBase[]
+                     {
+                         CustomPlaneOffsetMeters, CustomPlane1Radius, CustomPlane1OffsetMeters,
+                         CustomPlane2Position, CustomPlane2Radius, CustomPlane3Position, CustomPlane3Radius,
+                         CustomPlane4Position, CustomPlane4Radius, CustomCutStartOffset, CustomCutLength,
+                         CustomNearPreserveDepth, CustomExpandSearchToWeaponRoot, CustomCutWidthMultiplier, CustomCutManual
+                     })
+                _perScopeRecut.Add(entry);
+
+            foreach (var entry in ConfigEntries)
+            {
+                if (entry == null || live.Contains(entry)) continue;
+                string section = entry.Definition.Section;
+                if (section == "Scope Effects" || section == "Per scope settings" || section == "Debug") continue;
+                if (entry.SettingType == typeof(KeyCode)) continue;
+                _reapplyOnChange.Add(entry);
+            }
+
+            if (_reapplyConfig != null)
+                _reapplyConfig.SettingChanged -= OnReapplySettingChanged;
+            _reapplyConfig = ModEnabled.ConfigFile;
+            _reapplyConfig.SettingChanged += OnReapplySettingChanged;
+        }
+
+        private static readonly HashSet<ConfigEntryBase> _reapplyOnChange = new HashSet<ConfigEntryBase>();
+        private static readonly HashSet<ConfigEntryBase> _perScopeLive = new HashSet<ConfigEntryBase>();
+        private static readonly HashSet<ConfigEntryBase> _perScopeRecut = new HashSet<ConfigEntryBase>();
+        private static ConfigFile _reapplyConfig;
+
+        private static void OnReapplySettingChanged(object sender, SettingChangedEventArgs args)
+        {
+            var changed = args?.ChangedSetting;
+            if (changed == null) return;
+
+            if (_reapplyOnChange.Contains(changed))
+            {
+                ScopeLifecycle.RequestReapply();
+                return;
+            }
+
+            if (_perScopeLive.Contains(changed) && PerScopeMeshSurgerySettings.ApplyLiveEditFromCustom())
+            {
+                if (_perScopeRecut.Contains(changed))
+                    ScopeLifecycle.RequestRecut();
+            }
+        }
+
         private static void OnCustomVisualEffectSettingChanged(object sender, System.EventArgs args)
         {
-            PerScopeMeshSurgerySettings.SaveActiveScopeVisualSettings();
+            // Saving is done by the live per-scope edit handler (OnReapplySettingChanged).
             ScopeEffectsRenderer.RefreshSettings();
         }
 

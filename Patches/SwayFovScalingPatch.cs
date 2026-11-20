@@ -22,13 +22,13 @@ namespace PiPDisabler.Patches
             scale = 1f;
 
             if (!WeaponMotionSuppressionState.ShouldApply(Settings.ScaleSwayWithCameraFov.Value) ||
-                !EFT.CameraControl.CameraManager.Exist ||
-                EFT.CameraControl.CameraManager.Instance == null)
+                !CameraManager.Exist ||
+                CameraManager.Instance == null)
             {
                 return false;
             }
 
-            float currentFov = Mathf.Max(1f, EFT.CameraControl.CameraManager.Instance.Fov);
+            float currentFov = Mathf.Max(1f, CameraManager.Instance.Fov);
             float fovScale = Mathf.Clamp01(currentFov / UnscaledSwayFov);
             float strength = GetReductionStrength();
             scale = Mathf.Lerp(1f, fovScale, strength);

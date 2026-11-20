@@ -44,6 +44,9 @@ namespace PiPDisabler
         private static Matrix4x4  _shadowMatrix = Matrix4x4.identity;
         private static bool       _shadowActive;
         private static bool       _effectsVisible;
+
+        /// <summary>True after Show() until Hide()/OnScopeExit()/Cleanup().</summary>
+        public static bool IsVisible => _effectsVisible;
         private static bool       _persistShadowUntilFovRestore;
 
         // ── Outside-scope dual Kawase blur ────────────────────────────────
@@ -475,11 +478,11 @@ namespace PiPDisabler
             SetEffectsViewport(viewport);
             _cmdBuffer.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
 
-            // Draw shadow first (behind vignette in render order)
+            // Draw shadow first (behind vignette in render order).
             if (_shadowActive && useStencil && _shadowMat != null && _shadowMesh != null)
                 _cmdBuffer.DrawMesh(_shadowMesh, _shadowMatrix, _shadowMat, 0, -1);
 
-            // Draw vignette only in lens mask area
+            // Draw vignette only in lens mask area.
             if (_vigActive && _vigHasLensBounds && useStencil && _vigMat != null && _vigMesh != null)
                 _cmdBuffer.DrawMesh(_vigMesh, _vigMatrix, _vigMat, 0, -1);
 
@@ -668,9 +671,26 @@ namespace PiPDisabler
             if (_effectsShaderBundle == null)
             {
                 string pluginDir = Path.GetDirectoryName(typeof(PiPDisablerPlugin).Assembly.Location);
-                string bundlePath = Path.Combine(pluginDir ?? string.Empty, EffectsShaderBundleName);
-                if (File.Exists(bundlePath))
-                    _effectsShaderBundle = AssetBundle.LoadFromFile(bundlePath);
+                string[] possiblePaths = new[]
+                {
+                    Path.Combine(pluginDir ?? string.Empty, EffectsShaderBundleName),
+                    Path.Combine(pluginDir ?? string.Empty, "Shaders", EffectsShaderBundleName),
+                    Path.Combine(pluginDir ?? string.Empty, "Resources", "Shaders", EffectsShaderBundleName)
+                };
+
+                foreach (var bundlePath in possiblePaths)
+                {
+                    if (File.Exists(bundlePath))
+                    {
+                        try
+                        {
+                            _effectsShaderBundle = AssetBundle.LoadFromFile(bundlePath);
+                            if (_effectsShaderBundle != null)
+                                break;
+                        }
+                        catch { }
+                    }
+                }
             }
 
             if (_effectsShaderBundle == null)
@@ -916,18 +936,19 @@ namespace PiPDisabler
         private static bool ShouldKeepPersistedShadowVisible()
         {
             if (!_persistShadowUntilFovRestore) return false;
+            if (!Settings.ModEnabled.Value) return false;
             if (!Settings.ScopeShadowEnabled.Value) return false;
 
             bool hasActiveOptic = false;
             float currentFov = FovController.MagnificationBaselineFov;
 
-            if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
+            if (CameraManager.Exist && CameraManager.Instance != null)
             {
-                hasActiveOptic = EFT.CameraControl.CameraManager.Instance.OpticCameraManager != null &&
-                                 EFT.CameraControl.CameraManager.Instance.OpticCameraManager.CurrentOpticSight != null;
-                currentFov = EFT.CameraControl.CameraManager.Instance.Camera != null
-                    ? EFT.CameraControl.CameraManager.Instance.Camera.fieldOfView
-                    : EFT.CameraControl.CameraManager.Instance.Fov;
+                hasActiveOptic = CameraManager.Instance.OpticCameraManager != null &&
+                                 CameraManager.Instance.OpticCameraManager.CurrentOpticSight != null;
+                currentFov = CameraManager.Instance.Camera != null
+                    ? CameraManager.Instance.Camera.fieldOfView
+                    : CameraManager.Instance.Fov;
             }
 
             return hasActiveOptic || currentFov < FovController.MagnificationBaselineFov;

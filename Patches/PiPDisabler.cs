@@ -147,9 +147,9 @@ namespace PiPDisabler
         {
             try
             {
-                if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
+                if (CameraManager.Exist && CameraManager.Instance != null)
                 {
-                    var mgr = EFT.CameraControl.CameraManager.Instance.OpticCameraManager;
+                    var mgr = CameraManager.Instance.OpticCameraManager;
                     mgr.CurrentOpticSight = null;
                     mgr.OpticRetrice.SetOpticSight(null);
                     mgr.OpticRetrice.Clear();
@@ -196,10 +196,10 @@ namespace PiPDisabler
 
             try
             {
-                if (!EFT.CameraControl.CameraManager.Exist || EFT.CameraControl.CameraManager.Instance == null)
+                if (!CameraManager.Exist || CameraManager.Instance == null)
                     return;
 
-                var cam = EFT.CameraControl.CameraManager.Instance.OpticCameraManager?.Camera;
+                var cam = CameraManager.Instance.OpticCameraManager?.Camera;
                 if (cam == null)
                     return;
 
@@ -346,8 +346,9 @@ namespace PiPDisabler
 
         private static bool ShouldAllowVanillaPiP()
         {
-            return ScopeLifecycle.IsCurrentOrPendingOpticBypassed();
-                // || ScopeLifecycle.IsLastOpticNameBypassed();
+            return !Settings.ModEnabled.Value
+                || ScopeLifecycle.IsCurrentOrPendingOpticBypassed()
+                || ScopeLifecycle.IsLastOpticNameBypassed();
         }
 
         internal sealed class OpticComponentUpdaterCopyComponentFromOptic_DisablePiP : ModulePatch
@@ -358,7 +359,7 @@ namespace PiPDisabler
             [PatchPostfix]
             private static void Postfix(OpticComponentUpdater __instance)
             {
-
+                if (!Settings.ModEnabled.Value) return;
                 if (__instance == null) return;
                 if (ShouldSuppressPiPDisableForCurrentOptic(__instance)) return;
 
@@ -381,6 +382,7 @@ namespace PiPDisabler
             [PatchPrefix]
             private static bool Prefix(OpticComponentUpdater __instance)
             {
+                if (!Settings.ModEnabled.Value) return true;
                 if (__instance == null) return true;
                 if (!ScopeLifecycle.ShouldSuppressVanillaPiPNow()) return true;
 
@@ -401,7 +403,7 @@ namespace PiPDisabler
             [PatchPostfix]
             private static void Postfix()
             {
-
+                if (!Settings.ModEnabled.Value) return;
                 if (!ScopeLifecycle.IsScoped) return;
                 if (ScopeLifecycle.IsModBypassedForCurrentScope) return;
                 if (FreelookTracker.IsFreelooking) return;

@@ -13,6 +13,7 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix(bool opened)
         {
+            if (!Settings.ModEnabled.Value) return;
             if (!opened) return;
 
             CameraSettingsManager.RestoreIfPending();

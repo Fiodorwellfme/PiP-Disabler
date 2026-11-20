@@ -173,6 +173,9 @@ namespace PiPDisabler
                 {
                     _savedMarkTex.filterMode = FilterMode.Trilinear;
                     _savedMarkTex.anisoLevel = 16;
+                    // Thin ghost lines next to the thick posts at high zoom (Razor) look like texture
+                    // edge bleed from a repeating wrap; a reticle never needs to tile.
+                    _savedMarkTex.wrapMode = TextureWrapMode.Clamp;
                     if (_reticleSource == ReticleSource.None)
                         _reticleSource = ReticleSource.Texture;
                 }
@@ -202,6 +205,9 @@ namespace PiPDisabler
             try
             {
                 _opticTransform = os.transform;
+                _scopeDataTransform = os.ScopeData != null ? os.ScopeData.transform : null;
+                _zeroLocalValid = false;
+                _zeroAlignEngaged = false;
 
                 EnsureMeshAndMaterial();
 
@@ -322,6 +328,14 @@ namespace PiPDisabler
         /// </summary>
         public static bool IsAlignmentActive => _alignmentActive && _settled;
 
+        /// <summary>True while the reticle CommandBuffer is attached and active.</summary>
+        public static bool IsShowing => _alignmentActive && _cmdBuffer != null;
+
+        /// <summary>True when a reticle was extracted for the current optic (Show() can succeed).</summary>
+        public static bool HasReticle =>
+            (_reticleSource == ReticleSource.Texture && _savedMarkTex != null) ||
+            (_reticleSource == ReticleSource.Mesh && _savedScopeReticle != null);
+
         /// <summary>
         /// Returns the current optic transform (for ScopeEffectsRenderer to
         /// share camera alignment).
@@ -344,7 +358,7 @@ namespace PiPDisabler
             cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
             cmd.DrawMesh(fullScreenMesh, fullScreenMatrix, _stencilClearMat, 0, -1);
 
-            cmd.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
+            cmd.SetViewProjectionMatrices(cam.worldToCameraMatrix, StableProjection(cam));
             for (int i = 0; i < _occluderMaskRenderers.Count; i++)
                 DrawOccluderMaskRenderer(cmd, _occluderMaskRenderers[i]);
             for (int i = 0; i < _lensMaskEntries.Count; i++)
@@ -376,7 +390,7 @@ namespace PiPDisabler
                 for (int v = 0; v < _lensBoundsVertices.Count; v++)
                 {
                     Vector3 local = _lensBoundsVertices[v];
-                    Vector3 view = cam.WorldToViewportPoint(matrix.MultiplyPoint3x4(local));
+                    Vector3 view = WorldToViewportStable(cam, matrix.MultiplyPoint3x4(local));
                     if (view.z <= cam.nearClipPlane) continue;
 
                     min.x = Mathf.Min(min.x, view.x);
@@ -551,11 +565,246 @@ namespace PiPDisabler
 
         // ── onPreCull — camera alignment + rebuild CommandBuffer ─────────────
 
+        // Frame in which the main camera was already scope-aligned (see ChildCameraPreCull).
+        private static int _alignedFrame = -1;
+
         private static void OnPreCullCallback(Camera cam)
         {
-            if (cam != _attachedCamera) return;
+            if (cam != _attachedCamera)
+            {
+                ChildCameraPreCull(cam);
+                return;
+            }
             if (_cmdBuffer == null || !_settled) return;
             if (GetActiveReticleMesh() == null || GetActiveReticleMaterial() == null) return;
+
+            // Already aligned earlier this frame by a child camera's pre-cull; nothing moves the
+            // transform between camera renders, so aligning again would only re-run the blend.
+            if (_alignedFrame != Time.frameCount)
+                AlignCameraToScope(cam);
+            _alignedFrame = -1;
+
+            RebuildMatrix(cam);
+            RebuildCommandBuffer(cam);
+        }
+
+        /// <summary>
+        /// Align the main camera now if it renders this frame, before other pre-cull work that reads its
+        /// rotation (2.8.12). The pixel hole records its lens circle in MeshSurgeryManager's pre-cull hook,
+        /// which is registered once and so always ran before this class's hook (re-registered on every
+        /// aim): the hole was placed for EFT's camera, then the view turned to the scope — the hole sat
+        /// off the lens by that angle (scope's inside showing, worst while walking) and EFT camera
+        /// glitches made it jitter. OnPreCullCallback then skips the already-done alignment.
+        /// </summary>
+        // DLSS / FSR / TAA shake the projection by a sub-pixel offset every frame (jitter) and the upscaler
+        // removes it again. The reticle and its lens mask are drawn after that (AfterEverything, final
+        // resolution), so they must use the projection without the jitter, or they shake with it (3.6:
+        // reticle shook ~1-3 px with DLSS Performance). Without an upscaler both matrices are the same.
+        private static Matrix4x4 StableProjection(Camera cam) => cam.nonJitteredProjectionMatrix;
+
+        private static Vector3 WorldToViewportStable(Camera cam, Vector3 world)
+        {
+            Vector3 view = cam.worldToCameraMatrix.MultiplyPoint3x4(world);
+            Vector4 clip = cam.nonJitteredProjectionMatrix * new Vector4(view.x, view.y, view.z, 1f);
+            if (Mathf.Abs(clip.w) < 1e-6f) return cam.WorldToViewportPoint(world);
+            return new Vector3(clip.x / clip.w * 0.5f + 0.5f, clip.y / clip.w * 0.5f + 0.5f, -view.z);
+        }
+
+        internal static void AlignMainCameraEarly(Camera cam)
+        {
+            if (cam == null || cam != _attachedCamera) return;
+            if (_cmdBuffer == null || !_settled) return;
+            if (GetActiveReticleMesh() == null || GetActiveReticleMaterial() == null) return;
+            if (_alignedFrame == Time.frameCount) return;
+            AlignCameraToScope(cam);
+            _alignedFrame = Time.frameCount;
+        }
+
+        /// <summary>
+        /// Cameras parented to the main camera (e.g. COTI's clip-on thermal camera) render BEFORE it
+        /// and inherit its transform. Without this they captured the main camera's pre-alignment
+        /// rotation and, while zoomed, their image visibly drifted off the scene. Align the main
+        /// camera first. Only the rotation is touched: the child's projection is its owner's
+        /// business (COTI 3.2+ renders a cropped custom projectionMatrix).
+        /// </summary>
+        private static void ChildCameraPreCull(Camera cam)
+        {
+            if (cam == null || _attachedCamera == null) return;
+            if (_cmdBuffer == null || !_settled || !_alignmentActive) return;
+            if (GetActiveReticleMesh() == null || GetActiveReticleMaterial() == null) return;
+            if (!cam.transform.IsChildOf(_attachedCamera.transform)) return;
+
+            if (_alignedFrame != Time.frameCount)
+            {
+                AlignCameraToScope(_attachedCamera);
+                _alignedFrame = Time.frameCount;
+            }
+        }
+
+        // Downrange direction of the zeroed optic when the camera is aligned to the scope's own axis
+        // instead (KeepScopeCenteredWithZeroing). Used to place the reticle at the zeroed point.
+        private static bool _zeroOffsetActive;
+        private static Vector3 _zeroedForward;
+        // The zero direction is read from the optic's ScopeData (the optic camera's pivot), which
+        // moves with the weapon in the same hierarchy as the scope bone. The optic camera itself is
+        // a LateUpdate copy that can trail the weapon by a frame; using it made the reticle jitter
+        // vertically with sway (seen in a user recording). The bone-local direction is also smoothed,
+        // since it should only change when the zero changes.
+        private static Transform _scopeDataTransform;
+        private static Vector3 _zeroLocal;
+        private static bool _zeroLocalValid;
+        // EFT changes the zero in small steps (~0.03° every ~12 frames, seen in a 2.5.2 diagnostic
+        // log) while it re-aims the weapon smoothly. Following each step quickly made the reticle —
+        // which fills the lens — judder at ~5 Hz on high zoom. A critically damped follow turns the
+        // steps into one smooth glide; sway does not move the bone-local zero, so it adds no lag there.
+        private const float ZeroSmoothTime = 0.3f;
+        private static Vector3 _zeroLocalVelocity;
+        private const float MaxZeroCorrectionDeg = 5f;
+        // Hysteresis: once aligned, keep aligning until the angle clearly exceeds the limit, so a
+        // value hovering at the limit can't flip the camera between the two axes every frame.
+        private const float ReleaseZeroCorrectionDeg = 8f;
+        private static bool _zeroAlignEngaged;
+        private static float _zeroDiagUntil;
+        private static int _zeroDiagLines;
+
+        /// <summary>
+        /// EFT zeroes a scope by tilting the optic (ScopePrefabCache.WeaponScopeAxis / ScopeData calibration),
+        /// so aligning the main camera to the optic camera tilted the whole view and pushed the scope
+        /// housing off centre as the zero went up. Returns the optic rotation with that tilt removed,
+        /// i.e. looking down the current scope bone axis (the same axis the ADS alignment gate uses),
+        /// keeping the optic's roll.
+        /// </summary>
+        private static Quaternion GetAlignmentRotation(Transform swaySource, Quaternion eftRotation)
+        {
+            Quaternion opticRot = swaySource.rotation;
+            _zeroOffsetActive = false;
+            if (!Settings.KeepScopeCenteredWithZeroing.Value)
+            {
+                AlignPath = "off";
+                return opticRot;
+            }
+
+            try
+            {
+                var scope = Helpers.GetLocalPlayer()?.ProceduralWeaponAnimation?.CurrentScope;
+                Transform bone = scope?.Bone;
+                if (bone == null) { AlignPath = "noBone"; return opticRot; }
+
+                Vector3 axis = bone.name == "aim_camera" ? -bone.up : -bone.forward;
+                if (axis.sqrMagnitude < 1e-6f) { AlignPath = "noAxis"; return opticRot; }
+
+                Vector3 opticForward = opticRot * Vector3.forward;
+                Vector3 zeroDir = _scopeDataTransform != null ? _scopeDataTransform.forward : opticForward;
+                float angle = Vector3.Angle(zeroDir, axis);
+                bool engage = _zeroAlignEngaged ? angle <= ReleaseZeroCorrectionDeg : angle <= MaxZeroCorrectionDeg;
+                if (engage != _zeroAlignEngaged)
+                {
+                    _zeroAlignEngaged = engage;
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[Reticle][Zero] scope-axis alignment {(engage ? "ON" : "OFF")} angle={angle:F3}° frame={Time.frameCount}");
+                }
+                if (!engage)
+                {
+                    AlignPath = "notEngaged";
+                    return opticRot;
+                }
+
+                Vector3 local = bone.InverseTransformDirection(zeroDir);
+                if (!_zeroLocalValid)
+                {
+                    _zeroLocal = local;
+                    _zeroLocalVelocity = Vector3.zero;
+                    _zeroLocalValid = true;
+                }
+                else
+                {
+                    // Zero changing → log the next ~1.5 s frame by frame (Debug logging only).
+                    if (Settings.DebugLogging.Value && PreciseAngleDeg(local, _zeroLocal) > 0.02f)
+                    {
+                        if (Time.realtimeSinceStartup > _zeroDiagUntil) _zeroDiagLines = 0;
+                        _zeroDiagUntil = Time.realtimeSinceStartup + 1.5f;
+                    }
+                    _zeroLocal = Vector3.SmoothDamp(_zeroLocal, local, ref _zeroLocalVelocity,
+                        ZeroSmoothTime, Mathf.Infinity, Time.unscaledDeltaTime).normalized;
+                }
+
+                if (Time.realtimeSinceStartup < _zeroDiagUntil && _zeroDiagLines < 400)
+                {
+                    _zeroDiagLines++;
+                    PiPDisablerPlugin.LogSource.LogInfo(
+                        $"[Reticle][Zero] f={Time.frameCount} angle={angle:F3} " +
+                        $"axisPitch={Mathf.Asin(Mathf.Clamp(axis.y, -1f, 1f)) * Mathf.Rad2Deg:F3} " +
+                        $"opticPitch={Mathf.Asin(Mathf.Clamp(opticForward.y, -1f, 1f)) * Mathf.Rad2Deg:F3} " +
+                        $"zeroPitch={Mathf.Asin(Mathf.Clamp(zeroDir.y, -1f, 1f)) * Mathf.Rad2Deg:F3} " +
+                        $"camPitchBefore={Mathf.Asin(Mathf.Clamp(_attachedCamera != null ? _attachedCamera.transform.forward.y : 0f, -1f, 1f)) * Mathf.Rad2Deg:F3} " +
+                        $"rawVsSmoothed={Vector3.Angle(local, _zeroLocal):F3} " +
+                        $"fov={(_attachedCamera != null ? _attachedCamera.fieldOfView : 0f):F3} " +
+                        $"boneInCamMm={(_attachedCamera != null ? (_attachedCamera.transform.InverseTransformPoint(bone.position) * 1000f).ToString("F2") : "?")} " +
+                        $"ribcage={(Helpers.GetLocalPlayer() != null ? Helpers.GetLocalPlayer().RibcageScaleCurrent : 0f):F4}");
+                }
+
+                _zeroedForward = bone.TransformDirection(_zeroLocal).normalized;
+                _zeroOffsetActive = true;
+                // Follow the scope axis 1:1 (2.8.11). The 2.7.10 "weapon step" smoothing ran relative to
+                // EFT's camera, so every glitch of that camera showed in the view while it was active, and
+                // it made the view lag the breathing sway (the scope drifted off centre at high zoom). A
+                // user log (2.8.10, FOV 3.2°) showed the scope axis moving smoothly (~0.001°/frame) even
+                // while the zero stepped — only the zero direction steps, and that is already smoothed
+                // above for the reticle — while EFT's camera relative to it "jumped" ~0.084° 448 times.
+                AlignPath = "corrected";
+                // Look down the scope axis with EFT's own camera roll (2.8.15). Built from the optic
+                // camera before (FromToRotation(opticForward, axis) * opticRot), the result flicked by up
+                // to 2× the zero tilt between frames ([Jitter] 2.8.14: scene 20 px rms / 77 px max at
+                // FOV 3.2° with one alignment per frame, while the scope axis and the optic camera were
+                // both under 1 px). The optic camera evidently takes over part of the previous frame's
+                // override (EFT updates it relative to the main camera), so using it fed the result back.
+                // The scope axis (weapon) and EFT's camera (rewritten by EFT every frame) do not.
+                Vector3 up = eftRotation * Vector3.up;
+                if (Mathf.Abs(Vector3.Dot(up, axis.normalized)) > 0.99f) up = opticRot * Vector3.up;
+                return Quaternion.LookRotation(axis, up);
+            }
+            catch
+            {
+                AlignPath = "error";
+                return opticRot;
+            }
+        }
+
+        // Angle between two directions, accurate down to float noise (Vector3.Angle bottoms out at ~0.02°).
+        private static float PreciseAngleDeg(Vector3 a, Vector3 b)
+            => Mathf.Atan2(Vector3.Cross(a, b).magnitude, Vector3.Dot(a, b)) * Mathf.Rad2Deg;
+
+
+        /// <summary>Clip-space position of the zeroed aim point (0,0 = screen centre).</summary>
+        private static Vector2 GetZeroClipOffset(Camera cam)
+        {
+            if (!_zeroOffsetActive || cam == null) return Vector2.zero;
+            Vector3 vp = WorldToViewportStable(cam, cam.transform.position + _zeroedForward * 100f);
+            if (vp.z <= 0f) return Vector2.zero;
+            return new Vector2(vp.x * 2f - 1f, vp.y * 2f - 1f);
+        }
+
+        // Result of this frame's alignment (2.8.14). [Jitter] (2.8.13) showed the alignment running twice
+        // per frame whenever this class's pre-cull hook ran before MeshSurgeryManager's (its own hook
+        // resets the "done" mark, then the early call aligned again), and the two results differed by
+        // about the zero tilt — the view and the pixel hole flicked between them (rms 10–15 px, max
+        // ~40 px at FOV 3.2°). Whatever moves between the two calls, the frame now has exactly one result:
+        // later calls in the same frame only put it back.
+        internal static string AlignPath = "-";
+        private static int _alignResultFrame = -1;
+        private static Quaternion _alignResult;
+        private static bool _alignResultZeroOffset;
+
+        private static void AlignCameraToScope(Camera cam)
+        {
+            if (_alignResultFrame == Time.frameCount)
+            {
+                cam.transform.rotation = _alignResult;
+                _zeroOffsetActive = _alignResultZeroOffset;
+                JitterProbe.RepeatCall(Quaternion.Angle(cam.transform.rotation, _alignResult));
+                return;
+            }
+            _zeroOffsetActive = false; // set again by GetAlignmentRotation when aligning this frame
 
             // ── Camera alignment ─────────────────────────────────────────
             // Override the camera's rotation to look exactly where the scope
@@ -579,6 +828,8 @@ namespace PiPDisabler
                 Transform swaySource = PiPDisabler.OpticCameraTransform ?? _opticTransform;
                 if (swaySource != null)
                 {
+                    Quaternion eftRotation = cam.transform.rotation; // before the override (JitterProbe)
+                    Quaternion targetRotation = GetAlignmentRotation(swaySource, eftRotation);
                     bool suppressForFireReload = IsFireReloadStateActive();
                     if (suppressForFireReload)
                     {
@@ -586,7 +837,7 @@ namespace PiPDisabler
                         {
                             _fireReloadRotationEntering = true;
                             _fireReloadRotationEnterStartTime = Time.realtimeSinceStartup;
-                            _fireReloadRotationEnterStart = swaySource.rotation;
+                            _fireReloadRotationEnterStart = targetRotation;
                         }
 
                         _fireReloadRotationRecovering = false;
@@ -630,7 +881,7 @@ namespace PiPDisabler
                             t = Mathf.SmoothStep(0f, 1f, t);
                             cam.transform.rotation = Quaternion.Slerp(
                                 _fireReloadRotationRecoverStart,
-                                swaySource.rotation,
+                                targetRotation,
                                 t);
 
                             if (t >= 1f)
@@ -638,14 +889,16 @@ namespace PiPDisabler
                         }
                         else
                         {
-                            cam.transform.rotation = swaySource.rotation;
+                            cam.transform.rotation = targetRotation;
                         }
                     }
+                    _alignResult = cam.transform.rotation;
+                    _alignResultZeroOffset = _zeroOffsetActive;
+                    _alignResultFrame = Time.frameCount;
+                    JitterProbe.Frame(cam, eftRotation, swaySource.rotation,
+                        _zeroOffsetActive ? _zeroedForward : swaySource.forward, suppressForFireReload, AlignPath);
                 }
             }
-
-            RebuildMatrix(cam);
-            RebuildCommandBuffer(cam);
         }
 
         private static bool IsFireReloadStateActive()
@@ -674,6 +927,18 @@ namespace PiPDisabler
             _fireReloadRotationRecoverStart = Quaternion.identity;
         }
 
+        /// <summary>
+        /// The per-scope zoom multiplier narrows the FOV by exactly that factor (tan-based), so the
+        /// lens and the target grow on screen by it; the reticle follows so it keeps its size relative
+        /// to them (2.8.0, "조준선이 확대 배수 따라가기").
+        /// </summary>
+        private static float ZoomReticleFactor()
+        {
+            if (Settings.ReticleFollowsZoom == null || !Settings.ReticleFollowsZoom.Value) return 1f;
+            float z = PerScopeMeshSurgerySettings.GetZoomMultiplier();
+            return z > 0.01f ? z : 1f;
+        }
+
         // ── Centered quad matrix ─────────────────────────────────────────────
 
         /// <summary>
@@ -695,9 +960,9 @@ namespace PiPDisabler
                 if (currentMag < 1f) currentMag = _lastMag;
                 float meshZoomScale = Mathf.Lerp(1f, Mathf.Max(1f, currentMag), zoomPosition);
                 float normalizedScale = Settings.MeshReticleNormalizedScale.Value;
-                float meshScale = _baseScale * meshZoomScale * _meshReticleBoundsScale * normalizedScale * Settings.GlobalReticleScalingMultiplier.Value;
-                float minMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMinScale() * Settings.GlobalReticleScalingMultiplier.Value;
-                float maxMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMaxScale() * Settings.GlobalReticleScalingMultiplier.Value;
+                float meshScale = _baseScale * meshZoomScale * _meshReticleBoundsScale * normalizedScale * PerScopeMeshSurgerySettings.GetGlobalReticleMultiplier();
+                float minMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMinScale() * PerScopeMeshSurgerySettings.GetGlobalReticleMultiplier();
+                float maxMeshScale = PerScopeMeshSurgerySettings.GetMeshReticleMaxScale() * PerScopeMeshSurgerySettings.GetGlobalReticleMultiplier();
                 if (minMeshScale > 0f && maxMeshScale > 0f)
                 {
                     if (maxMeshScale < minMeshScale)
@@ -734,18 +999,24 @@ namespace PiPDisabler
                     }
                 }
 
+                meshScale *= ZoomReticleFactor();
                 Vector3 position = _savedScopeReticle.Position;
+                Vector2 zeroOffset = GetZeroClipOffset(cam);
+                position.x += zeroOffset.x;
+                position.y += zeroOffset.y;
                 position.z = 0.5f;
-                float zRotation = Mathf.Repeat(_savedScopeReticle.Rotation.z, 360f);
-                bool quarterTurnReticle = Mathf.Abs(zRotation - 90f) < 0.5f || Mathf.Abs(zRotation - 270f) < 0.5f;
-                Vector3 meshReticleScale = quarterTurnReticle
-                    ? new Vector3(meshScale, meshScale / Mathf.Max(0.01f, meshAspect), meshScale)
-                    : new Vector3(meshScale / Mathf.Max(0.01f, meshAspect), meshScale, meshScale);
-
-                _reticleMatrix = Matrix4x4.TRS(
-                    position,
+                // Vanilla draws this mesh into the square optic RT. On the wide screen the X axis must
+                // be squeezed by the aspect AFTER the reticle's own rotation. The old code squeezed a
+                // local axis chosen from Rotation.z only (0°/90°), which is wrong for reticles rotated
+                // on other axes too — e.g. Epic's AiO variable scopes use (-90, 90, 90): local X maps to
+                // screen X, local Z to screen Y, so the reticle came out ~aspect× too wide.
+                // For 0°/90°/180°/270° about Z this gives exactly the previous result.
+                Matrix4x4 rotatedReticle = Matrix4x4.TRS(
+                    Vector3.zero,
                     Quaternion.Euler(_savedScopeReticle.Rotation),
-                    meshReticleScale);
+                    new Vector3(meshScale, meshScale, meshScale));
+                Matrix4x4 aspectFix = Matrix4x4.Scale(new Vector3(1f / Mathf.Max(0.01f, meshAspect), 1f, 1f));
+                _reticleMatrix = Matrix4x4.Translate(position) * aspectFix * rotatedReticle;
                 return;
             }
 
@@ -758,10 +1029,12 @@ namespace PiPDisabler
 
         float angularSize = _baseScale / referenceLensDistance;
         float ndcSize = angularSize / referenceTanHalfFov;
-        ndcSize *= Settings.GlobalReticleScalingMultiplier.Value;
-        ndcSize = Mathf.Clamp(ndcSize, 0.01f, 2f);
+        ndcSize *= PerScopeMeshSurgerySettings.GetGlobalReticleMultiplier();
+        ndcSize *= ZoomReticleFactor();
+        ndcSize = Mathf.Clamp(ndcSize, 0.01f, 8f);
 
-            Vector3 pos = new Vector3(0f, 0f, 0.5f);
+            Vector2 zeroClip = GetZeroClipOffset(cam);
+            Vector3 pos = new Vector3(zeroClip.x, zeroClip.y, 0.5f);
             float aspect = GetActiveAspect(cam);
             Vector3 scale = new Vector3(ndcSize / Mathf.Max(0.01f, aspect), ndcSize, 1f);
             _reticleMatrix = Matrix4x4.TRS(pos, Quaternion.identity, scale);
@@ -829,6 +1102,21 @@ namespace PiPDisabler
             var fullScreenMatrix = Matrix4x4.TRS(
                 Vector3.zero, Quaternion.identity, new Vector3(2f, 2f, 1f));
 
+            Material activeMat = GetActiveReticleMaterial();
+            if (activeMat != null && _hasStencilSupport)
+            {
+                if (useStencil)
+                {
+                    activeMat.SetFloat("_Stencil", 1f);
+                    activeMat.SetFloat("_StencilComp", (float)CompareFunction.Equal);
+                }
+                else
+                {
+                    activeMat.SetFloat("_Stencil", 0f);
+                    activeMat.SetFloat("_StencilComp", (float)CompareFunction.Always);
+                }
+            }
+
             if (useStencil)
             {
                 AppendLensStencilMask(_cmdBuffer, _reticleMesh, cam);
@@ -856,13 +1144,13 @@ namespace PiPDisabler
                     DrawActiveReticle();
             }
 
-            _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, cam.projectionMatrix);
+            _cmdBuffer.SetViewProjectionMatrices(cam.worldToCameraMatrix, StableProjection(cam));
         }
 
         public static bool AppendReticleForNvgLensBlur(CommandBuffer cmd, Rect viewport)
         {
             if (!ScopeEffectsRenderer.IsNvgLensFocalBlurActive) return false;
-            if (cmd == null || !HasLensStencilMask) return false;
+            if (cmd == null) return false;
             if (GetActiveReticleMesh() == null || GetActiveReticleMaterial() == null) return false;
 
             _reticlePixelSize = GetClipPixelSize(viewport);
@@ -878,8 +1166,6 @@ namespace PiPDisabler
 
         private static void DrawActiveReticle(CommandBuffer cmd)
         {
-            if (!HasLensStencilMask) return;
-
             Mesh mesh = GetActiveReticleMesh();
             Material material = GetActiveReticleMaterial();
             if (cmd == null || mesh == null || material == null) return;
@@ -1110,21 +1396,40 @@ namespace PiPDisabler
             if (_afterNvgShaderBundle == null)
             {
                 string pluginDir = Path.GetDirectoryName(typeof(PiPDisablerPlugin).Assembly.Location);
-                string bundlePath = Path.Combine(pluginDir ?? string.Empty, AfterNvgReticleBundleName);
-                if (File.Exists(bundlePath))
-                    _afterNvgShaderBundle = AssetBundle.LoadFromFile(bundlePath);
+                string[] possiblePaths = new[]
+                {
+                    Path.Combine(pluginDir ?? string.Empty, AfterNvgReticleBundleName),
+                    Path.Combine(pluginDir ?? string.Empty, "Shaders", AfterNvgReticleBundleName),
+                    Path.Combine(pluginDir ?? string.Empty, "Resources", "Shaders", AfterNvgReticleBundleName)
+                };
+
+                foreach (var bundlePath in possiblePaths)
+                {
+                    if (File.Exists(bundlePath))
+                    {
+                        try
+                        {
+                            _afterNvgShaderBundle = AssetBundle.LoadFromFile(bundlePath);
+                            if (_afterNvgShaderBundle != null)
+                                break;
+                        }
+                        catch { }
+                    }
+                }
             }
 
-            if (_afterNvgShaderBundle == null)
-                return null;
-
-            foreach (Shader bundledShader in _afterNvgShaderBundle.LoadAllAssets<Shader>())
+            if (_afterNvgShaderBundle != null)
             {
-                if (bundledShader != null && bundledShader.name == AfterNvgReticleShaderName)
-                    return bundledShader;
+                foreach (Shader bundledShader in _afterNvgShaderBundle.LoadAllAssets<Shader>())
+                {
+                    if (bundledShader != null && bundledShader.name == AfterNvgReticleShaderName)
+                        return bundledShader;
+                }
             }
 
-            return null;
+            return Shader.Find("UI/Default") ??
+                   Shader.Find("Sprites/Default") ??
+                   Shader.Find("Unlit/Transparent");
         }
 
         private static void EnsureMeshReticleMaterial()

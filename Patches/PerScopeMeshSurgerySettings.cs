@@ -34,6 +34,9 @@ namespace PiPDisabler
         public float VignetteRadius;
         public float VignetteSoftness;
         public bool ExpandSearchToWeaponRoot;
+        public float ZoomMultiplier = 1f;
+        public float CutWidthMultiplier = 1f;
+        public bool CutManual;
     }
 
     [Serializable]
@@ -47,11 +50,19 @@ namespace PiPDisabler
         private static ScopeMeshSurgerySettingsFile _file = new ScopeMeshSurgerySettingsFile();
         private static bool _loaded;
         private static string _activeScopeKey;
+        // Last scope aimed with: F12 edits made after leaving the scope still belong to it.
+        private static string _lastScopeKey;
+        internal static string LastScopeKey => _lastScopeKey;
+        internal static string ActiveScopeKey => _activeScopeKey;
         private static bool _syncingCustomConfig;
 
+        // Bundled defaults ship in the plugin folder and are replaced by every mod update/reinstall.
         private static string FilePath => Path.Combine(GetPluginRootDirectory(), "custom_mesh_surgery_settings.json");
+        // The player's own per-scope edits: <mod folder>/user-data/ (not in the release zip, so updates keep them).
+        private static string UserFilePath => UserData.PathFor("scope-settings.json");
+        private static readonly HashSet<string> _userKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        public static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => GetActiveOverride();
+        private static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => GetActiveOverride();
 
         internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : Settings.PlaneOffsetMeters.Value;
         internal static float GetPlane1Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1Radius : Settings.Plane1Radius.Value;
@@ -66,9 +77,9 @@ namespace PiPDisabler
         }
         internal static float GetPlane2Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Radius : Settings.Plane2Radius.Value;
         internal static float GetPlane3Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Position : Settings.Plane3Position.Value;
-        internal static float GetPlane3Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Radius : Settings.Plane3Radius.Value;
+        internal static float GetPlane3Radius() => ScaleOuterRadius(ActiveScopeOverride != null ? ActiveScopeOverride.Plane3Radius : Settings.Plane3Radius.Value);
         internal static float GetPlane4Position() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Position : Settings.Plane4Position.Value;
-        internal static float GetPlane4Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Radius : Settings.Plane4Radius.Value;
+        internal static float GetPlane4Radius() => ScaleOuterRadius(ActiveScopeOverride != null ? ActiveScopeOverride.Plane4Radius : Settings.Plane4Radius.Value);
         internal static float GetCutStartOffset() => ActiveScopeOverride != null ? ActiveScopeOverride.CutStartOffset : Settings.CutStartOffset.Value;
         internal static float GetCutLength() => ActiveScopeOverride != null ? ActiveScopeOverride.CutLength : Settings.CutLength.Value;
         internal static float GetNearPreserveDepth() => ActiveScopeOverride != null ? ActiveScopeOverride.NearPreserveDepth : Settings.NearPreserveDepth.Value;
@@ -106,12 +117,46 @@ namespace PiPDisabler
                 ? entry.VisualRecoilCompensation
                 : Settings.VisualRecoilCompensation.Value;
         }
+        // "구멍 넓이" narrows only the outer part of the hole (planes 3/4, in front of the scope where
+        // its outside shape gets cut). Plane 2 sits inside the tube; shrinking it (2.5.5) turned the
+        // lens into a pinhole and the scope interior went black. Never narrower than plane 2.
+        private static float ScaleOuterRadius(float radius)
+        {
+            float inner = ActiveScopeOverride != null ? ActiveScopeOverride.Plane2Radius : Settings.Plane2Radius.Value;
+            return Mathf.Max(radius * GetCutWidthMultiplier(), inner);
+        }
+
+        /// <summary>Automatic hole shape unless turned off globally or this scope chose its manual values.</summary>
+        internal static bool IsAutoCut()
+        {
+            if (!Settings.AutoCutShape.Value) return false;
+            var entry = ActiveScopeOverride;
+            return entry == null || !entry.CutManual;
+        }
+
+        internal static float GetCutWidthMultiplierRaw() => GetCutWidthMultiplier();
+
+        /// <summary>"구멍 넓이": scales the hole's front radii (1 = as set).</summary>
+        internal static float GetCutWidthMultiplier()
+        {
+            var entry = ActiveScopeOverride;
+            return entry != null && entry.CutWidthMultiplier > 0.01f ? entry.CutWidthMultiplier : 1f;
+        }
+
+        /// <summary>Extra zoom for the active scope (1 = the scope's own magnification).</summary>
+        internal static float GetZoomMultiplier()
+        {
+            var entry = ActiveScopeOverride;
+            return entry != null && entry.ZoomMultiplier > 0.01f ? entry.ZoomMultiplier : 1f;
+        }
         internal static bool GetExpandSearchToWeaponRoot() => ActiveScopeOverride != null ? ActiveScopeOverride.ExpandSearchToWeaponRoot : Settings.ExpandSearchToWeaponRoot.Value;
 
 
         internal static void SetActiveScope(string scopeKey)
         {
             _activeScopeKey = string.IsNullOrWhiteSpace(scopeKey) ? null : scopeKey.Trim();
+            if (_activeScopeKey != null)
+                _lastScopeKey = _activeScopeKey;
             SyncCustomConfigFromOverride();
         }
 
@@ -127,12 +172,20 @@ namespace PiPDisabler
             try
             {
                 _syncingCustomConfig = true;
-                if (entry == null)
+                bool hasEntry = entry != null;
+                if (!hasEntry)
                 {
-                    Settings.CustomVignetteOpacity.Value = 0f;
-                    Settings.CustomVignetteRadius.Value = 0f;
-                    Settings.CustomVignetteSoftness.Value = 0f;
-                    return;
+                    // No saved values: show the values actually in use (global defaults) instead of
+                    // whatever the previous scope left behind, so saving starts from the real state.
+                    entry = new ScopeMeshSurgerySettingsEntry { ScopeKey = _activeScopeKey };
+                    CopyGlobalSettingsTo(entry);
+                    // Same size as now: once saved, the global multipliers no longer stack on this scope.
+                    entry.WeaponScaleMinMagnification = Settings.ManualWeaponScale.Value * Settings.GlobalScopeScalingMultiplier.Value;
+                    entry.WeaponScaleMaxMagnification = entry.WeaponScaleMinMagnification;
+                    entry.ReticleSizeMultiplier = Settings.GlobalReticleScalingMultiplier.Value;
+                    entry.VignetteOpacity = 0f;
+                    entry.VignetteRadius = 0f;
+                    entry.VignetteSoftness = 0f;
                 }
 
                 Settings.CustomPlaneOffsetMeters.Value = entry.PlaneOffsetMeters;
@@ -159,7 +212,12 @@ namespace PiPDisabler
                 Settings.CustomVignetteRadius.Value = entry.VignetteRadius;
                 Settings.CustomVignetteSoftness.Value = entry.VignetteSoftness;
                 Settings.CustomExpandSearchToWeaponRoot.Value = entry.ExpandSearchToWeaponRoot;
-                PiPDisablerPlugin.DebugLogInfo($"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries.");
+                Settings.CustomZoomMultiplier.Value = entry.ZoomMultiplier > 0.01f ? entry.ZoomMultiplier : 1f;
+                Settings.CustomCutWidthMultiplier.Value = entry.CutWidthMultiplier > 0.01f ? entry.CutWidthMultiplier : 1f;
+                Settings.CustomCutManual.Value = entry.CutManual;
+                PiPDisablerPlugin.DebugLogInfo(hasEntry
+                    ? $"[CustomMeshSettings] Loaded saved settings for scope '{entry.ScopeKey}' into Custom config entries."
+                    : $"[CustomMeshSettings] No saved settings for scope '{entry.ScopeKey}' — Custom config entries show the defaults.");
             }
             catch (Exception ex)
             {
@@ -169,6 +227,12 @@ namespace PiPDisabler
             {
                 _syncingCustomConfig = false;
             }
+        }
+
+        /// <summary>Sets the active scope key only (no F12 sync, no "last scope"): for background work.</summary>
+        internal static void SetActiveScopeQuiet(string scopeKey)
+        {
+            _activeScopeKey = string.IsNullOrWhiteSpace(scopeKey) ? null : scopeKey.Trim();
         }
 
         internal static void ClearActiveScope()
@@ -220,6 +284,14 @@ namespace PiPDisabler
                 _file.Entries.Add(target);
             }
 
+            CopyCustomTo(target);
+            MarkUserEdited(scopeKey);
+            WriteToDisk();
+            return true;
+        }
+
+        private static void CopyCustomTo(ScopeMeshSurgerySettingsEntry target)
+        {
             target.PlaneOffsetMeters = Settings.CustomPlaneOffsetMeters.Value;
             target.Plane1Radius = Settings.CustomPlane1Radius.Value;
             target.Plane1OffsetMeters = Settings.CustomPlane1OffsetMeters.Value;
@@ -244,9 +316,56 @@ namespace PiPDisabler
             target.VignetteRadius = Settings.CustomVignetteRadius.Value;
             target.VignetteSoftness = Settings.CustomVignetteSoftness.Value;
             target.ExpandSearchToWeaponRoot = Settings.CustomExpandSearchToWeaponRoot.Value;
-            WriteToDisk();
+            target.ZoomMultiplier = Settings.CustomZoomMultiplier.Value;
+            target.CutWidthMultiplier = Settings.CustomCutWidthMultiplier.Value;
+            target.CutManual = Settings.CustomCutManual.Value;
+        }
+
+        internal static bool IsSyncing => _syncingCustomConfig;
+
+        private const float WriteDelay = 0.3f;
+        private static float _writeDueAt = -1f;
+
+        /// <summary>
+        /// A per-scope slider moved while aiming: put the values into the active scope's entry
+        /// right away (the getters read it every frame) and save to disk shortly after.
+        /// </summary>
+        internal static bool ApplyLiveEditFromCustom()
+        {
+            if (_syncingCustomConfig) return false;
+            string key = !string.IsNullOrWhiteSpace(_activeScopeKey) ? _activeScopeKey : _lastScopeKey;
+            if (string.IsNullOrWhiteSpace(key)) return false;
+
+            EnsureLoaded();
+            CopyCustomTo(GetOrCreateEntry(key));
+            MarkUserEdited(key);
+            _writeKey = key;
+            _writeDueAt = Time.realtimeSinceStartup + WriteDelay;
+            SettingsApplyGate.NoteChange();
             return true;
         }
+
+        internal static void TickPendingWrite()
+        {
+            if (_writeDueAt < 0f || Time.realtimeSinceStartup < _writeDueAt) return;
+            if (!SettingsApplyGate.CanApply) return; // write once when the F12 window closes
+            FlushPendingWrite();
+        }
+
+        /// <summary>Writes a pending auto-save now (also called on game exit).</summary>
+        internal static void FlushPendingWrite()
+        {
+            if (_writeDueAt < 0f) return;
+            _writeDueAt = -1f;
+            WriteToDisk();
+            PiPDisablerPlugin.LogSource.LogInfo($"[CustomMeshSettings] Auto-saved per-scope settings ('{_writeKey ?? "?"}').");
+        }
+
+        private static string _writeKey;
+
+        /// <summary>The global multipliers only apply to scopes without their own saved settings.</summary>
+        internal static float GetGlobalReticleMultiplier()
+            => ActiveScopeOverride != null ? 1f : Settings.GlobalReticleScalingMultiplier.Value;
 
         internal static void SaveActiveScopeVisualSettings()
         {
@@ -256,6 +375,7 @@ namespace PiPDisabler
             EnsureLoaded();
 
             var target = GetOrCreateEntry(_activeScopeKey);
+            MarkUserEdited(_activeScopeKey);
             target.VignetteOpacity = Settings.CustomVignetteOpacity.Value;
             target.VignetteRadius = Settings.CustomVignetteRadius.Value;
             target.VignetteSoftness = Settings.CustomVignetteSoftness.Value;
@@ -263,28 +383,21 @@ namespace PiPDisabler
         }
 
 
+        /// <summary>Removes the player's own settings for the scope (its bundled default, if any, applies again).</summary>
         internal static bool DeleteCustomSettingsForScope(string scopeKey)
         {
             if (string.IsNullOrWhiteSpace(scopeKey))
                 return false;
 
             EnsureLoaded();
+            if (!_userKeys.Remove(scopeKey))
+                return false;
 
-            for (int i = _file.Entries.Count - 1; i >= 0; i--)
-            {
-                var candidate = _file.Entries[i];
-                if (candidate == null || string.IsNullOrWhiteSpace(candidate.ScopeKey))
-                    continue;
-
-                if (!string.Equals(candidate.ScopeKey, scopeKey, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                _file.Entries.RemoveAt(i);
-                WriteToDisk();
-                return true;
-            }
-
-            return false;
+            _file.Entries.RemoveAll(e => e != null && string.Equals(e.ScopeKey, scopeKey, StringComparison.OrdinalIgnoreCase));
+            WriteToDisk();
+            _loaded = false; // re-merge so the bundled default for this scope is back
+            EnsureLoaded();
+            return true;
         }
 
         private static ScopeMeshSurgerySettingsEntry GetOrCreateEntry(string scopeKey)
@@ -330,6 +443,9 @@ namespace PiPDisabler
             target.VignetteRadius = Settings.CustomVignetteRadius.Value;
             target.VignetteSoftness = Settings.CustomVignetteSoftness.Value;
             target.ExpandSearchToWeaponRoot = Settings.ExpandSearchToWeaponRoot.Value;
+            target.ZoomMultiplier = 1f;
+            target.CutWidthMultiplier = 1f;
+            target.CutManual = false;
         }
 
         private static void EnsureLoaded()
@@ -338,33 +454,76 @@ namespace PiPDisabler
                 return;
 
             _loaded = true;
+            _file = ReadFile(FilePath) ?? new ScopeMeshSurgerySettingsFile();
+            _userKeys.Clear();
+
+            var user = ReadFile(UserFilePath);
+            int userCount = 0;
+            if (user != null)
+            {
+                foreach (var entry in user.Entries)
+                {
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.ScopeKey)) continue;
+                    _file.Entries.RemoveAll(e => e != null && string.Equals(e.ScopeKey, entry.ScopeKey, StringComparison.OrdinalIgnoreCase));
+                    _file.Entries.Add(entry);
+                    _userKeys.Add(entry.ScopeKey);
+                    userCount++;
+                }
+            }
+
+            PiPDisablerPlugin.LogSource.LogInfo(
+                $"[CustomMeshSettings] Loaded {_file.Entries.Count - userCount} bundled + {userCount} saved-by-you scope settings ({UserFilePath}).");
+        }
+
+        private static ScopeMeshSurgerySettingsFile ReadFile(string path)
+        {
             try
             {
-                if (!File.Exists(FilePath))
-                    return;
-
-                string json = File.ReadAllText(FilePath);
-                var parsed = JsonConvert.DeserializeObject<ScopeMeshSurgerySettingsFile>(json);
-                if (parsed != null && parsed.Entries != null)
-                    _file = parsed;
+                if (!File.Exists(path))
+                    return null;
+                var parsed = JsonConvert.DeserializeObject<ScopeMeshSurgerySettingsFile>(File.ReadAllText(path));
+                return parsed != null && parsed.Entries != null ? parsed : null;
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.DebugLogInfo($"[CustomMeshSettings] Failed to load settings json: {ex.Message}");
-                _file = new ScopeMeshSurgerySettingsFile();
+                PiPDisablerPlugin.LogSource.LogError($"[CustomMeshSettings] Failed to read {path}: {ex.Message}");
+                return null;
             }
         }
 
+        internal static bool IsUserEdited(string scopeKey)
+        {
+            EnsureLoaded();
+            return !string.IsNullOrWhiteSpace(scopeKey) && _userKeys.Contains(scopeKey);
+        }
+
+        private static void MarkUserEdited(string scopeKey)
+        {
+            if (!string.IsNullOrWhiteSpace(scopeKey))
+                _userKeys.Add(scopeKey);
+        }
+
+        /// <summary>Writes only the player's own entries, to the config folder.</summary>
         private static void WriteToDisk()
         {
             try
             {
-                string json = JsonConvert.SerializeObject(_file, Formatting.Indented);
-                File.WriteAllText(FilePath, json);
+                var user = new ScopeMeshSurgerySettingsFile();
+                foreach (var entry in _file.Entries)
+                {
+                    if (entry != null && !string.IsNullOrWhiteSpace(entry.ScopeKey) && _userKeys.Contains(entry.ScopeKey))
+                        user.Entries.Add(entry);
+                }
+
+                string path = UserFilePath;
+                string tmp = path + ".tmp";
+                File.WriteAllText(tmp, JsonConvert.SerializeObject(user, Formatting.Indented));
+                if (File.Exists(path)) File.Delete(path);
+                File.Move(tmp, path);
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.DebugLogInfo($"[CustomMeshSettings] Failed to save settings json: {ex.Message}");
+                PiPDisablerPlugin.LogSource.LogError($"[CustomMeshSettings] Failed to save settings json: {ex.Message}");
             }
         }
 

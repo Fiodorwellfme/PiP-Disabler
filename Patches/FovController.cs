@@ -1,8 +1,6 @@
 using System;
 using System.Reflection;
 using EFT.CameraControl;
-using EFT.Settings;
-using Comfort.Common;
 using EFT.InventoryLogic;
 using HarmonyLib;
 using UnityEngine;
@@ -22,16 +20,16 @@ namespace PiPDisabler
         private static bool _smvcSearched;
 
 
-        public static float _lastAppliedFov;
+        private static float _lastAppliedFov;
         public const float FovChangeThreshold = 0.05f; // degrees
 
         public static float MagnificationBaselineFov
         {
             get
             {
-                //if (!Settings.FOVFixBehaviour.Value)
-                    return Settings.BaselineFOV.Value;
-                //return Singleton<SettingsManager>.Instance.Game.Settings.FieldOfView.Value;
+                // Upstream 2.0 (2026-10-04): the magnification baseline stays fixed even with
+                // FOV Fix Behaviour on; that option only changes the 1x target (GetOneXTargetFov).
+                return Settings.BaselineFOV.Value;
             }
         }
 
@@ -44,6 +42,9 @@ namespace PiPDisabler
 
         /// <summary>Records the most-recently applied FOV target.</summary>
         public static void TrackAppliedFov(float fov) => _lastAppliedFov = fov;
+
+        /// <summary>Last zoom FOV target applied while scoped (0 = none yet).</summary>
+        public static float LastAppliedFov => _lastAppliedFov;
 
         // Dedup logging
         private static float _lastLoggedMag;
@@ -62,7 +63,7 @@ namespace PiPDisabler
                     PiPDisablerPlugin.DebugLogInfo(
                         $"[FovController] variable template FOV={variableFov:F2} deg t={smoothT:F3}");
                 }
-                return variableFov;
+                return ApplyZoomMultiplier(variableFov);
             }
 
             float magnification = GetEffectiveMagnification();
@@ -84,7 +85,17 @@ namespace PiPDisabler
                     $"{mapping} [{source}]");
             }
 
-            return resultFov;
+            return ApplyZoomMultiplier(resultFov);
+        }
+
+        /// <summary>Per-scope "확대 배수": narrows the FOV as if the scope magnified that much more.</summary>
+        private static float ApplyZoomMultiplier(float fov)
+        {
+            float zoom = PerScopeMeshSurgerySettings.GetZoomMultiplier();
+            if (Mathf.Abs(zoom - 1f) < 0.001f || fov <= 0.1f)
+                return fov;
+            float rad = 2f * Mathf.Atan(Mathf.Tan(fov * Mathf.Deg2Rad * 0.5f) / zoom);
+            return Mathf.Clamp(rad * Mathf.Rad2Deg, 0.5f, 120f);
         }
 
         /// <summary>
@@ -136,14 +147,15 @@ namespace PiPDisabler
             if (targetMag <= 0.1f)
                 return 1f;
 
-            if (!EFT.CameraControl.CameraManager.Exist || EFT.CameraControl.CameraManager.Instance == null)
+            if (!CameraManager.Exist || CameraManager.Instance == null)
                 return targetMag;
 
-            float currentFov = EFT.CameraControl.CameraManager.Instance.Fov;
+            float currentFov = CameraManager.Instance.Fov;
             if (currentFov <= 0.1f)
                 return targetMag;
 
-            float fovMag = FovToMagnification(currentFov, MagnificationBaselineFov);
+            // The per-scope extra zoom is not part of the scope's own magnification range.
+            float fovMag = Mathf.Max(1f, FovToMagnification(currentFov, MagnificationBaselineFov) / PerScopeMeshSurgerySettings.GetZoomMultiplier());
             var range = GetTemplateZoomRange();
             float minMag = Mathf.Min(range.min, range.max);
             float maxMag = Mathf.Max(range.min, range.max);
@@ -228,12 +240,12 @@ namespace PiPDisabler
                     // FOV Fix behaviour
                     if (Settings.FOVFixBehaviour.Value)
                     {
-                        return Singleton<SettingsManager>.Instance.Game.Settings.FieldOfView.Value;
+                        return pwa != null ? pwa.GetBaseFov() : 35f;
                     }
 
                     // Single-entry 1x mode uses vanilla ADS offset behavior.
                     if (modeCount == 1 && pwa != null)
-                        return Mathf.Max(1f, pwa. FieldOfView - 15f);
+                        return Mathf.Max(1f, pwa.GetBaseFov() - 15f);
 
                     // 1x inside a multi-mode stack stays fixed at optic FOV.
                     return 35f;
@@ -243,7 +255,7 @@ namespace PiPDisabler
             if (pwa == null)
                 return MagnificationBaselineFov;
 
-            return Mathf.Max(1f, pwa.FieldOfView);
+            return Mathf.Max(1f, pwa.GetBaseFov());
         }
 
         private static bool TryGetCurrentTemplateZoomEntry(OpticSight os, out float zoom, out int modeCount)
@@ -258,7 +270,25 @@ namespace PiPDisabler
             var state = GetCurrentScopeState(os);
             if (state.index < 0 || state.mode < 0) return false;
 
-            var zooms = sc._template?.Zooms;
+            float[][] zooms = null;
+            try
+            {
+                // SightComponent has no Template/Sight property. Its runtime template
+                // is exposed by Item.Template (and stored in its _template field).
+                object template = sc.Item?.Template;
+                if (template == null)
+                    template = HarmonyLib.AccessTools.Field(sc.GetType(), "_template")?.GetValue(sc);
+
+                if (template != null)
+                {
+                    var zoomsProp = HarmonyLib.AccessTools.Property(template.GetType(), "Zooms")
+                                 ?? (System.Reflection.MemberInfo)HarmonyLib.AccessTools.Field(template.GetType(), "Zooms");
+                    if (zoomsProp is System.Reflection.PropertyInfo p) zooms = p.GetValue(template) as float[][];
+                    else if (zoomsProp is System.Reflection.FieldInfo f) zooms = f.GetValue(template) as float[][];
+                }
+            }
+            catch { }
+
             if (zooms == null || state.index >= zooms.Length) return false;
 
             var modeZooms = zooms[state.index];

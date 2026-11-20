@@ -13,6 +13,9 @@ namespace PiPDisabler.Patches
 
         public static bool ShouldSuppress(OpticSight opticSight)
         {
+            if (!Settings.ModEnabled.Value)
+                return false;
+
             return !ScopeLifecycle.ShouldBypassForCurrentOptic(opticSight);
         }
 
@@ -37,10 +40,10 @@ namespace PiPDisabler.Patches
 
         public static void RestoreVanillaOpticState(OpticSight opticSight)
         {
-            if (opticSight == null || !EFT.CameraControl.CameraManager.Exist || EFT.CameraControl.CameraManager.Instance == null)
+            if (opticSight == null || !CameraManager.Exist || CameraManager.Instance == null)
                 return;
 
-            var manager = EFT.CameraControl.CameraManager.Instance.OpticCameraManager;
+            var manager = CameraManager.Instance.OpticCameraManager;
             if (manager == null)
                 return;
 
@@ -51,7 +54,8 @@ namespace PiPDisabler.Patches
                 if (opticSight.CameraData != null)
                 {
                     manager.OpticRetrice?.SetOpticSight(opticSight);
-                    manager._updater?.CopyComponentFromOptic(opticSight);
+                    if (manager.Updater != null)
+                        manager.Updater.CopyComponentFromOptic(opticSight);
                 }
 
                 global::PiPDisabler.PiPDisabler.ForceLensFade(opticSight, false);
@@ -63,7 +67,7 @@ namespace PiPDisabler.Patches
                 }
 
                 EnsureRenderTextureForVanilla(manager);
-                EFT.CameraControl.CameraManager.Instance.method_10();
+                CameraManager.Instance.method_10();
             }
             catch (Exception ex)
             {
@@ -82,10 +86,11 @@ namespace PiPDisabler.Patches
                 if (manager.Camera != null)
                     manager.Camera.targetTexture = null;
 
-                if (manager._renderTexture != null)
+                var rt = manager._renderTexture;
+                if (rt != null)
                 {
-                    manager._renderTexture.Release();
-                    UnityEngine.Object.Destroy(manager._renderTexture);
+                    rt.Release();
+                    UnityEngine.Object.Destroy(rt);
                     manager._renderTexture = null;
                 }
 
@@ -99,13 +104,13 @@ namespace PiPDisabler.Patches
         }
 
         public static bool ShouldKeepSetResolution()
-            => _allowSetResolution || ScopeLifecycle.IsCurrentOrPendingOpticBypassed();
+            => _allowSetResolution || !Settings.ModEnabled.Value || ScopeLifecycle.IsCurrentOrPendingOpticBypassed();
     }
 
     internal sealed class OpticCameraManagerEnableOptic_NoPipPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(EFT.CameraControl.OpticCameraManager), "method_2");
+            => AccessTools.Method(typeof(EFT.CameraControl.OpticCameraManager), "OnOpticSightEnabled");
 
         [PatchPrefix]
         private static bool Prefix(EFT.CameraControl.OpticCameraManager __instance, OpticSight opticSight)
@@ -124,8 +129,8 @@ namespace PiPDisabler.Patches
                 __instance.CurrentOpticSight = null;
                 __instance.OpticRetrice?.SetOpticSight(null);
 
-                if (opticSight?.CameraData != null && __instance._updater != null)
-                    __instance._updater.CopyComponentFromOptic(opticSight);
+                if (opticSight?.CameraData != null && __instance.Updater != null)
+                    __instance.Updater.CopyComponentFromOptic(opticSight);
 
                 if (__instance.Camera != null)
                     __instance.Camera.gameObject.SetActive(true);
@@ -163,15 +168,17 @@ namespace PiPDisabler.Patches
     internal sealed class CameraClassOnOpticEnabled_NoPipPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(EFT.CameraControl.CameraManager), "method_10");
+            // 4.1: method_10 lives on CameraManager (subscribed to OpticCameraManager.OnOpticEnabled),
+            // not on OpticCameraManager. Targeting the wrong type made this patch silently fail.
+            => AccessTools.Method(typeof(CameraManager), "method_10");
 
         [PatchPrefix]
         private static bool Prefix()
         {
-            if (ScopeLifecycle.IsCurrentOrPendingOpticBypassed())
+            if (!Settings.ModEnabled.Value || ScopeLifecycle.IsCurrentOrPendingOpticBypassed())
                 return true;
 
-            var currentOptic = EFT.CameraControl.CameraManager.Instance?.OpticCameraManager?.CurrentOpticSight;
+            var currentOptic = CameraManager.Instance?.OpticCameraManager?.CurrentOpticSight;
             if (currentOptic != null && ScopeLifecycle.ShouldBypassForCurrentOptic(currentOptic))
                 return true;
 

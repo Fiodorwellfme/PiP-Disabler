@@ -16,6 +16,7 @@ namespace PiPDisabler.Patches
             SafeEnable<TacticalRangeFinderOnEnablePatch>();
             SafeEnable<TacticalRangeFinderIgnoreLocalBodyPatch>();
             SafeEnable<ChangeAimingModePatch>();
+            SafeEnable<ChangeAimingModeIndexPatch>();
             SafeEnable<SetScopeModePatch>();
             SafeEnable<PlayerOnSetInHandsPatch>();
             SafeEnable<PlayerSetInventoryOpenedPatch>();
@@ -24,6 +25,8 @@ namespace PiPDisabler.Patches
             SafeEnable<CameraClassOnOpticEnabled_NoPipPatch>();
             SafeEnable<MainCameraLodBiasSetByFovPatch>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterCopyComponentFromOptic_DisablePiP>();
+            SafeEnable<ScopeZoomReadinessPatch>();
+            SafeEnable<ZoomSensitivityPatch>();
             SafeEnable<PiPDisabler.OpticComponentUpdaterLateUpdate_DisablePiP>();
             SafeEnable<PiPDisabler.OpticSightLensFade_NoPipPatch>();
             SafeEnable<PWAMethod23Patch>();
@@ -40,6 +43,9 @@ namespace PiPDisabler.Patches
             SafeEnable<SpringVectorAccelerationFovScalingPatch>();
             SafeEnable<SpringComponentAccelerationFovScalingPatch>();
             SafeEnable<RecoilReturnToZeroPatch>();
+            SafeEnable<AimWalkSwayWalkPatch>();
+            SafeEnable<AimWalkSwayMotionPatch>();
+            SafeEnable<AimHeadBobCameraPatch>();
             FikaCompat.Enable();
             FOVFixCompat.Enable();
             DERPCompat.Enable();
@@ -54,7 +60,9 @@ namespace PiPDisabler.Patches
             }
             catch (Exception ex)
             {
-                PiPDisablerPlugin.DebugLogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
+                // Always logged (not gated by Debug Logging): a patch that fails to apply
+                // silently disables part of the mod and is otherwise invisible in LogOutput.log.
+                PiPDisablerPlugin.LogSource.LogError($"[Patcher] Failed to enable {typeof(T).Name}: {ex.Message}");
             }
         }
     }

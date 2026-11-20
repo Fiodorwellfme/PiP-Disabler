@@ -1,3 +1,4 @@
+using System;
 using System.Reflection;
 using EFT;
 using EFT.CameraControl;
@@ -22,6 +23,7 @@ namespace PiPDisabler.Patches
                 $"[Patch] OnEnable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"enabled={__instance?.enabled} frame={Time.frameCount}");
 
+            if (!Settings.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticEnabled(__instance);
         }
     }
@@ -38,6 +40,7 @@ namespace PiPDisabler.Patches
                 $"[Patch] OnDisable: '{(__instance != null ? __instance.name : "null")}' " +
                 $"frame={Time.frameCount}");
 
+            if (!Settings.ModEnabled.Value) return;
             ScopeLifecycle.OnOpticDisabled(__instance);
         }
     }
@@ -50,6 +53,7 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix(TacticalRangeFinderController __instance)
         {
+            if (!Settings.ModEnabled.Value) return;
             if (__instance == null) return;
 
             var opticSight = ResolveRangeFinderOptic(__instance.transform);
@@ -135,14 +139,18 @@ namespace PiPDisabler.Patches
         private static readonly FieldInfo MaskField =
             AccessTools.Field(typeof(TacticalRangeFinderController), "_mask");
         private static readonly MethodInfo SetMonospaceTextMethod =
-            AccessTools.Method(typeof(EFT.StringExtensions), "SetMonospaceText");
+            AccessTools.Method(AccessTools.TypeByName("EFT.StringExtensions")
+                ?? AccessTools.TypeByName("GClass1673")
+                ?? AccessTools.TypeByName("EFT.UI.CustomTextMeshProUtils")
+                ?? AccessTools.TypeByName("TextMeshProUtils"), "SetMonospaceText");
 
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(TacticalRangeFinderController), "method_0");
+            => AccessTools.Method(typeof(TacticalRangeFinderController), nameof(TacticalRangeFinderController.MeasureDistance));
 
         [PatchPrefix]
         private static bool Prefix(TacticalRangeFinderController __instance)
         {
+            if (!Settings.ModEnabled.Value) return true;
             if (__instance == null) return true;
 
             try
@@ -268,11 +276,12 @@ namespace PiPDisabler.Patches
     internal sealed class ChangeAimingModePatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(Player.FirearmController), "ChangeAimingMode");
+            => AccessTools.Method(typeof(Player.FirearmController), "ChangeAimingMode", Type.EmptyTypes);
 
         [PatchPostfix]
         private static void Postfix()
         {
+            if (!Settings.ModEnabled.Value) return;
 
             PiPDisablerPlugin.DebugLogInfo(
                 $"[Patch] ChangeAimingMode frame={Time.frameCount}");
@@ -282,7 +291,28 @@ namespace PiPDisabler.Patches
     }
 
     /// <summary>
-    /// Postfix on Player.FirearmController.SetScopeMode(FirearmScopeStateStruct[]).
+    /// 4.1 added a ChangeAimingMode(int modeIndex) overload that sets the aim index directly
+    /// without going through the parameterless method, so it needs its own postfix.
+    /// </summary>
+    internal sealed class ChangeAimingModeIndexPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod()
+            => AccessTools.Method(typeof(Player.FirearmController), "ChangeAimingMode", new[] { typeof(int) });
+
+        [PatchPostfix]
+        private static void Postfix()
+        {
+            if (!Settings.ModEnabled.Value) return;
+
+            PiPDisablerPlugin.DebugLogInfo(
+                $"[Patch] ChangeAimingMode(int) frame={Time.frameCount}");
+            ScopeLifecycle.CheckAndUpdate("ChangeAimingMode(int)");
+            ScopeLifecycle.OnSetScopeMode();
+        }
+    }
+
+    /// <summary>
+    /// Postfix on Player.FirearmController.SetScopeMode(ScopeState[]).
     /// Fires after EFT applies the new scope/mode state to SightComponent, so
     /// ScopeLifecycle re-applies FOV change immediately.
     /// </summary>
@@ -291,7 +321,7 @@ namespace PiPDisabler.Patches
         protected override MethodBase GetTargetMethod()
         {
             // FirearmController is an inner class of Player; find SetScopeMode by name and
-            // parameter type (FirearmScopeStateStruct[]) to avoid ambiguity.
+            // parameter type (ScopeState[]) to avoid ambiguity.
             var fcType = typeof(Player.FirearmController);
             var method = fcType.GetMethods(
                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
@@ -309,6 +339,7 @@ namespace PiPDisabler.Patches
         [PatchPostfix]
         private static void Postfix()
         {
+            if (!Settings.ModEnabled.Value) return;
 
             PiPDisablerPlugin.DebugLogInfo(
                 $"[Patch] SetScopeMode frame={Time.frameCount}");
@@ -324,11 +355,21 @@ namespace PiPDisabler.Patches
     internal sealed class PlayerOnSetInHandsPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(Player), "OnSetInHands");
+        {
+            var interfaceMap = typeof(Player).GetInterfaceMap(typeof(ISetInHandsHandler));
+            for (int i = 0; i < interfaceMap.InterfaceMethods.Length; i++)
+            {
+                if (interfaceMap.InterfaceMethods[i].Name == nameof(ISetInHandsHandler.OnSetInHands))
+                    return interfaceMap.TargetMethods[i];
+            }
+
+            return null;
+        }
 
         [PatchPostfix]
         private static void Postfix(Player __instance, EFT.InventoryLogic.SetInHandsEventArgs eventArgs)
         {
+            if (!Settings.ModEnabled.Value) return;
             if (__instance == null || eventArgs == null || eventArgs.Status != CommandStatus.Succeed) return;
 
             var localPlayer = Helpers.GetLocalPlayer();

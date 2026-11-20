@@ -4,6 +4,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using Comfort.Common;
 using EFT;
+using EFT.Animations;
 using EFT.CameraControl;
 using UnityEngine;
 
@@ -15,9 +16,9 @@ namespace PiPDisabler
         {
             try
             {
-                if (EFT.CameraControl.CameraManager.Exist)
+                if (CameraManager.Exist)
                 {
-                    var cam = EFT.CameraControl.CameraManager.Instance.Camera;
+                    var cam = CameraManager.Instance.Camera;
                     if (cam != null) return cam;
                 }
             }
@@ -59,6 +60,15 @@ namespace PiPDisabler
             var mB = FindModeAncestor(b);
             return mA == mB;
         }
+
+        internal static float GetBaseFov(this ProceduralWeaponAnimation pwa)
+        {
+            return pwa != null ? pwa.HeadBobbing : Settings.BaselineFOV.Value;
+        }
+
+        // 4.1: the consumer list is the public ObjectInHandsAnimator._eventsConsumers field.
+        internal static System.Collections.IEnumerable GetEventsConsumers(this FirearmsAnimator fa)
+            => fa?._eventsConsumers;
 
         private static Transform FindModeAncestor(Transform t)
         {
