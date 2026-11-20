@@ -74,6 +74,7 @@ namespace PiPDisabler
         public static ConfigEntry<bool> PrecutHeldScope;
         public static ConfigEntry<bool> RecutEveryAim;
         public static ConfigEntry<bool> PixelHoleMode;
+        public static ConfigEntry<bool> PixelHoleHidesHands;
         public static ConfigEntry<KeyCode> SaveCustomMeshSurgerySettingsKey;
         public static ConfigEntry<KeyCode> DeleteCustomMeshSurgerySettingsKey;
         public static ConfigEntry<float> CustomPlaneOffsetMeters;
@@ -272,6 +273,11 @@ namespace PiPDisabler
             ConfigEntries.Add(PixelHoleMode = config.Bind("General", "Pixel Hole", true,
                 new ConfigDescription(
                     "Instead of cutting the scope body's meshes, hide it per pixel inside the lens circle on screen. Nothing is cut, so zooming, restarting and recoil never need a re-cut and the hole edge is the lens circle itself. On by default. If the scope body vanishes, the sky through the lens looks wrong, or the scope edge smears when turning (TAA/DLSS/FSR), turn it off — the mesh cut is used instead.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(PixelHoleHidesHands = config.Bind("General", "Pixel Hole Hides Hands", true,
+                new ConfigDescription(
+                    "With the pixel hole: your own arms, gloves and watch are hidden inside the lens circle too, so a hand or sleeve never covers the view through the scope. Outside the lens they are drawn as usual. Turning it on takes effect on the next aim.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(HoleOffAxisMargin = config.Bind("General", "Hole Off-axis Margin (mm)", 4f,

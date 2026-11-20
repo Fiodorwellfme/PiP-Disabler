@@ -55,6 +55,20 @@ namespace PiPDisabler
         private static bool _failedThisSession;
         private static bool _loggedFrame;
 
+        // Own arms, gloves and watch ("Pixel Hole Hides Hands"): hidden inside the lens circle like the scope
+        // body. They are taken out of the normal pass by moving them to a layer the main camera does not
+        // render (not ShadowsOnly: EFT turns the first-person arms' shadows off, ShadowsOnly would add them),
+        // and kept skinned meanwhile with updateWhenOffscreen.
+        private struct HandState
+        {
+            public int Layer;
+            public bool Offscreen;
+        }
+        private static readonly List<Renderer> _hands = new List<Renderer>(8);
+        private static readonly Dictionary<Renderer, HandState> _handsMoved = new Dictionary<Renderer, HandState>();
+        private static int _hiddenLayer = -1;
+        private static readonly System.Reflection.FieldInfo WatchesField = HarmonyLib.AccessTools.Field(typeof(EFT.PlayerBody), "_watches");
+
         internal static bool Enabled => Settings.PixelHoleMode != null && Settings.PixelHoleMode.Value && !_failedThisSession;
         internal static bool Active => _os != null;
 
@@ -108,6 +122,7 @@ namespace PiPDisabler
                         for (int i = 1; i < lods.Length; i++)
                             foreach (var lr in lods[i].renderers) if (lr != null) _lodHidden.Add(lr);
                     }
+                CollectHands(cam);
 
                 _cb = new CommandBuffer { name = "PiPDisabler PixelHole" };
                 cam.AddCommandBuffer(CameraEvent.BeforeGBuffer, _cb);
@@ -117,7 +132,7 @@ namespace PiPDisabler
                 MeshSurgeryManager.DisableScopeExtras(scopeRoot);
                 MeshSurgeryManager.EnsureRenderHook();
                 PiPDisablerPlugin.LogSource.LogInfo(
-                    $"[PixelHole] On for '{os.name}': lens r={lensR * 1000f:F1}mm, hole r={_holeR * 1000f:F1}mm, {_candidates.Count} weapon parts checked per frame, camera far={cam.farClipPlane:F0}m (projection far {ProjectionFar(cam)}){OtherBuffers(cam)}");
+                    $"[PixelHole] On for '{os.name}': lens r={lensR * 1000f:F1}mm, hole r={_holeR * 1000f:F1}mm, {_candidates.Count} weapon parts and {_hands.Count} hand parts checked per frame{(_hands.Count > 0 ? $" (hands hidden on layer {_hiddenLayer})" : "")}, camera far={cam.farClipPlane:F0}m (projection far {ProjectionFar(cam)}){OtherBuffers(cam)}");
                 return true;
             }
             catch (Exception ex)
@@ -158,6 +173,7 @@ namespace PiPDisabler
                 if (kv.Key != null)
                     try { kv.Key.shadowCastingMode = kv.Value; } catch { }
             _moved.Clear();
+            RestoreHands();
             if (_os != null)
             {
                 if (_weaponRoot != null) MeshSurgeryManager.RestoreScopeExtras(_weaponRoot);
@@ -168,7 +184,85 @@ namespace PiPDisabler
             _weaponRoot = null;
             _cam = null;
             _candidates.Clear();
+            _hands.Clear();
             _lodHidden.Clear();
+        }
+
+        /// <summary>Own arms/gloves (all skin LODs, lower LODs left out) and watch, when the option is on.</summary>
+        private static void CollectHands(Camera cam)
+        {
+            _hands.Clear();
+            _hiddenLayer = -1;
+            if (Settings.PixelHoleHidesHands == null || !Settings.PixelHoleHidesHands.Value) return;
+            for (int i = 31; i >= 0; i--)
+                if ((cam.cullingMask & (1 << i)) == 0) { _hiddenLayer = i; break; }
+            if (_hiddenLayer < 0)
+            {
+                PiPDisablerPlugin.LogSource.LogInfo("[PixelHole] Main camera renders every layer — hands are not hidden");
+                return;
+            }
+            var player = Helpers.GetLocalPlayer();
+            var body = player != null ? player.PlayerBody : null;
+            if (body == null) return;
+            if (body.BodySkins.TryGetValue(EFT.EBodyModelPart.Hands, out var skin) && skin != null)
+            {
+                var g = skin.GetComponentInChildren<LODGroup>(true);
+                if (g == null) g = skin.GetComponentInParent<LODGroup>();
+                if (g != null)
+                {
+                    var lods = g.GetLODs();
+                    for (int i = 1; i < lods.Length; i++)
+                        foreach (var lr in lods[i].renderers) if (lr != null) _lodHidden.Add(lr);
+                }
+                foreach (var r in skin.GetRenderers())
+                    if (r != null && !_hands.Contains(r)) _hands.Add(r);
+            }
+            if (WatchesField != null && WatchesField.GetValue(body) is Component watch && watch != null)
+                foreach (var r in watch.GetComponentsInChildren<Renderer>(true))
+                    if (r != null && !_hands.Contains(r)) _hands.Add(r);
+        }
+
+        private static Mesh MeshOf(Renderer r)
+        {
+            if (r is SkinnedMeshRenderer s) return s.sharedMesh;
+            var mf = r.GetComponent<MeshFilter>();
+            return mf != null ? mf.sharedMesh : null;
+        }
+
+        // A hand part is only hidden when all its materials have a deferred pass (we redraw it in that pass);
+        // otherwise it is left as it is (a forward-only hand would vanish instead of being drawn by us).
+        private static bool AllDeferred(Renderer r, Mesh mesh)
+        {
+            r.GetSharedMaterials(_mats);
+            int subs = Mathf.Min(_mats.Count, mesh.subMeshCount);
+            for (int i = 0; i < subs; i++)
+                if (_mats[i] != null && DeferredPass(_mats[i]) < 0) return false;
+            return subs > 0;
+        }
+
+        private static void RestoreHand(Renderer r)
+        {
+            if (r == null || !_handsMoved.TryGetValue(r, out var st)) return;
+            try
+            {
+                r.gameObject.layer = st.Layer;
+                if (r is SkinnedMeshRenderer s) s.updateWhenOffscreen = st.Offscreen;
+            }
+            catch { }
+            _handsMoved.Remove(r);
+        }
+
+        private static void RestoreHands()
+        {
+            foreach (var kv in _handsMoved)
+                if (kv.Key != null)
+                    try
+                    {
+                        kv.Key.gameObject.layer = kv.Value.Layer;
+                        if (kv.Key is SkinnedMeshRenderer s) s.updateWhenOffscreen = kv.Value.Offscreen;
+                    }
+                    catch { }
+            _handsMoved.Clear();
         }
 
         /// <summary>Main camera, before culling (weapon as on screen): choose parts, record the buffer.</summary>
@@ -262,6 +356,38 @@ namespace PiPDisabler
                     drawn++;
                 }
             }
+            int hands = 0;
+            bool hideHands = Settings.PixelHoleHidesHands != null && Settings.PixelHoleHidesHands.Value;
+            foreach (var r in _hands)
+            {
+                bool use = hideHands && r != null && r.enabled && !r.forceRenderingOff && r.gameObject.activeInHierarchy &&
+                           !_lodHidden.Contains(r) && Touches(c, r.bounds, sc, reach);
+                var mesh = use ? MeshOf(r) : null;
+                if (mesh == null || (!_handsMoved.ContainsKey(r) && !AllDeferred(r, mesh)))
+                {
+                    RestoreHand(r);
+                    continue;
+                }
+                if (!_handsMoved.ContainsKey(r))
+                {
+                    var smr = r as SkinnedMeshRenderer;
+                    _handsMoved[r] = new HandState { Layer = r.gameObject.layer, Offscreen = smr != null && smr.updateWhenOffscreen };
+                    r.gameObject.layer = _hiddenLayer;
+                    if (smr != null) smr.updateWhenOffscreen = true;
+                }
+                hands++;
+                r.GetSharedMaterials(_mats);
+                int subs = Mathf.Min(_mats.Count, mesh.subMeshCount);
+                for (int i = 0; i < subs; i++)
+                {
+                    var m = _mats[i];
+                    if (m == null) continue;
+                    int pass = DeferredPass(m);
+                    if (pass < 0) continue;
+                    _cb.DrawRenderer(r, m, i, pass);
+                    drawn++;
+                }
+            }
             // Disk vertices are device coordinates: draw with identity matrices (Unity still applies the
             // platform's Y flip / reversed depth on top), then give the G-buffer pass the camera's back.
             _cb.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
@@ -273,7 +399,7 @@ namespace PiPDisabler
             {
                 _loggedFrame = true;
                 PiPDisablerPlugin.LogSource.LogInfo(
-                    $"[PixelHole] First frame: lens {rPx:F0}px on screen, {moved} parts cover it ({drawn} drawn by the mod, {forwardOnly} forward-only parts hidden while covering it), black surface shader: {_blackShader}");
+                    $"[PixelHole] First frame: lens {rPx:F0}px on screen, {moved} parts and {hands} hand parts cover it ({drawn} drawn by the mod, {forwardOnly} forward-only parts hidden while covering it), black surface shader: {_blackShader}");
             }
         }
 
@@ -331,6 +457,7 @@ namespace PiPDisabler
             foreach (var kv in _moved)
                 if (kv.Key != null) kv.Key.shadowCastingMode = kv.Value;
             _moved.Clear();
+            RestoreHands();
         }
 
         private static bool EnsureResources()
