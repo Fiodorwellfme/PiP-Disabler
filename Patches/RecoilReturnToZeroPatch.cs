@@ -8,18 +8,23 @@ namespace PiPDisabler.Patches
 {
     internal sealed class RecoilReturnToZeroPatch : ModulePatch
     {
+        private static readonly FieldInfo _afterRecoilDefaultPositionField =
+            AccessTools.Field(typeof(NewRotationRecoilProcess), "_afterRecoilDefaultPosition");
+
         protected override MethodBase GetTargetMethod()
             => AccessTools.Method(typeof(NewRotationRecoilProcess), nameof(NewRotationRecoilProcess.CalculateAfterRecoilWeaponOffset));
 
         [PatchPostfix]
         private static void Postfix(NewRotationRecoilProcess __instance)
         {
-            if (__instance == null || !Settings.ForceRecoilReturnToZero.Value)
+            if (__instance == null ||
+                !Settings.ModEnabled.Value ||
+                !Settings.ForceRecoilReturnToZero.Value)
             {
                 return;
             }
 
-            __instance._afterRecoilDefaultPosition = Vector2.zero;
+            _afterRecoilDefaultPositionField?.SetValue(__instance, Vector2.zero);
         }
     }
 }

@@ -1,13 +1,10 @@
 using EFT;
 using EFT.Animations;
 using EFT.CameraControl;
-using Comfort.Common;
-using EFT.Settings;
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using PiPDisabler.Patches;
 
 namespace PiPDisabler
 {
@@ -128,6 +125,16 @@ namespace PiPDisabler
 
         public static void OnOpticEnabled(OpticSight os)
         {
+            // OpticSight.OnEnable fires for every OpticSight in the scene. Only react to the local
+            // player's own weapon; otherwise a foreign optic toggling while we're scoped hijacks
+            // _activeOptic through the "mode switch" branch below.
+            if (os != null && !IsLocalPlayerOptic(os))
+            {
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[ScopeLifecycle] Ignoring OnEnable of foreign optic '{os.name}' frame={Time.frameCount}");
+                return;
+            }
+
             if (os != null)
                 _lastEnabledOptic = os;
 
@@ -211,9 +218,54 @@ namespace PiPDisabler
 
         public static void OnOpticDisabled(OpticSight os)
         {
-            ReticleRenderer.Hide();
-            ScopeEffectsRenderer.Hide();
+            // Only tear down the overlay when the optic that went away is the one we're using.
+            // Previously any OpticSight.OnDisable hid the reticle/effects; if our optic stayed
+            // enabled, CheckAndUpdate saw no state change and nothing re-showed them, so the
+            // reticle stayed gone until the next ADS.
+            if (_activeOptic == null || os == null || os == _activeOptic)
+            {
+                ReticleRenderer.Hide();
+                ScopeEffectsRenderer.Hide();
+            }
+            else
+            {
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[ScopeLifecycle] OnDisable of non-active optic '{os.name}' ignored for overlay " +
+                    $"(active='{_activeOptic.name}') frame={Time.frameCount}");
+            }
             CheckAndUpdate("OnOpticDisabled");
+        }
+
+        private static bool IsLocalPlayerOptic(OpticSight os)
+        {
+            try
+            {
+                var player = GetLocalPlayer();
+                if (player == null)
+                    return true; // nothing to compare against — keep the old behaviour
+
+                var aimTransforms = player.ProceduralWeaponAnimation?.ScopeAimTransforms;
+                if (aimTransforms != null)
+                {
+                    for (int i = 0; i < aimTransforms.Count; i++)
+                    {
+                        var cache = aimTransforms[i]?.ScopePrefabCache;
+                        if (cache == null) continue;
+                        for (int m = 0; m < cache.ModesCount; m++)
+                        {
+                            if (cache.GetOpticSight(m) == os)
+                                return true;
+                        }
+                    }
+                }
+
+                var root = player.Transform?.Original;
+                return root != null && os.transform.IsChildOf(root);
+            }
+            catch
+            {
+                return true;
+            }
         }
 
         internal static void RestoreBypassedOpticState(OpticSight os, string reason,
@@ -245,10 +297,17 @@ namespace PiPDisabler
                 var pwa = player.ProceduralWeaponAnimation;
                 if (pwa == null) { reason = "no PWA"; goto evaluate; }
 
-                if (IsPlayerSprintingOrStanceTransitioning(player))
+                if (IsPlayerSprinting(player))
                 {
                     ArmPostSprintAimGate();
                     reason = "sprinting";
+                    goto evaluate;
+                }
+
+                if (Patches.StanceOverhaulCompat.IsStanceOverhaulTransitioning(player))
+                {
+                    ArmPostSprintAimGate();
+                    reason = "Stance Overhaul transition";
                     goto evaluate;
                 }
 
@@ -329,6 +388,7 @@ namespace PiPDisabler
 
         public static void Tick()
         {
+            WatchEnterFrames();
             if (!_isScoped) return;
             if (_modBypassedForCurrentScope) return;
 
@@ -374,14 +434,47 @@ namespace PiPDisabler
                 }
             }
 
+            TickAutoCutZoom();
+
             if (_activeOptic != null)
             {
                 float mag = FovController.GetVisualMagnification();
+                EnsureOverlayVisible(mag);
                 ReticleRenderer.UpdateTransform(mag);
                 ScopeEffectsRenderer.UpdateTransform();
             }
             Patches.WeaponScalingPatch.UpdateScale();
 
+        }
+
+        private static int _nextOverlayCheckFrame;
+
+        /// <summary>
+        /// Safety net: while scoped (and not intentionally hidden for reload/freelook), make sure
+        /// the reticle and scope effects are actually showing. Anything that hid them without a
+        /// matching state change used to leave them gone until the next ADS. Checked every 15 frames.
+        /// </summary>
+        private static void EnsureOverlayVisible(float mag)
+        {
+            if (_meshSurgerySuppressedByReload || _reticleSuppressedByReload)
+                return;
+            if (Time.frameCount < _nextOverlayCheckFrame)
+                return;
+            _nextOverlayCheckFrame = Time.frameCount + 15;
+
+            if (ReticleRenderer.HasReticle && !ReticleRenderer.IsShowing)
+            {
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[ScopeLifecycle] Reticle was hidden while scoped on '{_activeOptic.name}' — re-showing. frame={Time.frameCount}");
+                ReticleRenderer.Show(_activeOptic, mag);
+            }
+
+            if (!ScopeEffectsRenderer.IsVisible)
+            {
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[ScopeLifecycle] Scope effects were hidden while scoped — re-showing. frame={Time.frameCount}");
+                ScopeEffectsRenderer.Show();
+            }
         }
 
         public static void ForceExit()
@@ -409,6 +502,237 @@ namespace PiPDisabler
         {
             var os = _activeOptic != null ? _activeOptic : _lastEnabledOptic;
             return ResolveWhitelistScopeKey(os);
+        }
+
+        // ── Settings changes: heavy work runs once, after the F12 window closes ──
+        // (re-entering the scope or re-cutting the scope body on every slider step allocated new
+        // meshes each time and blew up memory — 1111 re-cuts in one user log.)
+        private static bool _reapplyPending;
+        private static bool _recutPending;
+
+        public static void RequestReapply()
+        {
+            _reapplyPending = true;
+            SettingsApplyGate.NoteChange();
+        }
+
+        public static void RequestRecut()
+        {
+            _recutPending = true;
+            SettingsApplyGate.NoteChange();
+        }
+
+        /// <summary>Called every frame from the plugin Update.</summary>
+        public static void TickPendingSettingWork()
+        {
+            if (!_reapplyPending && !_recutPending) return;
+            if (!SettingsApplyGate.CanApply) return;
+
+            bool reapply = _reapplyPending;
+            _reapplyPending = false;
+            _recutPending = false;
+
+            if (reapply)
+            {
+                ReapplyCurrentScope("settings changed"); // re-entering also re-cuts
+                return;
+            }
+
+            var os = _activeOptic;
+            if (!_isScoped || _modBypassedForCurrentScope || os == null || _meshSurgerySuppressedByReload) return;
+
+            try
+            {
+                MeshSurgeryManager.RestoreForScope(os.transform);
+                MeshSurgeryManager.ApplyForOptic(os);
+                LensTransparency.HideAllLensSurfaces(os);
+                PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Scope body re-cut with the new settings.");
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.DebugLogInfo($"[ScopeLifecycle] Re-cut failed: {ex.Message}");
+            }
+        }
+
+        // ── Automatic hole follows the camera distance (re-fit once the view has settled) ──
+        // The weapon scale changes with zoom, which moves the eyepiece relative to the camera; the
+        // hole is re-fitted when that distance has changed by ≥20% and stayed put for 0.6 s (not
+        // during ADS motion, recoil or zoom scrolling). Same distance → same hole every time.
+        private const float AutoCutSettleTime = 0.6f;
+        private static int _autoCutBucketSeen = int.MinValue;
+        private static float _autoCutBucketSince;
+
+        private static void TickAutoCutZoom()
+        {
+            var os = _activeOptic;
+            if (os == null || _meshSurgerySuppressedByReload || PixelHole.Active || !PerScopeMeshSurgerySettings.IsAutoCut())
+                return;
+
+            // Probe (debug only, heavy): once after the first re-cut of each aim, at render time.
+            if (MeshSurgeryManager.ConsumeRecutFinished() && !_probeAfterRecutDone)
+            {
+                _probeAfterRecutDone = true;
+                LensProbe.RunAtRender(os, "after re-cut");
+            }
+
+            // The view is "settled" once camera distance and weapon stretch hold still for 0.6 s.
+            int bucket = MeshSurgeryManager.GetAutoApexBucket();
+            int rib = MeshSurgeryManager.RibBucket(MeshSurgeryManager.RenderRibcage());
+            float now = Time.realtimeSinceStartup;
+            // A cut stored for this zoom (stretch) goes on screen at once — no waiting, no re-cut.
+            MeshSurgeryManager.TrySwitchVariant(rib);
+            if (bucket != _autoCutBucketSeen || rib != _autoCutRibSeen)
+            {
+                _autoCutBucketSeen = bucket;
+                _autoCutRibSeen = rib;
+                _autoCutBucketSince = now;
+                _settleLogged = false;
+                return;
+            }
+            if (now - _autoCutBucketSince < AutoCutSettleTime || SettingsApplyGate.IsSettingsWindowOpen)
+                return;
+            if (!_probeDone)
+            {
+                _probeDone = true;
+                LensProbe.RunAtRender(os, $"view settled (camera bucket {bucket}, cut made with {MeshSurgeryManager.LastAutoApexBucketUsed})");
+            }
+            // Remember the settled distance so the next aim cuts right away (cache hit, no recut).
+            MeshSurgeryManager.RememberSettledBucket(bucket, rib);
+
+            if (MeshSurgeryManager.RecutRunning) return;
+            bool stale = MeshSurgeryManager.AutoCutIsStale(bucket, rib, out string why);
+            // "Re-cut every aim": what the Home key does, once per zoom level per aim.
+            if (!stale && Settings.RecutEveryAim.Value && !_freshCutRibs.Contains(rib))
+            {
+                stale = true;
+                why = "re-cut every aim";
+            }
+            if (!_settleLogged)
+            {
+                // Always-on, once per settled view: lets a user log show whether zooming re-fits the hole.
+                _settleLogged = true;
+                PiPDisablerPlugin.LogSource.LogInfo(
+                    $"[AutoCut] View settled: weapon stretch {MeshSurgeryManager.RenderRibcage():F2}, camera {MeshSurgeryManager.BucketToMm(bucket):F0}mm; " +
+                    $"{MeshSurgeryManager.DescribeActiveCut()} → {(stale ? "re-cut (" + why + ")" : "fits")}");
+            }
+            if (!stale)
+            {
+                // Settled with a fitting cut: now cut the other used zoom levels ahead (aimed pose).
+                if (!_cutAheadQueued)
+                {
+                    _cutAheadQueued = true;
+                    int n = MeshSurgeryManager.QueueCutAhead(os, rib);
+                    if (n > 0) PiPDisablerPlugin.DebugLogInfo($"[ScopeLifecycle] Queued {n} cut(s) ahead for other zoom levels");
+                }
+                return;
+            }
+            if (now - _autoCutLastRecut < 0.3f) return;
+            _autoCutLastRecut = now;
+            MeshSurgeryManager.StartAsyncRecut(os, bucket, why);
+            _freshCutRibs.Add(rib); // tried once for this zoom level; stale checks still retry
+        }
+
+        // Zoom levels (weapon stretch buckets) cut fresh during the current aim.
+        private static readonly HashSet<int> _freshCutRibs = new HashSet<int>();
+
+        /// <summary>Hotkey: redo the automatic hole for the current view now.</summary>
+        public static void RecutHoleNow()
+        {
+            if (!_isScoped || _modBypassedForCurrentScope || _activeOptic == null || !PerScopeMeshSurgerySettings.IsAutoCut())
+            {
+                PiPDisablerPlugin.Notify(Localization.T("recut.notaiming", "PiP-Disabler: press while aiming a scope with the automatic hole"));
+                return;
+            }
+            if (PixelHole.Active)
+            {
+                PiPDisablerPlugin.Notify(Localization.T("recut.pixel", "PiP-Disabler: pixel hole mode — nothing to re-cut"));
+                return;
+            }
+            bool ok = MeshSurgeryManager.StartAsyncRecut(_activeOptic, MeshSurgeryManager.GetAutoApexBucket(), "hotkey");
+            if (ok) _freshCutRibs.Add(MeshSurgeryManager.RibBucket(MeshSurgeryManager.RenderRibcage()));
+            _probeAfterRecutDone = false;
+            PiPDisablerPlugin.Notify(ok ? Localization.T("recut.ok", "PiP-Disabler: redoing the hole")
+                                        : Localization.T("recut.fail", "PiP-Disabler: could not redo the hole (see log)"));
+        }
+
+        private static float _nextPrecutCheck;
+
+        /// <summary>Not aiming: cut the held weapon's scope in the background (no hitch on the first aim).</summary>
+        public static void TickPrecut()
+        {
+            MeshSurgeryManager.CheckRaidChanged();
+            if (_isScoped || !Settings.ModEnabled.Value || !Settings.PrecutHeldScope.Value) return;
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextPrecutCheck) return;
+            _nextPrecutCheck = now + 1f;
+            try
+            {
+                var os = TryGetCurrentScopeOpticFromPwa();
+                if (os == null || ShouldBypassForCurrentOptic(os)) return;
+                PerScopeMeshSurgerySettings.SetActiveScopeQuiet(ResolveWhitelistScopeKey(os));
+                try { MeshSurgeryManager.PrecutForOptic(os); }
+                finally { PerScopeMeshSurgerySettings.ClearActiveScope(); }
+            }
+            catch (Exception ex) { PiPDisablerPlugin.DebugLogInfo($"[ScopeLifecycle] pre-cut skipped: {ex.Message}"); }
+        }
+
+        private static int _autoCutRibSeen = int.MinValue;
+        private static bool _probeAfterRecutDone;
+        private static float _autoCutLastRecut;
+
+        private static bool _probeDone;
+        private static bool _settleLogged, _cutAheadQueued;
+
+        private static void ResetAutoCutFit()
+        {
+            _probeDone = false;
+            _autoCutBucketSeen = int.MinValue;
+            _autoCutRibSeen = int.MinValue;
+            MeshSurgeryManager.CancelAsyncRecut("scope exit");
+            _probeAfterRecutDone = false;
+            _freshCutRibs.Clear();
+            _settleLogged = false;
+            _cutAheadQueued = false;
+        }
+
+        /// <summary>Exit and re-enter the current scope so changed settings take effect now.</summary>
+        public static void ReapplyCurrentScope(string reason)
+        {
+            if (!Settings.ModEnabled.Value || !_isScoped) return;
+            PiPDisablerPlugin.DebugLogInfo($"[ScopeLifecycle] Re-applying current scope ({reason})");
+            ForceExit();
+            SyncState();
+        }
+
+        /// <summary>One-glance state for the F12 panel (Korean).</summary>
+        public static string GetStatusText()
+        {
+            if (!Settings.ModEnabled.Value)
+                return Localization.T("status.off", "Mod is off");
+
+            var os = _activeOptic;
+            if (!_isScoped || os == null)
+            {
+                string last = PerScopeMeshSurgerySettings.LastScopeKey;
+                return string.IsNullOrEmpty(last)
+                    ? Localization.T("status.notaiming", "Not aiming — aim with a scope to see it here")
+                    : Localization.T("status.last", "Not aiming — last scope: {0}\nValues changed below are saved for this scope (visible when you aim again)", last);
+            }
+
+            string key = ResolveWhitelistScopeKey(os);
+            string mode = _modBypassedForCurrentScope
+                ? Localization.T("status.bypassed", "Original PiP mode — the settings below do not apply to this scope")
+                : Localization.T("status.active", "PiP-Disabler active");
+            string custom = PerScopeMeshSurgerySettings.IsUserEdited(key)
+                ? Localization.T("status.custom.mine", "using my saved values")
+                : PerScopeMeshSurgerySettings.GetActiveOverride() != null
+                    ? Localization.T("status.custom.bundled", "using the bundled values (changing them saves my own)")
+                    : Localization.T("status.custom.none", "none (using the global defaults)");
+            string hole = _modBypassedForCurrentScope ? "" :
+                $"\n{MeshSurgeryManager.GetAutoCutStatus()}\n{Localization.T("status.lastcheck", "Last check")}: {LensProbe.LastSummary}";
+            return Localization.T("status.scope",
+                "Scope: {0}\nState: {1}\nScope settings: {2}{3}\n(size, zoom and reticle show at once; the hole is redone when F12 closes, and values are saved for this scope then)",
+                key, mode, custom, hole);
         }
 
         public static void ToggleActiveScopeWhitelistEntry()
@@ -611,6 +935,7 @@ namespace PiPDisabler
         {
             RefreshScopeAimTransformsForModeSwitch();
             if (!_isScoped) return;
+            if (!Settings.ModEnabled.Value) return;
 
             PiPDisablerPlugin.DebugLogInfo(
                 $"[ScopeLifecycle] SetScopeMode fired while scoped frame={Time.frameCount}");
@@ -671,8 +996,12 @@ namespace PiPDisabler
                 return true;
             }
 
-
             if (ShouldBypassByBlacklist(os))
+            {
+                return true;
+            }
+
+            if (Patches.MagicOpticMountCompat.ShouldBypass(os))
             {
                 return true;
             }
@@ -709,11 +1038,6 @@ namespace PiPDisabler
 
         private static bool ShouldBypassByBlacklist(OpticSight os)
         {
-            if (!Settings.ModEnabled.Value)
-            {
-                return true; 
-            } 
-            
             RefreshScopeBlacklistCache();
             if (_scopeBlacklistNames.Count == 0)
                 return false;
@@ -818,7 +1142,11 @@ namespace PiPDisabler
 
             try
             {
-                ScopeData scopeData = os.GetComponentInParent<ScopeData>();
+                // Prefer the optic's own ScopeData (vanilla assigns it in OpticSight.Awake) so a
+                // sibling mode's data under the same scope root can't be picked up by mistake.
+                ScopeData scopeData = os.ScopeData;
+                if (scopeData == null)
+                    scopeData = os.GetComponentInParent<ScopeData>();
                 if (scopeData == null)
                     scopeData = os.GetComponentInChildren<ScopeData>(true);
 
@@ -837,8 +1165,10 @@ namespace PiPDisabler
                 if (scopeData == null)
                     return false;
 
-                bool hasNightVision = scopeData.NightVisionData != null;
-                bool hasThermal = scopeData.ThermalVisionData != null;
+                // Same test vanilla uses in OpticComponentUpdater.CopyComponentFromOptic: the data
+                // component may exist with the effect switched off, which is not an NV/thermal optic.
+                bool hasNightVision = scopeData.NightVisionData != null && scopeData.NightVisionData.NightVision;
+                bool hasThermal = scopeData.ThermalVisionData != null && scopeData.ThermalVisionData.ThermalVision;
 
                 if (hasNightVision || hasThermal)
                 {
@@ -886,6 +1216,7 @@ namespace PiPDisabler
             CameraSettingsManager.ForceRestore();
             PiPDisabler.RestoreAllCameras();
             Patches.VanillaOpticSuppression.RestoreVanillaOpticState(os);
+            Patches.MagicOpticMountCompat.RequestResync(os);
 
             if (os != null)
                 MeshSurgeryManager.RestoreForScope(os.transform);
@@ -893,7 +1224,37 @@ namespace PiPDisabler
                 MeshSurgeryManager.RestoreAll();
         }
 
+        private static float _enterRetryAfter;
+
         private static void DoScopeEnter()
+        {
+            if (Time.realtimeSinceStartup < _enterRetryAfter)
+                return;
+
+            _enterSw.Reset(); _enterSw.Start();
+            _enterLaps.Length = 0;
+            _enterLastLap = 0;
+            try
+            {
+                DoScopeEnterCore();
+                _enterSw.Stop();
+                _enterTotalMs = _enterSw.Elapsed.TotalMilliseconds;
+                _enterName = _activeOptic != null ? _activeOptic.name : "?";
+                _enterWorstFrame = 0f;
+                _enterWatchUntil = Time.realtimeSinceStartup + 1.5f;
+            }
+            catch (Exception ex)
+            {
+                // A half-finished enter used to leave _isScoped=true with no zoom/reticle until the
+                // next ADS. Log it (always) and roll back; retry after 1s instead of every frame.
+                _enterRetryAfter = Time.realtimeSinceStartup + 1f;
+                PiPDisablerPlugin.LogSource.LogError(
+                    $"[ScopeLifecycle] Scope enter failed for '{(_activeOptic != null ? _activeOptic.name : "null")}': {ex}");
+                try { DoScopeExit(); } catch { }
+            }
+        }
+
+        private static void DoScopeEnterCore()
         {
             var os = FindEnabledOpticFromPWA();
             if (os == null)
@@ -921,24 +1282,29 @@ namespace PiPDisabler
             // 1. Extract reticle texture BEFORE destroying lens mesh
             ReticleRenderer.ExtractReticle(os);
 
+            EnterLap("reticle");
             // 2. Hide ALL lens surfaces in the scope hierarchy (once)
             LensTransparency.HideAllLensSurfaces(os);
 
+            EnterLap("lens");
             // 2b. Collect lens renderers for the reticle stencil mask.
             var lensMaskEntries = CollectStencilEntries(os);
             ReticleRenderer.SetLensMaskEntries(lensMaskEntries);
             var occluderRenderers = LensTransparency.CollectHousingRenderers(os);
             ReticleRenderer.SetOccluderMaskRenderers(occluderRenderers);
 
+            EnterLap("masks");
             // 3. Get magnification for reticle scaling and zoom
             float mag = FovController.GetVisualMagnification();
 
             // 4. Show reticle overlay at the lens position, scaled for magnification
             ReticleRenderer.Show(os, mag);
 
+            EnterLap("reticleShow");
             // 4b. Show lens vignette + scope shadow effects
             ScopeEffectsRenderer.Show();
 
+            EnterLap("effects");
             // 5. Mesh surgery (once) — if it fails (zero entries), Tick() will retry
             _meshSurgerySuppressedByReload = false;
             if (IsReloadActive())
@@ -954,19 +1320,51 @@ namespace PiPDisabler
                 MeshSurgeryManager.ApplyForOptic(os);
             }
 
+            EnterLap("hole");
             // 6. Swap main camera LOD/culling settings with scope camera settings
             CameraSettingsManager.ApplyForOptic(os);
 
             // 7. Capture weapon base scale/FOV BEFORE changing FOV (for weapon scaling compensation)
             Patches.WeaponScalingPatch.CaptureBaseState();
 
+            EnterLap("lod");
             // 8. Apply animated FOV zoom (uses FovAnimationDuration)
             // Reset dead-band so the initial ApplyFov always fires regardless of previous state.
             // Also clear any pending post-exit restore from a previous scope session.
             _postExitRestoreFov = 0f;
             FovController.OnModeSwitch();
             ApplyFov(true);
+            EnterLap("fov");
+        }
 
+        // ── Aim hitch timing (2.8.2): always on, logs only when aiming in was slow ──
+        // One line per slow aim: time spent in the mod's enter steps and the slowest frame in the
+        // 1.5 s after it (cuts, game's own zoom work). Answers "it stutters for 0.1 s when I aim".
+        private static readonly System.Diagnostics.Stopwatch _enterSw = new System.Diagnostics.Stopwatch();
+        private static readonly System.Text.StringBuilder _enterLaps = new System.Text.StringBuilder();
+        private static double _enterLastLap, _enterTotalMs;
+        private static float _enterWatchUntil, _enterWorstFrame;
+        private static string _enterName;
+
+        private static void EnterLap(string step)
+        {
+            double t = _enterSw.Elapsed.TotalMilliseconds;
+            double d = t - _enterLastLap;
+            _enterLastLap = t;
+            if (d >= 1.0) _enterLaps.Append(step).Append(' ').Append(d.ToString("F0")).Append("ms ");
+        }
+
+        private static void WatchEnterFrames()
+        {
+            if (_enterWatchUntil <= 0f) return;
+            float dt = Time.unscaledDeltaTime;
+            if (dt > _enterWorstFrame) _enterWorstFrame = dt;
+            if (Time.realtimeSinceStartup < _enterWatchUntil) return;
+            _enterWatchUntil = 0f;
+            float worstMs = _enterWorstFrame * 1000f;
+            if (_enterTotalMs >= 15.0 || worstMs >= 60f)
+                PiPDisablerPlugin.LogSource.LogInfo(
+                    $"[AimTiming] '{_enterName}': aim setup {_enterTotalMs:F0}ms ({_enterLaps.ToString().TrimEnd()}), slowest frame in the next 1.5s {worstMs:F0}ms, {MeshSurgeryManager.GetAutoCutStatus()}");
         }
 
         private static void DoScopeExit()
@@ -988,6 +1386,7 @@ namespace PiPDisabler
             _isScoped = false;
             _activeOptic = null;
             PerScopeMeshSurgerySettings.ClearActiveScope();
+            ResetAutoCutFit();
 
             // If this scope was bypassed, skip mod cleanup paths.
             if (_modBypassedForCurrentScope)
@@ -1059,7 +1458,7 @@ namespace PiPDisabler
             try
             {
                 if (_modBypassedForCurrentScope) return;
-                if (!EFT.CameraControl.CameraManager.Exist) return;
+                if (!CameraManager.Exist) return;
 
                 float zoomBaseFov = FovController.MagnificationBaselineFov;
                 float zoomedFov = FovController.ComputeZoomedFov();
@@ -1077,8 +1476,7 @@ namespace PiPDisabler
                         return;
 
                     FovController.TrackAppliedFov(zoomedFov);
-                    EFT.CameraControl.CameraManager.Instance.SetFov(zoomedFov, duration, false);
-                    Patches.WeaponScalingPatch.UpdateScale();
+                    CameraManager.Instance.SetFov(zoomedFov, duration, false);
                     FreelookTracker.CacheAppliedFov(zoomedFov);
                     PiPDisablerPlugin.DebugLogInfo(
                         $"[ScopeLifecycle] ApplyFov: {zoomedFov:F1}° dur={duration:F2}s");
@@ -1086,26 +1484,21 @@ namespace PiPDisabler
                 else if (isTransition && !smoothScopeFov && zoomedFov >= zoomBaseFov)
                 {
                     // High-to-low mode switch where new mode has no zoom:
-                    if (Settings.FOVFixBehaviour.Value) 
+                    // restore to baseline with configured duration so both directions are consistent.
+                    // With FOV Fix Behaviour the 1x mode goes back to the game's FOV (upstream 2.0).
+                    float duration = Settings.FovAnimationDuration.Value;
+                    float targetFov = zoomBaseFov;
+                    if (Settings.FOVFixBehaviour.Value)
                     {
-                        int baseFov = Singleton<SettingsManager>.Instance.Game.Settings.FieldOfView.Value;
-                        float duration_FOVFix = Settings.FovAnimationDuration.Value;
-                        FovController.TrackAppliedFov(baseFov);
-                        EFT.CameraControl.CameraManager.Instance.SetFov(baseFov, duration_FOVFix, false);
-                        Patches.WeaponScalingPatch.UpdateScale();
-                        FreelookTracker.CacheAppliedFov(baseFov);
+                        var pwaForFov = GetLocalPlayer()?.ProceduralWeaponAnimation;
+                        if (pwaForFov != null) targetFov = pwaForFov.GetBaseFov();
                     }
-                    // restore to baseline with configured duration so both directions are consistent
-                    else if (!Settings.FOVFixBehaviour.Value)
-                    {
-                        float duration = Settings.FovAnimationDuration.Value;
-                        FovController.TrackAppliedFov(zoomBaseFov);
-                        EFT.CameraControl.CameraManager.Instance.SetFov(zoomBaseFov, duration, false);
-                        FreelookTracker.CacheAppliedFov(zoomBaseFov);
-                        Patches.WeaponScalingPatch.UpdateScale();
-                        PiPDisablerPlugin.DebugLogInfo(
-                            $"[ScopeLifecycle] ApplyFov (restore baseline): {zoomBaseFov:F1}° dur={duration:F2}s");
-                    }
+                    zoomBaseFov = targetFov;
+                    FovController.TrackAppliedFov(zoomBaseFov);
+                    CameraManager.Instance.SetFov(zoomBaseFov, duration, false);
+                    FreelookTracker.CacheAppliedFov(zoomBaseFov);
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[ScopeLifecycle] ApplyFov (restore baseline): {zoomBaseFov:F1}° dur={duration:F2}s");
                 }
             }
             catch (Exception ex)
@@ -1122,8 +1515,8 @@ namespace PiPDisabler
         {
             try
             {
-                if (!EFT.CameraControl.CameraManager.Exist) return;
-                var cc = EFT.CameraControl.CameraManager.Instance;
+                if (!CameraManager.Exist) return;
+                var cc = CameraManager.Instance;
                 if (cc == null) return;
 
                 var player = GetLocalPlayer();
@@ -1131,7 +1524,7 @@ namespace PiPDisabler
                 var pwa = player.ProceduralWeaponAnimation;
                 if (pwa == null) return;
 
-                float baseFov = pwa.FieldOfView;
+                float baseFov = pwa.GetBaseFov();
                 float targetFov = _restoreOneXFovOnScopeExit
                     ? Mathf.Max(1f, baseFov - 15f)
                     : baseFov;
@@ -1161,18 +1554,44 @@ namespace PiPDisabler
         private static Player GetLocalPlayer()
             => Helpers.GetLocalPlayer();
 
+        // Resolved lazily: a missing field must only disable the reload bypass, never throw from
+        // ScopeLifecycle's static initializer (which would take the whole mod down).
+        private static AccessTools.FieldRef<ProceduralWeaponAnimation, Player.ValueBlenderDelay> _tacticalReloadRef;
+        private static bool _tacticalReloadRefResolved;
+
         private static bool IsReloadActive()
         {
-            var player = GetLocalPlayer();
-            var pwa = player.ProceduralWeaponAnimation;
-            var BipodActive = pwa.IsBipodUsed;
-            if (BipodActive)
+            try
+            {
+                var pwa = GetLocalPlayer()?.ProceduralWeaponAnimation;
+                if (pwa == null || pwa.IsBipodUsed)
+                    return false;
+
+                if (!_tacticalReloadRefResolved)
+                {
+                    _tacticalReloadRefResolved = true;
+                    try
+                    {
+                        _tacticalReloadRef = AccessTools.FieldRefAccess<ProceduralWeaponAnimation, Player.ValueBlenderDelay>("_tacticalReload");
+                    }
+                    catch (Exception ex)
+                    {
+                        PiPDisablerPlugin.LogSource.LogError($"[ScopeLifecycle] _tacticalReload not found, reload bypass disabled: {ex.Message}");
+                    }
+                }
+                if (_tacticalReloadRef == null)
+                    return false;
+
+                var blender = _tacticalReloadRef(pwa);
+                if (blender == null)
+                    return false;
+
+                return blender.Value > (Mathf.Epsilon + Settings.ReloadBypassModifier.Value);
+            }
+            catch
+            {
                 return false;
-            var field = AccessTools.Field(typeof(ProceduralWeaponAnimation), "_tacticalReload");
-            var blender = field.GetValue(pwa);
-            var valueProp = AccessTools.Property(blender.GetType(), "Value");
-            float blendValue = (float)valueProp.GetValue(blender, null);
-            return blendValue > (Mathf.Epsilon + Settings.ReloadBypassModifier.Value);
+            }
         }
 
         private static void ArmPostSprintAimGate()
@@ -1226,34 +1645,16 @@ namespace PiPDisabler
             return now < _postSprintAimGateExpiry || now < _postStanceAimGateExpiry;
         }
 
-        private static bool IsPlayerSprintingOrStanceTransitioning(Player player)
+        private static bool IsPlayerSprinting(Player player)
         {
             try
             {
-                PiPDisablerPlugin.DebugLogInfo(
-                        $"[ScopeLifecycle] IsPlayerSprintingOrStanceTransitioning was used");
                 if (player == null)
-                    {
-                        PiPDisablerPlugin.DebugLogInfo(
-                        $"[IsPlayerSprintingOrStanceTransitioning] player was null");
-                        return false;
-                    }
-
-                if (StanceOverhaulCompat.IsStanceOverhaulTransitioning(player))
-                    return true;
+                    return false;
 
                 if (player.Physical != null && player.Physical.Sprinting)
-                {
-                    PiPDisablerPlugin.DebugLogInfo(
-                        $"[IsPlayerSprintingOrStanceTransitioning] Player was sprinting");
                     return true;
-                }
 
-
-
-
-                PiPDisablerPlugin.DebugLogInfo(
-                        $"[IsPlayerSprintingOrStanceTransitioning] Ran");
                 var movementContext = player.MovementContext;
                 return movementContext != null &&
                        (movementContext.IsSprintEnabled ||
@@ -1262,8 +1663,6 @@ namespace PiPDisabler
             }
             catch
             {
-                PiPDisablerPlugin.DebugLogInfo(
-                        $"[IsPlayerSprintingOrStanceTransitioning] Error");
                 return false;
             }
         }

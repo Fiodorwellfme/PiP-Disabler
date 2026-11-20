@@ -33,8 +33,8 @@ namespace PiPDisabler.Patches
             float fov = 0f;
             try
             {
-                if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
-                    fov = EFT.CameraControl.CameraManager.Instance.Fov;
+                if (CameraManager.Exist && CameraManager.Instance != null)
+                    fov = CameraManager.Instance.Fov;
             }
             catch { }
 
@@ -50,10 +50,13 @@ namespace PiPDisabler.Patches
 
         private static CameraLodBiasController GetMainController()
         {
+            if (_controller != null) return _controller;
+
             try
             {
-                if (EFT.CameraControl.CameraManager.Exist && EFT.CameraControl.CameraManager.Instance != null)
-                    _controller = EFT.CameraControl.CameraManager.Instance._cameraLodBiasController;
+                // 4.1: CameraManager exposes the controller as the public _cameraLodBiasController field.
+                if (CameraManager.Exist && CameraManager.Instance != null)
+                    _controller = CameraManager.Instance._cameraLodBiasController;
             }
             catch { }
 

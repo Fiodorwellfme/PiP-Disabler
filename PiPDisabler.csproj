@@ -69,6 +69,10 @@
       <HintPath>..\..\EscapeFromTarkov_Data\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>..\..\EscapeFromTarkov_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>..\..\EscapeFromTarkov_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>False</Private>
@@ -80,8 +84,14 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Translation files (locales/<game language code>.json), copied next to the DLL -->
+    <LocaleFiles Include="$(ProjectDir)locales\*.json" />
+  </ItemGroup>
+
 	<Target Name="PostBuild" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
 	<MakeDir Directories="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" />
+	<Copy SourceFiles="@(LocaleFiles)" DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)\locales" />
 	<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" />
 	<Copy SourceFiles="$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle" DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" Condition="Exists('$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle')" />
 	<Copy SourceFiles="$(ProjectDir)Resources\Shaders\pipdisabler_effect_shaders.bundle" DestinationFolder="$(ProjectDir)\..\..\BepInEx\plugins\$(ModName)" Condition="Exists('$(ProjectDir)Resources\Shaders\pipdisabler_effect_shaders.bundle')" />
@@ -89,6 +99,7 @@
 	<RemoveDir Directories="$(PackageStagingDir)" Condition="Exists('$(PackageStagingDir)')" />
 	<MakeDir Directories="$(PackagePluginDir)" />
 	<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PackagePluginDir)" />
+	<Copy SourceFiles="@(LocaleFiles)" DestinationFolder="$(PackagePluginDir)\locales" />
 	<Copy SourceFiles="$(ProjectDir)custom_mesh_surgery_settings.json" DestinationFolder="$(PackagePluginDir)" Condition="Exists('$(ProjectDir)custom_mesh_surgery_settings.json')" />
 	<Copy SourceFiles="$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle" DestinationFolder="$(PackagePluginDir)" Condition="Exists('$(ProjectDir)Resources\Shaders\pipdisabler_reticle_shaders.bundle')" />
 	<Copy SourceFiles="$(ProjectDir)Resources\Shaders\pipdisabler_effect_shaders.bundle" DestinationFolder="$(PackagePluginDir)" Condition="Exists('$(ProjectDir)Resources\Shaders\pipdisabler_effect_shaders.bundle')" />
