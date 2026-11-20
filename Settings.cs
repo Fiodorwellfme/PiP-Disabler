@@ -197,7 +197,7 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(NormalizeEyeDistance = config.Bind("General", "Same Scope Size On Every Weapon", true,
                 new ConfigDescription(
-                    "The eyepiece sits at a different distance from the eye on each weapon (rail position, mount), so the same scope looked bigger on one rifle than on another. On: once you have aimed for a moment, the eyepiece distance is measured and the weapon scale is corrected so it sits at 'Reference Eye Distance' on every weapon. Measured once per weapon + scope + mount position and kept (BepInEx/config/PiP-Disabler.eye-distance.txt).",
+                    "The eyepiece sits at a different distance from the eye on each weapon (rail position, mount), so the same scope looked bigger on one rifle than on another. On: once you have aimed for a moment, the eyepiece distance is measured and the weapon scale is corrected so it sits at 'Reference Eye Distance' on every weapon. Measured once per weapon + scope + mount position and kept (BepInEx/plugins/PiP-Disabler/user-data/eye-distance.txt).",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(ReferenceEyeDistanceMm = config.Bind("General", "Reference Eye Distance (mm)", 170f,
@@ -641,17 +641,17 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(VignetteOpacity = config.Bind("Scope Effects", "Vignette Opacity", 1f,
                 new ConfigDescription(
-                    "Maximum opacity of the lens vignette ring (0=invisible, 1=full black).",
+                    "Maximum opacity of the lens vignette ring (0=invisible, 1=full black). Scopes that have their own value under 'Per scope settings' (40 of the bundled ones, e.g. Vudu) ignore this: aim with the scope and change it there.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(VignetteRadius = config.Bind("Scope Effects", "Vignette Radius", 0.47f,
                 new ConfigDescription(
-                    "Inner clear radius of the lens vignette (0=center starts darkening, 0.5=outer half darkened, 1=edge only).",
+                    "Inner clear radius of the lens vignette (0=center starts darkening, 0.5=outer half darkened, 1=edge only). Scopes that have their own value under 'Per scope settings' (40 of the bundled ones, e.g. Vudu) ignore this: aim with the scope and change it there.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(VignetteSoftness = config.Bind("Scope Effects", "Vignette Softness", 0.80f,
                 new ConfigDescription(
-                    "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient).",
+                    "Fraction of the vignette radius used for the gradient falloff (0=hard edge, 1=full gradient). Scopes that have their own value under 'Per scope settings' (40 of the bundled ones, e.g. Vudu) ignore this: aim with the scope and change it there.",
                     new AcceptableValueRange<float>(0f, 1f),
                     new ConfigurationManagerAttributes { IsAdvanced = false })));
 

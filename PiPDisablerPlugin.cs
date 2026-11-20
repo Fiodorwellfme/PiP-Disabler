@@ -43,6 +43,7 @@ namespace PiPDisabler
             LogSource = Logger;
             LogSource.LogInfo($"PiP-Disabler {PluginVersion} loaded.");
             Settings.Init(Config);
+            UserData.MoveOldFiles();
             Patches.Patcher.Enable();
             ScopeLifecycle.Init();
             FreelookTracker.Init();

@@ -58,8 +58,8 @@ namespace PiPDisabler
 
         // Bundled defaults ship in the plugin folder and are replaced by every mod update/reinstall.
         private static string FilePath => Path.Combine(GetPluginRootDirectory(), "custom_mesh_surgery_settings.json");
-        // The player's own per-scope edits live in BepInEx/config, which updates never touch.
-        private static string UserFilePath => Path.Combine(BepInEx.Paths.ConfigPath, "PiP-Disabler.scope-settings.json");
+        // The player's own per-scope edits: <mod folder>/user-data/ (not in the release zip, so updates keep them).
+        private static string UserFilePath => UserData.PathFor("scope-settings.json");
         private static readonly HashSet<string> _userKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => GetActiveOverride();

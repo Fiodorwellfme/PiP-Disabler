@@ -1550,7 +1550,7 @@ namespace PiPDisabler
         private static readonly Dictionary<string, List<KeyValuePair<int, int>>> _usedZooms =
             new Dictionary<string, List<KeyValuePair<int, int>>>(StringComparer.OrdinalIgnoreCase);
         private static bool _usedLoaded;
-        private static string UsedZoomPath => System.IO.Path.Combine(BepInEx.Paths.ConfigPath, "PiP-Disabler.used-zoom.txt");
+        private static string UsedZoomPath => UserData.PathFor("used-zoom.txt");
 
         private static void LoadUsedZooms()
         {
@@ -1651,7 +1651,7 @@ namespace PiPDisabler
         // used for the first cut; the cached cut is then reused and no recut is needed.
         private static readonly Dictionary<string, int> _settledBucket = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private static bool _settledLoaded;
-        private static string SettledFilePath => System.IO.Path.Combine(BepInEx.Paths.ConfigPath, "PiP-Disabler.camera-distance.txt");
+        private static string SettledFilePath => UserData.PathFor("camera-distance.txt");
 
         // 2.8.4: kept per zoom level ("scope|stretch bucket"). One value per scope stored the last
         // settled distance whatever the zoom (e.g. 575 mm at stretch 2.65), so the next raid's

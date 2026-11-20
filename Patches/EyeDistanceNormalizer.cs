@@ -29,6 +29,9 @@ namespace PiPDisabler
         private const float SettleTolerance = 0.0015f;
         private const float StoreChange = 0.005f;   // a stored value is replaced only past this
         private const float MinFactor = 0.5f, MaxFactor = 2f;
+        // A new or changed measurement is blended in over this time instead of in one frame
+        // (PR #92 review: the one-frame jump 0.4 s into the first aim looked like a hitch).
+        private const float BlendTime = 0.35f;
 
         private struct Known { public float L1, A; }
 
@@ -40,6 +43,12 @@ namespace PiPDisabler
         private static int _keyFrame = -1;
         private static float _candidate = -1f, _candidateA, _since;
         private static bool _settledThisAim;
+
+        // Blend from the previous correction (or none) to the new one, for _blendKey only.
+        private static string _blendKey;
+        private static bool _blendFromKnown;
+        private static Known _blendFrom;
+        private static float _blendStart = -1f;
 
         private static bool Enabled => Settings.NormalizeEyeDistance != null && Settings.NormalizeEyeDistance.Value;
 
@@ -56,7 +65,21 @@ namespace PiPDisabler
             string key = CurrentKey();
             if (key == null) return s0;
             Load();
-            return _known.TryGetValue(key, out var k) ? ScaleFor(k, s0) : s0;
+            if (!_known.TryGetValue(key, out var k)) return s0;
+            float target = ScaleFor(k, s0);
+            float t = BlendT(key);
+            if (t >= 1f) return target;
+            float from = _blendFromKnown ? ScaleFor(_blendFrom, s0) : s0;
+            return Mathf.Lerp(from, target, t);
+        }
+
+        /// <summary>0..1 (smoothstep) while a new measurement for this key is being blended in, else 1.</summary>
+        private static float BlendT(string key)
+        {
+            if (_blendStart < 0f || key != _blendKey) return 1f;
+            float x = (Time.unscaledTime - _blendStart) / BlendTime;
+            if (x >= 1f) { _blendStart = -1f; return 1f; }
+            return Mathf.SmoothStep(0f, 1f, Mathf.Max(0f, x));
         }
 
         private static float ScaleFor(Known k, float s0)
@@ -121,6 +144,8 @@ namespace PiPDisabler
             }
             if (os != _os) { _candidate = -1f; _settledThisAim = false; }
             string key = CurrentKey();
+            // While a new measurement is blended in, the weapon scale is refreshed every frame.
+            if (_blendStart >= 0f && key == _blendKey) Patches.WeaponScalingPatch.UpdateScale();
             if (key == null || _settledThisAim) return;
             if (!Measure(os, cam, out float l1, out float a, out float dNow)) { _candidate = -1f; return; }
 
@@ -145,6 +170,10 @@ namespace PiPDisabler
             if (had && Mathf.Abs(old.L1 - l1) <= StoreChange && Mathf.Abs(old.A - a) <= StoreChange) return;
 
             var k = new Known { L1 = l1, A = a };
+            _blendKey = key;
+            _blendFromKnown = had;
+            _blendFrom = old;
+            _blendStart = Time.unscaledTime;
             _known[key] = k;
             Save();
             PiPDisablerPlugin.LogSource.LogInfo(string.Format(CultureInfo.InvariantCulture,
@@ -179,8 +208,8 @@ namespace PiPDisabler
             return l1 > 0.05f && l1 < 1.5f && a > -0.3f && a < 0.5f;
         }
 
-        // ── Storage: BepInEx/config/PiP-Disabler.eye-distance.txt (key, L1 m, a m) ──
-        private static string FilePath => Path.Combine(BepInEx.Paths.ConfigPath, "PiP-Disabler.eye-distance.txt");
+        // ── Storage: <mod folder>/user-data/eye-distance.txt (key, L1 m, a m) ──
+        private static string FilePath => UserData.PathFor("eye-distance.txt");
 
         private static void Load()
         {
