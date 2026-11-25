@@ -60,6 +60,16 @@ namespace PiPDisabler
             return mA == mB;
         }
 
+        /// <summary>
+        /// The player's FOV setting as the weapon animation sees it. In SPT 4.1 (EFT 0.16)
+        /// ProceduralWeaponAnimation.FieldOfView no longer holds it; the game FOV value sits in
+        /// the field deobfuscated as HeadBobbing.
+        /// </summary>
+        internal static float GetBaseFov(this EFT.Animations.ProceduralWeaponAnimation pwa)
+        {
+            return pwa != null ? pwa.HeadBobbing : Settings.BaselineFOV.Value;
+        }
+
         private static Transform FindModeAncestor(Transform t)
         {
             for (var p = t; p != null; p = p.parent)

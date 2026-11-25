@@ -233,7 +233,7 @@ namespace PiPDisabler
 
                     // Single-entry 1x mode uses vanilla ADS offset behavior.
                     if (modeCount == 1 && pwa != null)
-                        return Mathf.Max(1f, pwa. FieldOfView - 15f);
+                        return Mathf.Max(1f, pwa.GetBaseFov() - 15f);
 
                     // 1x inside a multi-mode stack stays fixed at optic FOV.
                     return 35f;
@@ -243,7 +243,7 @@ namespace PiPDisabler
             if (pwa == null)
                 return MagnificationBaselineFov;
 
-            return Mathf.Max(1f, pwa.FieldOfView);
+            return Mathf.Max(1f, pwa.GetBaseFov());
         }
 
         private static bool TryGetCurrentTemplateZoomEntry(OpticSight os, out float zoom, out int modeCount)

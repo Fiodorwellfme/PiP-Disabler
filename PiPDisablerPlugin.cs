@@ -40,6 +40,9 @@ namespace PiPDisabler
             LogSource = Logger;
             LogSource.LogInfo("PiP-Disabler 2.1.0 loaded.");
             Settings.Init(Config);
+            // Translated F12 texts (locales/<code>.json), after all entries exist.
+            Settings.Language.SettingChanged += (s, e) => Localization.Apply(Settings.ConfigEntries);
+            Localization.Apply(Settings.ConfigEntries);
             Patches.Patcher.Enable();
             ScopeLifecycle.Init();
             FreelookTracker.Init();
@@ -98,6 +101,7 @@ namespace PiPDisabler
 
         private void Update()
         {
+            Localization.Tick();
             if (Settings.ModToggleKey.Value != KeyCode.None && InputProxy.GetKeyDown(Settings.ModToggleKey.Value))
             {
                 Settings.ModEnabled.Value = !Settings.ModEnabled.Value;
