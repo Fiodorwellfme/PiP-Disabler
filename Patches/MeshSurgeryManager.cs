@@ -28,10 +28,25 @@ namespace PiPDisabler
             public bool Dirty = true;
             public string SettingsSignature;
             public string ProfileKey;
+            // Automatic hole (2.8.0): one set of cut meshes per weapon stretch ("variant"), up to
+            // MaxVariants; Active is the set on screen. Entries[i].CutMesh points into it.
+            public readonly List<CutVariant> Variants = new List<CutVariant>(4);
+            public CutVariant Active;
+            public string ScopeKey;
+            public float LastUsed;
+        }
+
+        private sealed class CutVariant
+        {
+            public int Rib, Eye;
+            public Mesh[] Meshes;
+            public bool Complete, Predicted;
+            public float LastUsed;
         }
 
         private sealed class RaidWeaponCache
         {
+            public float LastUsed;
             public string WeaponId;
             public Weapon WeaponItem;
             public readonly Dictionary<string, CutProfileCache> Profiles = new Dictionary<string, CutProfileCache>(4);
@@ -58,7 +73,9 @@ namespace PiPDisabler
             new Dictionary<GameObject, SphereState>(32);
         private static bool _loggedGpuCopy;
         private static int _lastCutAttemptFrame;
-        private static InventoryController _inventoryEventSource;
+        private static object _inventoryEventSource;
+        private static Delegate _addItemHandler;
+        private static Delegate _removeItemHandler;
         private static int _lastAttemptTargets;
         private static int _lastAttemptEntries;
         private static int _lastAttemptReadableCopyFailures;
@@ -71,6 +88,7 @@ namespace PiPDisabler
         public static void ApplyForOptic(OpticSight os)
         {
             if (os == null) return;
+            EnsureRenderHook();
 
             var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
             if (!scopeRoot) return;
@@ -86,6 +104,7 @@ namespace PiPDisabler
                 PiPDisablerPlugin.DebugLogInfo("[MeshSurgery] Cut settings changed; marking weapon cache dirty.");
             }
 
+            _applyCache = cache; // background cuts for this cache go on screen right away
             if (cache.Dirty || !cache.Built)
             {
                 RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode);
@@ -109,6 +128,7 @@ namespace PiPDisabler
             if (scopeRoot.gameObject != cache.WeaponRoot && !scopeRoot.IsChildOf(cache.WeaponRoot.transform))
                 return;
 
+            _applyCache = null;
             RestoreOriginalMeshes(cache);
             RestoreLightEffectMeshesUnderRoot(cache.WeaponRoot.transform);
             RestoreWeaponSphereObjectsUnderRoot(cache.WeaponRoot.transform);
@@ -116,6 +136,7 @@ namespace PiPDisabler
 
         public static void RestoreAll()
         {
+            _applyCache = null;
             foreach (var weaponCache in _raidCaches.Values)
             {
                 if (weaponCache == null) continue;
@@ -158,6 +179,7 @@ namespace PiPDisabler
 
         public static void CleanupForShutdown()
         {
+            UnhookRender();
             RestoreAll();
             DestroyCurrentWeaponCache();
             UnbindInventoryEvents();
@@ -175,6 +197,7 @@ namespace PiPDisabler
             var cache = _currentWeaponCache;
             if (cache == null) return false;
             if (!cache.Built) return false;
+            if (_recut != null && ReferenceEquals(_recut.Cache, cache)) return true; // background cut in progress
             for (int i = 0; i < cache.Entries.Count; i++)
             {
                 var entry = cache.Entries[i];
@@ -239,6 +262,21 @@ namespace PiPDisabler
             var weaponRoot = weaponRootTf != null ? weaponRootTf.gameObject : null;
             if (weapon == null || weaponRoot == null) return null;
 
+            // During a weapon switch the hands already hold the new gun while the scope found may
+            // still be the old gun's. Filing that scope under the new gun's id mixed the two guns'
+            // cuts (2.8.3: switching back to a gun showed its uncut scope body for ~1 s).
+            try
+            {
+                var heldPrefab = fc.ControllerGameObject != null ? fc.ControllerGameObject.GetComponent<WeaponPrefab>() : null;
+                var scopePrefab = weaponRootTf.GetComponentInParent<WeaponPrefab>();
+                if (heldPrefab != null && scopePrefab != null && !ReferenceEquals(heldPrefab, scopePrefab))
+                {
+                    PiPDisablerPlugin.DebugLogInfo("[MeshSurgery] Scope belongs to another gun than the one in hands (weapon switch) — skipped");
+                    return null;
+                }
+            }
+            catch { }
+
             string weaponId = !string.IsNullOrEmpty(weapon.Id) ? weapon.Id : weapon.TemplateId;
             if (!_raidCaches.TryGetValue(weaponId, out var weaponCache) || weaponCache == null)
             {
@@ -247,6 +285,8 @@ namespace PiPDisabler
             }
 
             weaponCache.WeaponItem = weapon;
+            weaponCache.LastUsed = Time.realtimeSinceStartup;
+            TrimWeaponCaches(weaponId);
 
             string profileKey = BuildProfileKey(weaponRootTf, scopeRoot, activeMode, BuildCutSettingsSignature());
             if (!weaponCache.Profiles.TryGetValue(profileKey, out var profileCache) || profileCache == null)
@@ -258,12 +298,14 @@ namespace PiPDisabler
                     Built = false,
                     Dirty = true
                 };
+                TrimProfiles(weaponCache, profileCache);
                 weaponCache.Profiles[profileKey] = profileCache;
             }
             else
             {
                 profileCache.WeaponRoot = weaponRoot;
             }
+            profileCache.LastUsed = Time.realtimeSinceStartup;
 
             if (!ReferenceEquals(_currentWeaponCache, profileCache) && _currentWeaponCache != null)
                 RestoreOriginalMeshes(_currentWeaponCache);
@@ -280,10 +322,11 @@ namespace PiPDisabler
             return profileCache;
         }
 
-        private static void RebuildCutCacheForOptic(CutProfileCache cache, OpticSight os, Transform scopeRoot, Transform activeMode)
+        private static void RebuildCutCacheForOptic(CutProfileCache cache, OpticSight os, Transform scopeRoot, Transform activeMode, bool precut = false)
         {
             if (cache == null || os == null || scopeRoot == null) return;
             if (!activeMode) activeMode = os.transform;
+            CancelAsyncRecut("full rebuild");
             _lastAttemptOptic = os.name;
             _lastAttemptScopeRoot = scopeRoot.name;
             _lastAttemptActiveMode = activeMode.name;
@@ -324,6 +367,40 @@ namespace PiPDisabler
                 : MeshPlaneCutter.KeepSide.Negative;
 
 
+            // Automatic hole (2.7.6): remove exactly what the real camera sees through the eyepiece
+            // lens — every face whose projection from the camera lands inside the lens circle, in
+            // front of or behind the lens, whichever way it faces. What lands outside is what is
+            // seen around the lens, so the scope's outside stays as it is on screen.
+            bool autoCut = false;
+            float autoEyeDist = 0f, autoLensR = 0f, autoWidth = 1f;
+            if (PerScopeMeshSurgerySettings.IsAutoCut())
+            {
+                float lensR = LensTransparency.GetEyepieceLensRadius(scopeRoot);
+                if (lensR > 0.003f && lensR < 0.05f)
+                {
+                    // Camera distance changes with weapon scale/zoom; ScopeLifecycle re-fits once the
+                    // view has settled.
+                    RememberAutoPlane(scopeRoot, planePoint, planeNormal);
+                    int cutRib = RibBucket(RenderRibcage());
+                    bool knownEye = HasSettledBucket(cutRib);
+                    LastAutoApexBucketUsed = GetAutoBucketForCut(cutRib);
+                    autoEyeDist = DefaultApexDistance * Mathf.Pow(ApexBucketStep, LastAutoApexBucketUsed);
+                    autoLensR = lensR;
+                    autoWidth = PerScopeMeshSurgerySettings.GetCutWidthMultiplierRaw();
+                    autoCut = true;
+                    PiPDisablerPlugin.LogSource.LogInfo(
+                        $"[MeshSurgery] Auto hole (line of sight): lens r={lensR * 1000f:F1}mm, camera {autoEyeDist * 1000f:F0}mm behind it ({(knownEye ? "remembered for this zoom" : "live, not settled yet")}), " +
+                        $"weapon stretch={CurrentRibcage():F3}, width={autoWidth:F2} → removes what projects inside {lensR * autoWidth * 970f:F1}mm (eye side) / {lensR * autoWidth * 1000f:F1}mm (2cm+ past the lens) on the lens plane");
+                }
+                else
+                {
+                    PiPDisablerPlugin.LogSource.LogInfo(
+                        $"[MeshSurgery] Auto hole skipped (eyepiece lens radius {lensR * 1000f:F1}mm not usable) — using manual hole values.");
+                }
+            }
+
+            if (precut && !autoCut) return; // pre-cut is only for the automatic hole (no hitchy manual cut)
+
             RestoreOriginalMeshes(cache);
             DestroyCutMeshes(cache);
             cache.Entries.Clear();
@@ -332,14 +409,29 @@ namespace PiPDisabler
             _lastAttemptTargets = targets.Count;
             float cutRadius = 0;
 
-            DisableLightEffectMeshesForScope(scopeRoot);
-            DisableWeaponSphereObjects(scopeRoot);
+            if (!precut)
+            {
+                DisableLightEffectMeshesForScope(scopeRoot);
+                DisableWeaponSphereObjects(scopeRoot);
+            }
 
             foreach (var mf in targets)
             {
                 if (!mf || !mf.sharedMesh) continue;
 
                 var renderer = mf.GetComponent<Renderer>();
+                if (autoCut)
+                {
+                    // Automatic hole: the parts are cut in the background at render time (no hitch,
+                    // and with the weapon stretch EFT applies only while rendering).
+                    if (precut && renderer != null && LensTransparency.IsLensSurfaceRenderer(renderer)) continue;
+                    cache.Entries.Add(new CutMeshEntry
+                    {
+                        Filter = mf, OriginalMesh = mf.sharedMesh, CutMesh = null, Applied = false,
+                        FilterPath = GetRelativePath(weaponRootTf, mf.transform)
+                    });
+                    continue;
+                }
                 var boundsCenter = renderer != null ? renderer.bounds.center : mf.transform.position;
                 float distFromPlane = Vector3.Distance(boundsCenter, planePoint);
 
@@ -347,11 +439,12 @@ namespace PiPDisabler
                     continue;
 
                 Mesh originalAsset = mf.sharedMesh;
+                Mesh readable = null;
 
                 try
                 {
                     bool isCylinder = true;
-                    Mesh readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
+                    readable = MeshPlaneCutter.MakeReadableMeshCopy(originalAsset);
                     if (readable == null)
                     {
                         PiPDisablerPlugin.DebugLogInfo(
@@ -370,7 +463,12 @@ namespace PiPDisabler
 
                     int vertsBefore = readable.vertexCount;
                     bool ok;
-                    if (isCylinder)
+                    if (isCylinder && autoCut)
+                    {
+                        ok = MeshPlaneCutter.CutMeshSightCone(readable, mf.transform,
+                            planePoint, planeNormal, autoEyeDist, autoLensR, autoWidth);
+                    }
+                    else if (isCylinder)
                     {
                         float nearR = PerScopeMeshSurgerySettings.GetPlane1Radius();
                         float startOff = PerScopeMeshSurgerySettings.GetCutStartOffset();
@@ -404,21 +502,35 @@ namespace PiPDisabler
                         readable.name = originalAsset.name + "_CUT";
                     }
 
-                    PiPDisablerPlugin.DebugLogInfo(
-                        $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
+                    if (autoCut)
+                    {
+                        var rend = mf.GetComponent<Renderer>();
+                        PiPDisablerPlugin.DebugLogInfo(
+                            $"[MeshSurgery] Cut '{originalAsset.name}' (go='{mf.name}', mat='{(rend != null && rend.sharedMaterial != null ? rend.sharedMaterial.name : "?")}', det={(mf.transform.localToWorldMatrix.determinant < 0f ? "-" : "+")}): " +
+                            $"{vertsBefore} → {readable.vertexCount} verts; tris {MeshPlaneCutter.LastTris}: removed {MeshPlaneCutter.LastSightRemoved} in the line of sight, split {MeshPlaneCutter.LastSightSplit} on the lens edge{(ok ? "" : " (whole part was in the line of sight)")}");
+                    }
+                    else
+                    {
+                        PiPDisablerPlugin.DebugLogInfo(
+                            $"[MeshSurgery] Cut '{originalAsset.name}': {vertsBefore} → {readable.vertexCount} verts");
+                    }
 
                     mf.sharedMesh = readable;
+                    var cutMesh = readable;
+                    readable = null; // owned by the cache now
                     cache.Entries.Add(new CutMeshEntry
                     {
                         Filter = mf,
                         OriginalMesh = originalAsset,
-                        CutMesh = readable,
+                        CutMesh = cutMesh,
                         Applied = true,
                         FilterPath = GetRelativePath(weaponRootTf, mf.transform)
                     });
                 }
                 catch (Exception ex)
                 {
+                    if (readable != null)
+                        UnityEngine.Object.Destroy(readable);
                     PiPDisablerPlugin.DebugLogInfo(
                         $"[MeshSurgery] Failed on '{originalAsset.name}': {ex.Message}");
                 }
@@ -426,7 +538,20 @@ namespace PiPDisabler
 
             cache.Built = true;
             cache.Dirty = false;
+            cache.ScopeKey = PerScopeMeshSurgerySettings.ActiveScopeKey;
             cache.SettingsSignature = BuildCutSettingsSignature();
+            if (autoCut && cache.Entries.Count > 0)
+            {
+                // 2.8.4: one cut for the stretch now. A pre-cut (weapon held, not aimed) is only
+                // provisional and is confirmed once the aim settles. Cuts for the other used zoom
+                // levels are made after the aim has settled (QueueCutAhead): EFT stretches the
+                // weapon along a body axis, and in the lowered (not aimed) pose that axis is not
+                // along the barrel, so a stretch predicted there skews the cut (wrong hole after a
+                // restart / in the next raid until Home was pressed).
+                StartJob(cache, scopeRoot, planePoint, planeNormal, autoEyeDist, autoLensR, autoWidth, LastAutoApexBucketUsed,
+                    precut ? "pre-cut while holding the weapon" : "first cut",
+                    targetRib: int.MinValue, predicted: false, activate: !precut, cancelOthers: !precut, provisional: precut);
+            }
             _lastCutAttemptFrame = Time.frameCount;
             _lastAttemptEntries = cache.Entries.Count;
 
@@ -463,6 +588,26 @@ namespace PiPDisabler
             DisableLightEffectMeshesForScope(scopeRoot);
             DisableWeaponSphereObjects(scopeRoot);
 
+            // No finished cut on show (cut ahead while holding the gun, or the last cut was stopped
+            // by a weapon switch): put the most recently used stored cut on at once instead of
+            // throwing all stored cuts away and showing the uncut scope until a new one is done.
+            if (cache.Active == null || !cache.Active.Complete)
+            {
+                CutVariant best = null;
+                int ribNow = RibBucket(RenderRibcage());
+                foreach (var v in cache.Variants)
+                    if (v.Complete && v.Rib == ribNow) { best = v; break; }
+                if (best == null)
+                    foreach (var v in cache.Variants)
+                        if (v.Complete && (best == null || v.LastUsed > best.LastUsed)) best = v;
+                if (best != null)
+                {
+                    ActivateVariant(cache, best);
+                    PiPDisablerPlugin.DebugLogInfo(
+                        $"[MeshSurgery] Aim: put on the stored cut for weapon stretch {Mathf.Pow(RibBucketStep, best.Rib):F2}{(best.Predicted ? " (made ahead)" : "")}");
+                }
+            }
+
             foreach (var entry in cache.Entries)
             {
                 if (entry == null || entry.Filter == null || entry.CutMesh == null)
@@ -495,19 +640,32 @@ namespace PiPDisabler
         private static void DestroyCutMeshes(CutProfileCache cache)
         {
             if (cache == null) return;
+            if (_recut != null && ReferenceEquals(_recut.Cache, cache)) _recut = null;
+            _jobQueue.RemoveAll(j => ReferenceEquals(j.Cache, cache));
+
+            var owned = new HashSet<Mesh>();
+            foreach (var v in cache.Variants)
+                if (v.Meshes != null)
+                    foreach (var m in v.Meshes)
+                        if (m != null && owned.Add(m)) { try { UnityEngine.Object.Destroy(m); } catch { } }
+            cache.Variants.Clear();
+            cache.Active = null;
 
             foreach (var entry in cache.Entries)
             {
-                if (entry?.CutMesh != null)
+                if (entry?.CutMesh != null && !owned.Contains(entry.CutMesh))
                 {
                     try { UnityEngine.Object.Destroy(entry.CutMesh); }
                     catch { }
                 }
+                if (entry != null) entry.CutMesh = null;
             }
         }
 
         private static void DestroyCurrentWeaponCache()
         {
+            _recut = null;
+            _jobQueue.Clear();
             foreach (var weaponCache in _raidCaches.Values)
             {
                 if (weaponCache == null) continue;
@@ -531,10 +689,28 @@ namespace PiPDisabler
                 return;
 
             UnbindInventoryEvents();
-            inventory.AddItemEvent += OnItemAdded;
-            inventory.RemoveItemEvent += OnItemRemoved;
-            _inventoryEventSource = inventory;
-            PiPDisablerPlugin.DebugLogInfo("[MeshSurgery] Inventory add/remove event handlers bound.");
+
+            try
+            {
+                var type = inventory.GetType();
+                var addEvent = type.GetEvent("AddItemEvent");
+                var removeEvent = type.GetEvent("RemoveItemEvent");
+                if (addEvent == null || removeEvent == null)
+                    return;
+
+                _addItemHandler = Delegate.CreateDelegate(addEvent.EventHandlerType, null,
+                    typeof(MeshSurgeryManager).GetMethod(nameof(OnItemAdded), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static));
+                _removeItemHandler = Delegate.CreateDelegate(removeEvent.EventHandlerType, null,
+                    typeof(MeshSurgeryManager).GetMethod(nameof(OnItemRemoved), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static));
+
+                addEvent.AddEventHandler(inventory, _addItemHandler);
+                removeEvent.AddEventHandler(inventory, _removeItemHandler);
+                _inventoryEventSource = inventory;
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Failed to bind inventory events: {ex.Message}");
+            }
         }
 
         private static void UnbindInventoryEvents()
@@ -542,8 +718,21 @@ namespace PiPDisabler
             if (_inventoryEventSource == null)
                 return;
 
-            _inventoryEventSource.AddItemEvent -= OnItemAdded;
-            _inventoryEventSource.RemoveItemEvent -= OnItemRemoved;
+            try
+            {
+                var type = _inventoryEventSource.GetType();
+                var addEvent = type.GetEvent("AddItemEvent");
+                var removeEvent = type.GetEvent("RemoveItemEvent");
+
+                if (addEvent != null && _addItemHandler != null)
+                    addEvent.RemoveEventHandler(_inventoryEventSource, _addItemHandler);
+                if (removeEvent != null && _removeItemHandler != null)
+                    removeEvent.RemoveEventHandler(_inventoryEventSource, _removeItemHandler);
+            }
+            catch { }
+
+            _addItemHandler = null;
+            _removeItemHandler = null;
             _inventoryEventSource = null;
         }
 
@@ -622,7 +811,9 @@ namespace PiPDisabler
         {
             foreach (var entry in cache.Entries)
             {
-                if (entry == null || entry.CutMesh == null || string.IsNullOrEmpty(entry.FilterPath))
+                // A part with no cut yet is fine (it stays uncut until the background cut reaches it);
+                // only a part that can no longer be found means the gun changed.
+                if (entry == null || string.IsNullOrEmpty(entry.FilterPath))
                     return false;
 
                 var tf = FindRelativeTransform(weaponRoot, entry.FilterPath);
@@ -701,11 +892,835 @@ namespace PiPDisabler
             return false;
         }
 
+        // ── Automatic hole: apex = the real camera ──
+        private const float DefaultApexDistance = 0.12f;
+        private const float ApexBucketStep = 1.03f;
+        private static Transform _autoScopeRoot;
+        private static Vector3 _autoPlaneLocal, _autoNormalLocal;
+
+        private static void RememberAutoPlane(Transform scopeRoot, Vector3 planePoint, Vector3 planeNormal)
+        {
+            _autoScopeRoot = scopeRoot;
+            _autoPlaneLocal = scopeRoot.InverseTransformPoint(planePoint);
+            _autoNormalLocal = scopeRoot.InverseTransformDirection(planeNormal);
+        }
+
+        /// <summary>Distance from the main camera to the eyepiece along the bore, in 3% buckets.</summary>
+        internal static int GetAutoApexBucket()
+        {
+            if (!_inRender && Time.frameCount - _renderSampleFrame < 30 && _renderEyeBucket != int.MinValue)
+                return _renderEyeBucket;
+            Camera cam0 = null;
+            try { cam0 = Helpers.GetMainCamera(); } catch { }
+            return LiveApexBucket(cam0);
+        }
+
+        private static int LiveApexBucket(Camera cam)
+        {
+            float e = DefaultApexDistance;
+            try
+            {
+                if (_autoScopeRoot != null && cam != null)
+                {
+                    Vector3 p = _autoScopeRoot.TransformPoint(_autoPlaneLocal);
+                    Vector3 n = _autoScopeRoot.TransformDirection(_autoNormalLocal).normalized;
+                    float d = Vector3.Dot(p - cam.transform.position, n);
+                    if (d > 0.02f && d < 1.5f) e = d;
+                }
+            }
+            catch { }
+            return Mathf.RoundToInt(Mathf.Log(e / DefaultApexDistance) / Mathf.Log(ApexBucketStep));
+        }
+
+        internal static void ForgetAutoPlane() => _autoScopeRoot = null;
+
+        // ── Weapon stretch (2.7.8) ──
+        // EFT stretches the whole weapon along its length with the zoom (FirstPersonStrategy sets
+        // Ribcage / HandsHierarchy localScale = (1, 1, RibcageScaleCurrent)). A cut made at one
+        // stretch is wrong at another: parts in front of the eyepiece move in/out of the lens on
+        // screen, so the cut either leaves bits inside the lens or bites into turrets/mounts
+        // visible around it. The cut therefore remembers the stretch it was made for and is redone
+        // (spread over frames, see TickAsyncRecut) when the settled stretch changes.
+        private const float RibBucketStep = 1.03f;
+
+        internal static float CurrentRibcage()
+        {
+            try
+            {
+                var p = Helpers.GetLocalPlayer();
+                if (p != null && p.RibcageScaleCurrent > 0.05f) return p.RibcageScaleCurrent;
+            }
+            catch { }
+            return 1f;
+        }
+
+        internal static int RibBucket(float s) => Mathf.RoundToInt(Mathf.Log(Mathf.Max(0.05f, s)) / Mathf.Log(RibBucketStep));
+
+        // ── Stored cuts per weapon stretch (2.8.0) ──
+        // Each zoom level stretches the weapon differently, so each needs its own cut. Up to
+        // MaxVariants cuts per scope are kept in memory; zooming to a level that was cut before
+        // switches to it at once instead of waiting and re-cutting ("pop"). All of it is freed at
+        // raid end. The zoom levels a scope was used at are saved (used-zoom file) and cut ahead
+        // while holding the weapon, with the stretch predicted from EFT's (1,1,s) scaling.
+        private const int MaxVariants = 4;
+
+        /// <summary>True when the cut on screen does not fit the current view (after it settled).</summary>
+        internal static bool AutoCutIsStale(int eyeBucket, int ribBucket, out string why)
+        {
+            why = null;
+            var cache = _currentWeaponCache;
+            if (cache == null || !cache.Built || cache.Entries.Count == 0) return false;
+            var v = cache.Active;
+            if (v == null) why = "no cut for this view yet";
+            else if (!v.Complete) why = "previous cut was interrupted";
+            else if (v.Rib != ribBucket) why = $"weapon stretch {Mathf.Pow(RibBucketStep, v.Rib):F2}->{Mathf.Pow(RibBucketStep, ribBucket):F2}";
+            else if (System.Math.Abs(eyeBucket - v.Eye) >= 2) why = $"camera distance {v.Eye}->{eyeBucket}";
+            else if (v.Predicted) why = "confirm the cut made ahead";
+            return why != null;
+        }
+
+        /// <summary>Zoom changed: show a stored cut for this stretch right away, if there is one.</summary>
+        internal static bool TrySwitchVariant(int ribBucket)
+        {
+            var c = _currentWeaponCache;
+            if (c == null || !c.Built || (c.Active != null && c.Active.Rib == ribBucket)) return false;
+            if (_recut != null && ReferenceEquals(_recut.Cache, c) && _recut.Activate) return false;
+            CutVariant best = null;
+            foreach (var v in c.Variants)
+                if (v.Complete && v.Rib == ribBucket) { best = v; break; }
+            if (best == null) return false;
+            ActivateVariant(c, best);
+            PiPDisablerPlugin.DebugLogInfo(
+                $"[MeshSurgery] Switched to the stored cut for weapon stretch {Mathf.Pow(RibBucketStep, best.Rib):F2}{(best.Predicted ? " (made ahead)" : "")} — no re-cut");
+            return true;
+        }
+
+        private static void ActivateVariant(CutProfileCache c, CutVariant v)
+        {
+            c.Active = v;
+            v.LastUsed = Time.realtimeSinceStartup;
+            bool apply = ReferenceEquals(_applyCache, c);
+            for (int i = 0; i < c.Entries.Count; i++)
+            {
+                var e = c.Entries[i];
+                if (e == null) continue;
+                Mesh m = v.Meshes != null && i < v.Meshes.Length ? v.Meshes[i] : null;
+                e.CutMesh = m;
+                if (apply && e.Filter != null)
+                {
+                    e.Filter.sharedMesh = m != null ? m : e.OriginalMesh;
+                    e.Applied = m != null;
+                }
+            }
+        }
+
+        private static CutVariant GetOrCreateVariant(CutProfileCache c, int rib, CutVariant keep)
+        {
+            foreach (var v in c.Variants)
+                if (v.Rib == rib) return v;
+            while (c.Variants.Count >= MaxVariants)
+            {
+                CutVariant lru = null;
+                foreach (var v in c.Variants)
+                    if (v != c.Active && v != keep && (lru == null || v.LastUsed < lru.LastUsed)) lru = v;
+                if (lru == null) break;
+                DestroyVariant(c, lru);
+            }
+            var nv = new CutVariant { Rib = rib, Meshes = new Mesh[c.Entries.Count], LastUsed = Time.realtimeSinceStartup };
+            c.Variants.Add(nv);
+            return nv;
+        }
+
+        private static void DestroyVariant(CutProfileCache c, CutVariant v)
+        {
+            if (v.Meshes != null)
+                for (int i = 0; i < v.Meshes.Length; i++)
+                {
+                    var m = v.Meshes[i];
+                    if (m == null) continue;
+                    ReleaseFromEntry(c, i, m);
+                    try { UnityEngine.Object.Destroy(m); } catch { }
+                }
+            c.Variants.Remove(v);
+            if (c.Active == v) c.Active = null;
+            PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Dropped the stored cut for weapon stretch {Mathf.Pow(RibBucketStep, v.Rib):F2} (keeping {MaxVariants})");
+        }
+
+        // A mesh about to be destroyed must not stay on screen: fall back to the active cut or the original.
+        private static void ReleaseFromEntry(CutProfileCache c, int i, Mesh m)
+        {
+            if (i >= c.Entries.Count) return;
+            var e = c.Entries[i];
+            if (e == null || e.CutMesh != m) return;
+            Mesh repl = c.Active != null && c.Active.Meshes != null && i < c.Active.Meshes.Length && c.Active.Meshes[i] != m ? c.Active.Meshes[i] : null;
+            e.CutMesh = repl;
+            if (e.Applied && e.Filter != null)
+            {
+                e.Filter.sharedMesh = repl != null ? repl : e.OriginalMesh;
+                e.Applied = repl != null;
+            }
+        }
+
+        private static void TrimProfiles(RaidWeaponCache wc, CutProfileCache keep)
+        {
+            // A weapon keeps at most 2 cut profiles (e.g. after a settings change the old one is dropped).
+            while (wc.Profiles.Count >= 2)
+            {
+                string lruKey = null; float lruT = float.MaxValue;
+                foreach (var kv in wc.Profiles)
+                    if (kv.Value != keep && kv.Value != _currentWeaponCache && kv.Value != null && kv.Value.LastUsed < lruT) { lruKey = kv.Key; lruT = kv.Value.LastUsed; }
+                if (lruKey == null) break;
+                var p = wc.Profiles[lruKey];
+                RestoreOriginalMeshes(p);
+                DestroyCutMeshes(p);
+                p.Entries.Clear();
+                wc.Profiles.Remove(lruKey);
+                PiPDisablerPlugin.DebugLogInfo("[MeshSurgery] Dropped an old cut profile of this weapon");
+            }
+        }
+
+        private static void TrimWeaponCaches(string keepId)
+        {
+            // At most 3 weapons keep their cuts.
+            while (_raidCaches.Count > 3)
+            {
+                string lruKey = null; float lruT = float.MaxValue;
+                foreach (var kv in _raidCaches)
+                    if (kv.Key != keepId && kv.Value != null && kv.Value.LastUsed < lruT) { lruKey = kv.Key; lruT = kv.Value.LastUsed; }
+                if (lruKey == null) break;
+                foreach (var p in _raidCaches[lruKey].Profiles.Values)
+                {
+                    if (p == _currentWeaponCache) continue;
+                    RestoreOriginalMeshes(p);
+                    DestroyCutMeshes(p);
+                    p.Entries.Clear();
+                }
+                _raidCaches.Remove(lruKey);
+                PiPDisablerPlugin.DebugLogInfo("[MeshSurgery] Dropped the cuts of a weapon not used recently");
+            }
+        }
+
+        // ── Raid end: free everything ──
+        private static object _lastGameWorld;
+        internal static void CheckRaidChanged()
+        {
+            object gw = null;
+            try { gw = Singleton<GameWorld>.Instance; } catch { }
+            if (ReferenceEquals(gw, _lastGameWorld)) return;
+            bool had = _raidCaches.Count > 0;
+            _lastGameWorld = gw;
+            if (!had) return;
+            DestroyCurrentWeaponCache();
+            PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] {(gw == null ? "Raid ended" : "New raid")}: freed all stored cuts");
+        }
+
+        private sealed class RecutJob
+        {
+            public CutProfileCache Cache;
+            public Transform ScopeRoot;
+            public Vector3 PlaneLocal, NormalLocal;
+            public float Eye, LensR, Width;
+            public int EyeBucket, TargetRib, Next, Removed, Split, Done;
+            public bool Predicted, Provisional, Activate, Started2;
+            public CutVariant Variant;
+            public Transform StretchFrame;
+            public float[] HousingCap;
+            public float Margin;
+            public string Reason;
+            public float Started;
+            public double Ms;
+        }
+        private static RecutJob _recut;
+        private static readonly List<RecutJob> _jobQueue = new List<RecutJob>();
+        internal static bool RecutRunning => (_recut != null && _recut.Activate) || _jobQueue.Exists(j => j.Activate);
+        private static bool _recutFinished;
+
+        /// <summary>Was a background cut of the current view completed since the last call?</summary>
+        internal static bool ConsumeRecutFinished()
+        {
+            bool f = _recutFinished;
+            _recutFinished = false;
+            return f;
+        }
+
+        /// <summary>Redo the automatic cut for the current view, a few meshes per frame (no hitch).</summary>
+        internal static bool StartAsyncRecut(OpticSight os, int eyeBucket, string reason)
+        {
+            var cache = _currentWeaponCache;
+            if (os == null || cache == null || !cache.Built || cache.Entries.Count == 0) return false;
+            if (!PerScopeMeshSurgerySettings.IsAutoCut()) return false;
+            var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
+            if (!scopeRoot) return false;
+            var activeMode = ResolveActiveMode(os, scopeRoot);
+            if (!activeMode) activeMode = os.transform;
+            if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode, out var planePoint, out var planeNormal, out _))
+                return false;
+            planePoint += planeNormal * PerScopeMeshSurgerySettings.GetPlane1OffsetMeters();
+            float lensR = LensTransparency.GetEyepieceLensRadius(scopeRoot);
+            if (lensR <= 0.003f || lensR >= 0.05f) return false;
+
+            RememberAutoPlane(scopeRoot, planePoint, planeNormal);
+            StartJob(cache, scopeRoot, planePoint, planeNormal, DefaultApexDistance * Mathf.Pow(ApexBucketStep, eyeBucket),
+                lensR, PerScopeMeshSurgerySettings.GetCutWidthMultiplierRaw(), eyeBucket, reason,
+                targetRib: int.MinValue, predicted: false, activate: true, cancelOthers: true);
+            return true;
+        }
+
+        /// <summary>
+        /// Aim settled (2.8.4): cut ahead, in the background, the other zoom levels this scope was
+        /// used at (weapon stretch predicted from the stretch now — valid here, in the aimed pose).
+        /// </summary>
+        internal static int QueueCutAhead(OpticSight os, int nowRib)
+        {
+            var cache = _currentWeaponCache;
+            if (os == null || cache == null || !cache.Built || cache.Entries.Count == 0 || !PerScopeMeshSurgerySettings.IsAutoCut()) return 0;
+            var used = GetUsedZooms(cache.ScopeKey);
+            if (used == null || used.Count == 0) return 0;
+            var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
+            if (!scopeRoot) return 0;
+            var activeMode = ResolveActiveMode(os, scopeRoot);
+            if (!activeMode) activeMode = os.transform;
+            if (!ScopeHierarchy.TryGetPlane(os, scopeRoot, activeMode, out var planePoint, out var planeNormal, out _)) return 0;
+            planePoint += planeNormal * PerScopeMeshSurgerySettings.GetPlane1OffsetMeters();
+            float lensR = LensTransparency.GetEyepieceLensRadius(scopeRoot);
+            if (lensR <= 0.003f || lensR >= 0.05f) return 0;
+            int queued = 0;
+            foreach (var u in used)
+            {
+                if (System.Math.Abs(u.Key - nowRib) <= 1) continue;
+                bool have = false;
+                foreach (var v in cache.Variants) if (v.Complete && v.Rib == u.Key) { have = true; break; }
+                if (!have && _recut != null && ReferenceEquals(_recut.Cache, cache) && _recut.TargetRib == u.Key) have = true;
+                if (!have) foreach (var j in _jobQueue) if (ReferenceEquals(j.Cache, cache) && j.TargetRib == u.Key) { have = true; break; }
+                if (have) continue;
+                StartJob(cache, scopeRoot, planePoint, planeNormal, DefaultApexDistance * Mathf.Pow(ApexBucketStep, u.Value),
+                    lensR, PerScopeMeshSurgerySettings.GetCutWidthMultiplierRaw(), u.Value, $"cut ahead for zoom stretch {Mathf.Pow(RibBucketStep, u.Key):F2}",
+                    targetRib: u.Key, predicted: true, activate: false, cancelOthers: false);
+                queued++;
+            }
+            return queued;
+        }
+
+        /// <summary>English one-liner of the cut on screen, for the always-on settle log.</summary>
+        internal static string DescribeActiveCut()
+        {
+            var c = _currentWeaponCache;
+            if (c == null || !c.Built) return "no cut cache";
+            if (c.Active == null) return "no cut on screen";
+            return $"cut on screen made for stretch {Mathf.Pow(RibBucketStep, c.Active.Rib):F2}, camera {DefaultApexDistance * Mathf.Pow(ApexBucketStep, c.Active.Eye) * 1000f:F0}mm" +
+                   $"{(c.Active.Complete ? "" : " (unfinished)")}{(c.Active.Predicted ? " (made ahead)" : "")}";
+        }
+
+        internal static float BucketToMm(int eyeBucket) => DefaultApexDistance * Mathf.Pow(ApexBucketStep, eyeBucket) * 1000f;
+
+        private static void StartJob(CutProfileCache cache, Transform scopeRoot, Vector3 planePoint, Vector3 planeNormal,
+            float eye, float lensR, float width, int eyeBucket, string reason,
+            int targetRib, bool predicted, bool activate, bool cancelOthers, bool provisional = false)
+        {
+            if (cancelOthers) CancelAsyncRecut("restarted", all: false);
+            EnsureRenderHook();
+            var job = new RecutJob
+            {
+                Cache = cache,
+                ScopeRoot = scopeRoot,
+                PlaneLocal = scopeRoot.InverseTransformPoint(planePoint),
+                NormalLocal = scopeRoot.InverseTransformDirection(planeNormal),
+                Eye = eye,
+                LensR = lensR,
+                Width = width,
+                EyeBucket = eyeBucket,
+                TargetRib = targetRib,
+                Predicted = predicted,
+                Provisional = provisional,
+                Activate = activate,
+                Reason = reason,
+                Started = Time.realtimeSinceStartup
+            };
+            if (activate) _jobQueue.Insert(0, job); else _jobQueue.Add(job);
+            PiPDisablerPlugin.DebugLogInfo(
+                $"[MeshSurgery] Cut queued in the background ({reason}): camera {eye * 1000f:F0}mm, {cache.Entries.Count} parts");
+        }
+
+        // ── Render-time work (2.7.9) ──
+        // EFT stretches the weapon only while rendering: ProceduralWeaponAnimation.ApplyFovAdjustments
+        // sets Ribcage/HandsHierarchy localScale = (1,1,RibcageScaleCurrent), yields WaitForEndOfFrame
+        // and resets it. In Update the weapon is never stretched (2.7.8 re-cut at 0.74/1.25/2.65
+        // removed exactly the same triangles). Cutting, measuring the camera distance and the probe
+        // therefore run in Camera.onPreCull of the main camera, where the weapon is as on screen.
+        private static bool _renderHooked;
+        private static bool _inRender;
+        private static CutProfileCache _applyCache;
+        private static int _renderEyeBucket = int.MinValue, _renderSampleFrame = -1000;
+        private static float _renderRib = 1f;
+        private static System.Action _renderPending;
+        internal static bool InRender => _inRender;
+
+        internal static void EnsureRenderHook()
+        {
+            if (_renderHooked) return;
+            _renderHooked = true;
+            Camera.onPreCull += OnPreCullAny;
+        }
+
+        internal static void UnhookRender()
+        {
+            if (!_renderHooked) return;
+            _renderHooked = false;
+            Camera.onPreCull -= OnPreCullAny;
+        }
+
+        /// <summary>Run once at the next render of the main camera (weapon as on screen).</summary>
+        internal static void RunAtRender(System.Action a)
+        {
+            EnsureRenderHook();
+            _renderPending += a;
+        }
+
+        private static void OnPreCullAny(Camera c)
+        {
+            if (_inRender || c == null) return;
+            Camera main;
+            try { main = Helpers.GetMainCamera(); } catch { return; }
+            if (c != main) return;
+            _inRender = true;
+            try
+            {
+                if (_autoScopeRoot != null)
+                {
+                    _renderEyeBucket = LiveApexBucket(c);
+                    _renderRib = CurrentRibcage();
+                    _renderSampleFrame = Time.frameCount;
+                }
+                TickAsyncRecut();
+                var pending = _renderPending;
+                _renderPending = null;
+                pending?.Invoke();
+            }
+            catch (Exception ex) { PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] render-time work failed: {ex.Message}"); }
+            finally { _inRender = false; }
+        }
+
+        /// <summary>Weapon stretch as last rendered (Update never sees it).</summary>
+        internal static float RenderRibcage() => Time.frameCount - _renderSampleFrame < 30 ? _renderRib : CurrentRibcage();
+
+        // ── Pre-cut (2.7.9): cut the held weapon's scope before the first aim ──
+        internal static void PrecutForOptic(OpticSight os)
+        {
+            if (os == null || !PerScopeMeshSurgerySettings.IsAutoCut() || _recut != null || _jobQueue.Count > 0) return;
+            var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
+            if (!scopeRoot) return;
+            var activeMode = ResolveActiveMode(os, scopeRoot);
+            var cache = GetOrCreateCurrentWeaponCache(scopeRoot, activeMode);
+            if (cache == null || cache.Built) return;
+            EnsureRenderHook();
+            RebuildCutCacheForOptic(cache, os, scopeRoot, activeMode, precut: true);
+        }
+
+        /// <summary>Stop background cuts: by default only the one(s) for the current view; all=true also pre-cuts.</summary>
+        internal static void CancelAsyncRecut(string why, bool all = false)
+        {
+            int removed = _jobQueue.RemoveAll(j => all || j.Activate);
+            if (_recut != null && (all || _recut.Activate))
+            {
+                PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Background cut stopped ({why}) after {_recut.Done}/{_recut.Cache.Entries.Count} parts");
+                _recut = null; // its variant stays incomplete, so the next settle check redoes it
+            }
+            else if (removed > 0)
+                PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] {removed} queued background cut(s) dropped ({why})");
+        }
+
+        // The transform EFT stretches with (1,1,s) while rendering, found among the weapon's parents.
+        internal static Transform FindStretchFrame(Transform weaponRoot, float sNow)
+        {
+            if (weaponRoot == null) return null;
+            Transform found = null; int count = 0;
+            if (Mathf.Abs(sNow - 1f) > 0.02f)
+            {
+                for (var p = weaponRoot; p != null; p = p.parent)
+                {
+                    var ls = p.localScale;
+                    if (Mathf.Abs(ls.z - sNow) < 0.01f && Mathf.Abs(ls.x - 1f) < 0.01f && Mathf.Abs(ls.y - 1f) < 0.01f)
+                    { found = p; count++; }
+                }
+                return count == 1 ? found : null;
+            }
+            // Stretch 1.0 shows no scale: use the frame EFT scales (FirstPersonStrategy:
+            // Ribcage.Original and HandsHierarchy.Self) that holds the weapon — only if exactly one does.
+            try
+            {
+                var player = Helpers.GetLocalPlayer();
+                Transform rib = player?.PlayerBones?.Ribcage?.Original;
+                Transform self = player?.HandsController?.HandsHierarchy?.Self;
+                bool underRib = rib != null && weaponRoot.IsChildOf(rib);
+                bool underSelf = self != null && weaponRoot.IsChildOf(self);
+                if (underRib ^ underSelf) return underRib ? rib : self;
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>Per frame at render time: cut parts within a small time budget.</summary>
+        internal static void TickAsyncRecut()
+        {
+            // A cut for the view on screen goes before cuts made ahead (those resume afterwards).
+            if (_recut != null && !_recut.Activate && _jobQueue.Count > 0 && _jobQueue[0].Activate)
+            {
+                _jobQueue.Insert(1, _recut);
+                _recut = null;
+            }
+            if (_recut == null)
+            {
+                if (_jobQueue.Count == 0) return;
+                _recut = _jobQueue[0];
+                _jobQueue.RemoveAt(0);
+                if (_recut.Started2 && (_recut.Variant == null || !_recut.Cache.Variants.Contains(_recut.Variant)))
+                {
+                    _recut = null; // its stored set was dropped meanwhile
+                    return;
+                }
+            }
+            var job = _recut;
+            if (job.Cache == null || job.ScopeRoot == null || !job.Cache.Built ||
+                (!ReferenceEquals(job.Cache, _currentWeaponCache)))
+            {
+                CancelAsyncRecut("weapon changed", all: true);
+                return;
+            }
+            var cache = job.Cache;
+            float sNow = CurrentRibcage();
+            if (!job.Started2)
+            {
+                job.Started2 = true;
+                int rib = job.TargetRib == int.MinValue ? RibBucket(sNow) : job.TargetRib;
+                if (job.Predicted)
+                {
+                    job.StretchFrame = FindStretchFrame(cache.WeaponRoot != null ? cache.WeaponRoot.transform : null, sNow);
+                    if (job.StretchFrame == null)
+                    {
+                        PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Pre-cut for stretch {Mathf.Pow(RibBucketStep, rib):F2} skipped: weapon stretch frame not found (stretch now {sNow:F3})");
+                        _recut = null;
+                        return;
+                    }
+                }
+                if (job.Predicted)
+                {
+                    foreach (var ex in cache.Variants)
+                        if (ex.Rib == rib && (!ex.Predicted || ex == cache.Active))
+                        {
+                            PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Cut ahead for stretch {Mathf.Pow(RibBucketStep, rib):F2} skipped: a real cut for it exists");
+                            _recut = null;
+                            return;
+                        }
+                }
+                job.TargetRib = rib;
+                job.Variant = GetOrCreateVariant(cache, rib, null);
+                job.Variant.Eye = job.EyeBucket;
+                job.Variant.Complete = false;
+                job.Variant.Predicted = job.Predicted || job.Provisional; // confirmed after the aim settles
+                if (job.Activate) cache.Active = job.Variant;
+                PiPDisablerPlugin.DebugLogInfo(
+                    $"[MeshSurgery] Cut started ({job.Reason}): weapon stretch {Mathf.Pow(RibBucketStep, rib):F2}{(job.Predicted ? $" predicted from {sNow:F3} via '{job.StretchFrame.name}'" : "")}");
+            }
+
+            // Predicted stretch: rescale the rendered weapon along the stretch frame's z from now to target.
+            Matrix4x4? pre = null;
+            if (job.Predicted && job.StretchFrame != null)
+            {
+                float r = Mathf.Pow(RibBucketStep, job.TargetRib) / Mathf.Max(0.05f, sNow);
+                if (Mathf.Abs(r - 1f) > 0.001f)
+                {
+                    var f = job.StretchFrame.localToWorldMatrix;
+                    pre = f * Matrix4x4.Scale(new Vector3(1f, 1f, r)) * f.inverse;
+                }
+            }
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            bool applyNew = ReferenceEquals(_applyCache, cache);
+            Vector3 planePoint = job.ScopeRoot.TransformPoint(job.PlaneLocal);
+            Vector3 planeNormal = job.ScopeRoot.TransformDirection(job.NormalLocal).normalized;
+            if (pre.HasValue)
+            {
+                var m = pre.Value;
+                planePoint = m.MultiplyPoint3x4(planePoint);
+                planeNormal = m.inverse.transpose.MultiplyVector(planeNormal).normalized;
+            }
+            if (job.HousingCap == null)
+            {
+                // Eyepiece housing outline (once per job): caps the off-axis margin.
+                job.Margin = Settings.HoleOffAxisMargin != null ? Settings.HoleOffAxisMargin.Value / 1000f : 0f;
+                job.HousingCap = job.Margin > 0f ? MeasureHousing(cache, job.ScopeRoot, pre, planePoint, planeNormal, job.Eye, job.LensR * Mathf.Max(0.05f, job.Width)) : new float[0];
+            }
+            var entries = cache.Entries;
+            var variant = job.Variant;
+            if (variant.Meshes == null || variant.Meshes.Length != entries.Count) variant.Meshes = new Mesh[entries.Count];
+            while (job.Next < entries.Count)
+            {
+                int i = job.Next++;
+                var entry = entries[i];
+                if (entry == null || entry.Filter == null || entry.OriginalMesh == null) continue;
+                Mesh readable = null;
+                try
+                {
+                    readable = MeshPlaneCutter.MakeReadableMeshCopy(entry.OriginalMesh);
+                    if (readable != null)
+                    {
+                        bool ok = MeshPlaneCutter.CutMeshSightCone(readable, entry.Filter.transform,
+                            planePoint, planeNormal, job.Eye, job.LensR, job.Width, pre,
+                            job.Margin, job.HousingCap.Length > 0 ? job.HousingCap : null);
+                        if (!ok) { readable.Clear(); readable.name = entry.OriginalMesh.name + "_CUT_EMPTY"; }
+                        else readable.name = entry.OriginalMesh.name + "_CUT";
+                        job.Removed += MeshPlaneCutter.LastSightRemoved;
+                        job.Split += MeshPlaneCutter.LastSightSplit;
+
+                        var old = variant.Meshes[i];
+                        variant.Meshes[i] = readable;
+                        if (cache.Active == variant)
+                        {
+                            entry.CutMesh = readable;
+                            if (entry.Applied || applyNew) { entry.Filter.sharedMesh = readable; entry.Applied = true; }
+                        }
+                        readable = null;
+                        if (old != null)
+                        {
+                            ReleaseFromEntry(cache, i, old);
+                            UnityEngine.Object.Destroy(old);
+                        }
+                        job.Done++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Cut failed on '{entry.OriginalMesh.name}': {ex.Message}");
+                }
+                finally
+                {
+                    if (readable != null) UnityEngine.Object.Destroy(readable);
+                }
+                if (sw.Elapsed.TotalMilliseconds > 2.0) break; // keep frames smooth
+            }
+            job.Ms += sw.Elapsed.TotalMilliseconds;
+            if (job.Next < entries.Count) return;
+
+            variant.Complete = true;
+            variant.LastUsed = Time.realtimeSinceStartup;
+            if (job.Activate) LastAutoApexBucketUsed = job.EyeBucket;
+            _recut = null;
+            if (!job.Predicted && !job.Provisional)
+            {
+                _recutFinished = job.Activate;
+                if (job.Activate) RecordUsedZoom(cache.ScopeKey, job.TargetRib, job.EyeBucket);
+            }
+            PiPDisablerPlugin.DebugLogInfo(
+                $"[MeshSurgery] Background cut done ({job.Reason}, weapon stretch {Mathf.Pow(RibBucketStep, job.TargetRib):F2}): {job.Done} parts, removed {job.Removed} triangles in the line of sight, split {job.Split}, " +
+                $"{job.Ms:F0}ms of work over {(Time.realtimeSinceStartup - job.Started) * 1000f:F0}ms");
+        }
+
+        // ── Zoom levels used per scope (2.8.0), saved so the next raid can cut them ahead ──
+        private static readonly Dictionary<string, List<KeyValuePair<int, int>>> _usedZooms =
+            new Dictionary<string, List<KeyValuePair<int, int>>>(StringComparer.OrdinalIgnoreCase);
+        private static bool _usedLoaded;
+        private static string UsedZoomPath => UserDataPath("used-zoom.txt");
+
+        // <mod folder>/user-data/: not in the release zip, so updates keep what was learned.
+        private static string UserDataPath(string fileName)
+        {
+            string dll = typeof(MeshSurgeryManager).Assembly.Location;
+            string root = string.IsNullOrEmpty(dll) ? System.IO.Path.Combine(BepInEx.Paths.PluginPath, "PiP-Disabler") : System.IO.Path.GetDirectoryName(dll);
+            string dir = System.IO.Path.Combine(root, "user-data");
+            try { System.IO.Directory.CreateDirectory(dir); } catch { }
+            return System.IO.Path.Combine(dir, fileName);
+        }
+
+        private static void LoadUsedZooms()
+        {
+            if (_usedLoaded) return;
+            _usedLoaded = true;
+            try
+            {
+                if (!System.IO.File.Exists(UsedZoomPath)) return;
+                foreach (var line in System.IO.File.ReadAllLines(UsedZoomPath))
+                {
+                    int eq = line.LastIndexOf('=');
+                    if (eq <= 0) continue;
+                    var list = new List<KeyValuePair<int, int>>();
+                    foreach (var part in line.Substring(eq + 1).Split(';'))
+                    {
+                        var kv = part.Split(':');
+                        if (kv.Length == 2 && int.TryParse(kv[0], out int r) && int.TryParse(kv[1], out int e))
+                            list.Add(new KeyValuePair<int, int>(r, e));
+                    }
+                    if (list.Count > 0) _usedZooms[line.Substring(0, eq).Trim()] = list;
+                }
+            }
+            catch (Exception ex) { PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Used-zoom file not read: {ex.Message}"); }
+        }
+
+        private static List<KeyValuePair<int, int>> GetUsedZooms(string key)
+        {
+            LoadUsedZooms();
+            return !string.IsNullOrEmpty(key) && _usedZooms.TryGetValue(key, out var l) ? new List<KeyValuePair<int, int>>(l) : null;
+        }
+
+        private static void RecordUsedZoom(string key, int rib, int eye)
+        {
+            if (string.IsNullOrEmpty(key) || rib == int.MinValue) return;
+            LoadUsedZooms();
+            if (!_usedZooms.TryGetValue(key, out var list)) _usedZooms[key] = list = new List<KeyValuePair<int, int>>();
+            if (list.Count > 0 && list[0].Key == rib && list[0].Value == eye) return;
+            list.RemoveAll(kv => System.Math.Abs(kv.Key - rib) <= 1);
+            list.Insert(0, new KeyValuePair<int, int>(rib, eye));
+            if (list.Count > MaxVariants) list.RemoveRange(MaxVariants, list.Count - MaxVariants);
+            try
+            {
+                var lines = new List<string>();
+                foreach (var kv in _usedZooms)
+                {
+                    var parts = new List<string>();
+                    foreach (var z in kv.Value) parts.Add(z.Key + ":" + z.Value);
+                    lines.Add(kv.Key + "=" + string.Join(";", parts.ToArray()));
+                }
+                string tmp = UsedZoomPath + ".tmp";
+                System.IO.File.WriteAllLines(tmp, lines.ToArray());
+                if (System.IO.File.Exists(UsedZoomPath)) System.IO.File.Delete(UsedZoomPath);
+                System.IO.File.Move(tmp, UsedZoomPath);
+            }
+            catch (Exception ex) { PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Used-zoom file not saved: {ex.Message}"); }
+        }
+
+        private static float[] MeasureHousing(CutProfileCache cache, Transform scopeRoot, Matrix4x4? pre,
+            Vector3 planePoint, Vector3 planeNormal, float eye, float lensR)
+        {
+            var verts = new List<Vector3>(8192);
+            foreach (var e in cache.Entries)
+            {
+                if (e == null || e.Filter == null || e.OriginalMesh == null) continue;
+                if (e.Filter.transform != scopeRoot && !e.Filter.transform.IsChildOf(scopeRoot)) continue;
+                Mesh r = null;
+                try
+                {
+                    r = MeshPlaneCutter.MakeReadableMeshCopy(e.OriginalMesh);
+                    if (r == null) continue;
+                    var m = pre.HasValue ? pre.Value * e.Filter.transform.localToWorldMatrix : e.Filter.transform.localToWorldMatrix;
+                    foreach (var lv in r.vertices) verts.Add(m.MultiplyPoint3x4(lv));
+                }
+                catch { }
+                finally { if (r != null) UnityEngine.Object.Destroy(r); }
+            }
+            var cap = MeshPlaneCutter.ComputeHousingOutline(verts, planePoint, planeNormal, eye, lensR);
+            float mn = float.MaxValue, mx = 0f;
+            foreach (var c in cap) { mn = Mathf.Min(mn, c); mx = Mathf.Max(mx, c); }
+            PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Eyepiece housing outline: {mn / lensR:F2}–{mx / lensR:F2}× lens radius ({verts.Count} vertices) — off-axis margin stays inside it");
+            return cap;
+        }
+
+        /// <summary>Original (uncut) mesh of a part, if the current cut replaced it.</summary>
+        internal static Mesh GetOriginalMesh(MeshFilter mf)
+        {
+            var cache = _currentWeaponCache;
+            if (cache == null || mf == null) return null;
+            foreach (var e in cache.Entries)
+                if (e != null && e.Filter == mf) return e.OriginalMesh;
+            return null;
+        }
+
+        // ── Settled camera distance per scope (2.7.7) ──
+        // The first cut happens while the aim animation is still moving the camera, so its distance
+        // is wrong and a full recut followed ~0.6 s later (a visible hitch on every aim). The
+        // settled distance is the same every time for a scope, so it is remembered (and saved) and
+        // used for the first cut; the cached cut is then reused and no recut is needed.
+        private static readonly Dictionary<string, int> _settledBucket = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private static bool _settledLoaded;
+        private static string SettledFilePath => UserDataPath("camera-distance.txt");
+
+        // 2.8.4: kept per zoom level ("scope|stretch bucket"). One value per scope stored the last
+        // settled distance whatever the zoom (e.g. 575 mm at stretch 2.65), so the next raid's
+        // first cut at 1x was made for the wrong camera distance until Home re-cut it.
+        private static string SettledKey(string scope, int rib) => scope + "|" + rib;
+
+        private static void LoadSettled()
+        {
+            if (_settledLoaded) return;
+            _settledLoaded = true;
+            try
+            {
+                if (!System.IO.File.Exists(SettledFilePath)) return;
+                foreach (var line in System.IO.File.ReadAllLines(SettledFilePath))
+                {
+                    int eq = line.LastIndexOf('=');
+                    if (eq <= 0) continue;
+                    string k = line.Substring(0, eq).Trim();
+                    if (k.IndexOf('|') < 0) continue; // old per-scope value (any zoom): not usable
+                    if (int.TryParse(line.Substring(eq + 1).Trim(), out int b))
+                        _settledBucket[k] = b;
+                }
+                PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Loaded settled camera distance for {_settledBucket.Count} scope zoom levels");
+            }
+            catch (Exception ex) { PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Camera distance file not read: {ex.Message}"); }
+        }
+
+        private static bool TryGetKnownBucket(int rib, out int b)
+        {
+            b = 0;
+            LoadSettled();
+            string key = PerScopeMeshSurgerySettings.ActiveScopeKey;
+            if (string.IsNullOrEmpty(key)) return false;
+            if (_settledBucket.TryGetValue(SettledKey(key, rib), out b)) return true;
+            // A real cut made at this zoom level before (used-zoom file) knows its distance too.
+            var used = GetUsedZooms(key);
+            if (used != null)
+                foreach (var u in used)
+                    if (System.Math.Abs(u.Key - rib) <= 1) { b = u.Value; return true; }
+            return false;
+        }
+
+        /// <summary>Camera-distance bucket to cut with: the one remembered for this zoom level, else the live one.</summary>
+        internal static int GetAutoBucketForCut(int rib)
+            => TryGetKnownBucket(rib, out int b) ? b : GetAutoApexBucket();
+
+        internal static bool HasSettledBucket(int rib) => TryGetKnownBucket(rib, out _);
+
+        internal static void RememberSettledBucket(int bucket, int rib)
+        {
+            LoadSettled();
+            string scope = PerScopeMeshSurgerySettings.ActiveScopeKey;
+            if (string.IsNullOrEmpty(scope)) return;
+            string key = SettledKey(scope, rib);
+            if (_settledBucket.TryGetValue(key, out int old) && old == bucket) return;
+            _settledBucket[key] = bucket;
+            try
+            {
+                var lines = new List<string>(_settledBucket.Count);
+                foreach (var kv in _settledBucket) lines.Add(kv.Key + "=" + kv.Value);
+                string tmp = SettledFilePath + ".tmp";
+                System.IO.File.WriteAllLines(tmp, lines.ToArray());
+                if (System.IO.File.Exists(SettledFilePath)) System.IO.File.Delete(SettledFilePath);
+                System.IO.File.Move(tmp, SettledFilePath);
+            }
+            catch (Exception ex) { PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Camera distance file not saved: {ex.Message}"); }
+            PiPDisablerPlugin.DebugLogInfo($"[MeshSurgery] Remembered settled camera distance for '{key}': {DefaultApexDistance * Mathf.Pow(ApexBucketStep, bucket) * 1000f:F0}mm (bucket {bucket})");
+        }
+
+        internal static bool TryGetAutoPlaneWorld(out Transform scopeRoot, out Vector3 point, out Vector3 normal)
+        {
+            scopeRoot = _autoScopeRoot;
+            point = default; normal = default;
+            if (scopeRoot == null) return false;
+            point = scopeRoot.TransformPoint(_autoPlaneLocal);
+            normal = scopeRoot.TransformDirection(_autoNormalLocal).normalized;
+            return true;
+        }
+
+        /// <summary>Camera-distance bucket the last automatic cut was made with.</summary>
+        internal static int LastAutoApexBucketUsed { get; private set; } = int.MinValue;
+
         private static string BuildCutSettingsSignature()
         {
             return string.Join("|", new[]
             {
-                "Cylinder",
+                // Auto: the camera distance is per stored cut (variant), not part of the profile —
+                // it changes with the zoom and used to throw all stored cuts away (2.8.0 log).
+                PerScopeMeshSurgerySettings.IsAutoCut() ? "Auto" : "Cylinder",
+                PerScopeMeshSurgerySettings.GetCutWidthMultiplierRaw().ToString("F3"),
                 PerScopeMeshSurgerySettings.GetPlaneOffsetMeters().ToString("F4"),
                 PerScopeMeshSurgerySettings.GetPlane1OffsetMeters().ToString("F4"),
                 PerScopeMeshSurgerySettings.GetPlane1Radius().ToString("F4"),
@@ -721,7 +1736,22 @@ namespace PiPDisabler
             });
         }
 
-        private static Transform FindWeaponTransform(Transform scopeRoot)
+        internal static Transform ResolveActiveModeFor(OpticSight os, Transform scopeRoot) => ResolveActiveMode(os, scopeRoot);
+
+        /// <summary>Hide the scope's glow/sphere objects (as a cut does) — used by the pixel hole.</summary>
+        internal static void DisableScopeExtras(Transform scopeRoot)
+        {
+            DisableLightEffectMeshesForScope(scopeRoot);
+            DisableWeaponSphereObjects(scopeRoot);
+        }
+
+        internal static void RestoreScopeExtras(Transform weaponRoot)
+        {
+            RestoreLightEffectMeshesUnderRoot(weaponRoot);
+            RestoreWeaponSphereObjectsUnderRoot(weaponRoot);
+        }
+
+        internal static Transform FindWeaponTransform(Transform scopeRoot)
         {
             for (var p = scopeRoot; p != null; p = p.parent)
             {
@@ -1255,7 +2285,7 @@ namespace PiPDisabler
                     continue;
 
                 // EFT regenerates the combined muzzle-flash mesh, including empty frames.
-                // Leave this effect mesh under the control of muzzle/VFX rendering.
+                // Leave this effect mesh under the control of muzzle/VFX rendering (upstream 5749d1d, SPT 4.1.6).
                 if (IsRuntimeMuzzleMesh(mf.gameObject.name, mf.sharedMesh.name))
                     continue;
 

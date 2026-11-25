@@ -54,6 +54,53 @@ namespace PiPDisabler
         /// <summary>
         /// Full cleanup for shutdown or mod disable.
         /// </summary>
+        /// <summary>
+        /// World-space radius of the eyepiece lens ("backLens") of the current scope, read from the
+        /// original mesh kept while the lens is hidden. 0 when unknown. Used by the automatic hole.
+        /// </summary>
+        internal static float GetEyepieceLensRadius(Transform scopeRoot)
+        {
+            // Several "backLens" meshes can exist (an Epic scope had a 61-vertex disc and a 16-vertex
+            // plane); the round disc with the most vertices is the eyepiece. Planes (<20 verts) are
+            // only a fallback.
+            float best = 0f, fallback = 0f;
+            int bestVerts = -1;
+            foreach (var e in _hidden)
+            {
+                var tf = e.Renderer != null ? e.Renderer.transform : null;
+                if (tf == null || e.OriginalMesh == null) continue;
+                if (scopeRoot != null && tf != scopeRoot && !tf.IsChildOf(scopeRoot)) continue;
+                if (tf.name.IndexOf("backlens", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                float r = WorldRadius(e.OriginalMesh, tf);
+                int verts = e.OriginalMesh.vertexCount;
+                if (verts < 20) { fallback = Mathf.Max(fallback, r); continue; }
+                if (verts > bestVerts || (verts == bestVerts && r > best)) { best = r; bestVerts = verts; }
+            }
+            if (best <= 0f && fallback <= 0f && scopeRoot != null)
+            {
+                // Lenses not hidden yet (pre-cut before aiming): read the backLens meshes directly.
+                foreach (var mf in scopeRoot.GetComponentsInChildren<MeshFilter>(true))
+                {
+                    if (mf == null || mf.sharedMesh == null || mf.sharedMesh.vertexCount == 0) continue;
+                    if (mf.name.IndexOf("backlens", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    float r = WorldRadius(mf.sharedMesh, mf.transform);
+                    int verts = mf.sharedMesh.vertexCount;
+                    if (verts < 20) { fallback = Mathf.Max(fallback, r); continue; }
+                    if (verts > bestVerts || (verts == bestVerts && r > best)) { best = r; bestVerts = verts; }
+                }
+            }
+            return best > 0f ? best : fallback;
+        }
+
+        private static float WorldRadius(Mesh mesh, Transform tf)
+        {
+            Vector3 ext = mesh.bounds.extents;
+            Vector3 sc = tf.lossyScale;
+            float x = Mathf.Abs(ext.x * sc.x), y = Mathf.Abs(ext.y * sc.y), z = Mathf.Abs(ext.z * sc.z);
+            // A lens is a thin disc: its radius is the larger of the two big extents.
+            return Mathf.Max(x, Mathf.Max(y, z));
+        }
+
         public static void FullRestoreAll()
         {
             RestoreAll();
@@ -100,6 +147,9 @@ namespace PiPDisabler
 
             PiPDisablerPlugin.DebugLogInfo(
                 $"[LensTransparency] Destroyed geometry on {killed} lens surfaces (searchRoot='{searchRoot.name}')");
+
+            // Keep the weapon on LOD0 so a low-poly LOD1 body can't cap the eyepiece hole.
+            LodLock.Apply(os);
         }
 
         /// <summary>
@@ -108,6 +158,7 @@ namespace PiPDisabler
         /// </summary>
         public static void EnsureHidden(Renderer excludeRenderer = null)
         {
+            LodLock.Enforce();
             var emptyMesh = GetEmptyMesh();
             for (int i = 0; i < _hidden.Count; i++)
             {
@@ -141,6 +192,7 @@ namespace PiPDisabler
         /// </summary>
         public static void RestoreAll()
         {
+            LodLock.Restore();
             if (_hidden.Count == 0) return;
 
             for (int i = 0; i < _hidden.Count; i++)
