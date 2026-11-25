@@ -418,7 +418,7 @@ namespace PiPDisabler
         private static void TickAutoCutZoom()
         {
             var os = _activeOptic;
-            if (os == null || _meshSurgerySuppressedByReload || !PerScopeMeshSurgerySettings.IsAutoCut())
+            if (os == null || _meshSurgerySuppressedByReload || PixelHole.Active || !PerScopeMeshSurgerySettings.IsAutoCut())
                 return;
 
             MeshSurgeryManager.ConsumeRecutFinished();
@@ -484,6 +484,11 @@ namespace PiPDisabler
             if (!_isScoped || _modBypassedForCurrentScope || _activeOptic == null || !PerScopeMeshSurgerySettings.IsAutoCut())
             {
                 PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Re-cut key ignored: not aiming a scope with the automatic hole");
+                return;
+            }
+            if (PixelHole.Active)
+            {
+                PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Re-cut key ignored: pixel hole mode, nothing to re-cut");
                 return;
             }
             bool ok = MeshSurgeryManager.StartAsyncRecut(_activeOptic, MeshSurgeryManager.GetAutoApexBucket(), "hotkey");

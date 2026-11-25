@@ -90,6 +90,13 @@ namespace PiPDisabler
             if (os == null) return;
             EnsureRenderHook();
 
+            // Pixel hole: nothing is cut; the scope body is hidden inside the lens circle per pixel.
+            if (PixelHole.Enabled)
+            {
+                RestoreForScope(os.transform); // original meshes back if a cut was on
+                if (PixelHole.TryBegin(os)) return;
+            }
+
             var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
             if (!scopeRoot) return;
 
@@ -119,6 +126,7 @@ namespace PiPDisabler
 
         public static void RestoreForScope(Transform anyTransformUnderScope)
         {
+            PixelHole.End();
             var scopeRoot = ScopeHierarchy.FindScopeRoot(anyTransformUnderScope);
             if (!scopeRoot) return;
 
@@ -136,6 +144,7 @@ namespace PiPDisabler
 
         public static void RestoreAll()
         {
+            PixelHole.End();
             _applyCache = null;
             foreach (var weaponCache in _raidCaches.Values)
             {
@@ -1285,12 +1294,15 @@ namespace PiPDisabler
             _inRender = true;
             try
             {
+                // Camera turned to the scope first, so the pixel hole sees the view as rendered.
+                ReticleRenderer.AlignMainCameraEarly(c);
                 if (_autoScopeRoot != null)
                 {
                     _renderEyeBucket = LiveApexBucket(c);
                     _renderRib = CurrentRibcage();
                     _renderSampleFrame = Time.frameCount;
                 }
+                PixelHole.OnPreCullMain(c);
                 TickAsyncRecut();
                 var pending = _renderPending;
                 _renderPending = null;
@@ -1306,7 +1318,7 @@ namespace PiPDisabler
         // ── Pre-cut (2.7.9): cut the held weapon's scope before the first aim ──
         internal static void PrecutForOptic(OpticSight os)
         {
-            if (os == null || !PerScopeMeshSurgerySettings.IsAutoCut() || _recut != null || _jobQueue.Count > 0) return;
+            if (os == null || PixelHole.Enabled || !PerScopeMeshSurgerySettings.IsAutoCut() || _recut != null || _jobQueue.Count > 0) return;
             var scopeRoot = ScopeHierarchy.FindScopeRoot(os.transform);
             if (!scopeRoot) return;
             var activeMode = ResolveActiveMode(os, scopeRoot);
