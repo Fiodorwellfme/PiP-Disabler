@@ -52,6 +52,13 @@ namespace PiPDisabler
         private static string FilePath => Path.Combine(GetPluginRootDirectory(), "custom_mesh_surgery_settings.json");
 
         public static ScopeMeshSurgerySettingsEntry ActiveScopeOverride => GetActiveOverride();
+        internal static string ActiveScopeKey => _activeScopeKey;
+
+        /// <summary>Automatic hole shape (fitted to the eyepiece lens) unless turned off.</summary>
+        internal static bool IsAutoCut() => Settings.AutoCutShape.Value;
+
+        /// <summary>Width factor of the automatic hole (1 = exactly the line of sight through the lens).</summary>
+        internal static float GetCutWidthMultiplierRaw() => 1f;
 
         internal static float GetPlaneOffsetMeters() => ActiveScopeOverride != null ? ActiveScopeOverride.PlaneOffsetMeters : Settings.PlaneOffsetMeters.Value;
         internal static float GetPlane1Radius() => ActiveScopeOverride != null ? ActiveScopeOverride.Plane1Radius : Settings.Plane1Radius.Value;
@@ -169,6 +176,12 @@ namespace PiPDisabler
             {
                 _syncingCustomConfig = false;
             }
+        }
+
+        /// <summary>Sets the active scope key only (no F12 sync): for background work such as the pre-cut.</summary>
+        internal static void SetActiveScopeQuiet(string scopeKey)
+        {
+            _activeScopeKey = string.IsNullOrWhiteSpace(scopeKey) ? null : scopeKey.Trim();
         }
 
         internal static void ClearActiveScope()

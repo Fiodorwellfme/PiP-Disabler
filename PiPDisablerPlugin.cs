@@ -105,6 +105,10 @@ namespace PiPDisabler
             }
             if (!Settings.ModEnabled.Value) return;
 
+            if (Settings.RecutHoleKey.Value != KeyCode.None && InputProxy.GetKeyDown(Settings.RecutHoleKey.Value))
+                ScopeLifecycle.RecutHoleNow();
+            ScopeLifecycle.TickPrecut();
+
             if (Settings.ScopeWhitelistToggleEntryKey.Value != KeyCode.None && InputProxy.GetKeyDown(Settings.ScopeWhitelistToggleEntryKey.Value))
             {
                 ScopeLifecycle.ToggleActiveScopeWhitelistEntry();
