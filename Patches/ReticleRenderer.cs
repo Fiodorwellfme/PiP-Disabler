@@ -736,16 +736,20 @@ namespace PiPDisabler
 
                 Vector3 position = _savedScopeReticle.Position;
                 position.z = 0.5f;
-                float zRotation = Mathf.Repeat(_savedScopeReticle.Rotation.z, 360f);
-                bool quarterTurnReticle = Mathf.Abs(zRotation - 90f) < 0.5f || Mathf.Abs(zRotation - 270f) < 0.5f;
-                Vector3 meshReticleScale = quarterTurnReticle
-                    ? new Vector3(meshScale, meshScale / Mathf.Max(0.01f, meshAspect), meshScale)
-                    : new Vector3(meshScale / Mathf.Max(0.01f, meshAspect), meshScale, meshScale);
 
-                _reticleMatrix = Matrix4x4.TRS(
-                    position,
+                // Apply aspect correction AFTER rotating the reticle.
+                // Epic AiO variable scopes use (-90, 90, 90), meaning
+                // the original local-axis correction produces an incorrectly
+                // stretched reticle.
+                Matrix4x4 rotatedReticle = Matrix4x4.TRS(
+                    Vector3.zero,
                     Quaternion.Euler(_savedScopeReticle.Rotation),
-                    meshReticleScale);
+                    new Vector3(meshScale, meshScale, meshScale));
+
+                Matrix4x4 aspectFix = Matrix4x4.Scale(
+                    new Vector3(1f / Mathf.Max(0.01f, meshAspect), 1f, 1f));
+
+                _reticleMatrix = Matrix4x4.Translate(position) * aspectFix * rotatedReticle;
                 return;
             }
 
