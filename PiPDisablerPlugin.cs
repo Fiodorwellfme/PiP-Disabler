@@ -48,9 +48,14 @@ namespace PiPDisabler
             Settings.ScopeWhitelistNames.SettingChanged += OnWhitelistSettingsChanged;
         }
 
-              
+                      private void OnApplicationQuit()
+        {
+            PerScopeMeshSurgerySettings.FlushPendingWrite();
+        }
+
         private void OnDestroy()
         {
+            PerScopeMeshSurgerySettings.FlushPendingWrite();
             // Plugin unload or game exit — restore everything
             ScopeLifecycle.ForceExit();
             CameraSettingsManager.ForceRestore();
@@ -146,6 +151,9 @@ namespace PiPDisabler
                         : $"[CustomMeshSettings] No custom settings existed for scope key '{scopeKey}'");
                 }
             }
+
+            ScopeLifecycle.TickPendingSettingWork();
+            PerScopeMeshSurgerySettings.TickPendingWrite();
 
             if (!ScopeLifecycle.ShouldRunUpdateLoop())
                 return;
