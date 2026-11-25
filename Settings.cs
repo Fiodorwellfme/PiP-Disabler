@@ -17,6 +17,7 @@ namespace PiPDisabler
         public static ConfigEntry<bool> AutoDisableForVariableScopes;
         public static ConfigEntry<string> AutoBypassNameContains;
         public static ConfigEntry<string> ScopeBlacklistNames;
+        public static ConfigEntry<string> Language;
         public static ConfigEntry<KeyCode> ScopeBlacklistToggleEntryKey;
         public static ConfigEntry<string> ScopeWhitelistNames;
         public static ConfigEntry<KeyCode> ScopeWhitelistToggleEntryKey;
@@ -136,6 +137,13 @@ namespace PiPDisabler
                     "Toggle key for master mod enable/disable.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = false})));
+            var languages = new List<string> { Localization.GameOption, Localization.EnglishOption };
+            languages.AddRange(Localization.AvailableCodes());
+            ConfigEntries.Add(Language = config.Bind("General", "Settings Language", Localization.GameOption,
+                new ConfigDescription(
+                    "Language of the F12 settings. Game = follow the game's language when a translation file for it exists (BepInEx/plugins/PiP-Disabler/locales/<game language code>.json), English otherwise. English or a file name = always that one. Close and reopen F12 after changing.",
+                    new AcceptableValueList<string>(languages.ToArray()),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(AutoDisableForVariableScopes = config.Bind("General", "Auto Disable For NV/Thermals", true,
                 new ConfigDescription(
                     "Automatically disable the mod for thermal/night vision scopes.",

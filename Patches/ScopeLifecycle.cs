@@ -1131,7 +1131,7 @@ namespace PiPDisabler
                 var pwa = player.ProceduralWeaponAnimation;
                 if (pwa == null) return;
 
-                float baseFov = pwa.FieldOfView;
+                float baseFov = pwa.GetBaseFov();
                 float targetFov = _restoreOneXFovOnScopeExit
                     ? Mathf.Max(1f, baseFov - 15f)
                     : baseFov;
