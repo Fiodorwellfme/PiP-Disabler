@@ -20,6 +20,8 @@ namespace PiPDisabler
         public static ConfigEntry<KeyCode> ScopeBlacklistToggleEntryKey;
         public static ConfigEntry<string> ScopeWhitelistNames;
         public static ConfigEntry<KeyCode> ScopeWhitelistToggleEntryKey;
+        public static ConfigEntry<bool> NormalizeEyeDistance;
+        public static ConfigEntry<float> ReferenceEyeDistanceMm;
         public static ConfigEntry<float> ScopeAlignmentAngleTolerance;
         public static ConfigEntry<float> PostSprintAimGateDuration;
         public static ConfigEntry<bool> BypassDuringStanceTransitions;
@@ -141,6 +143,18 @@ namespace PiPDisabler
                     "Automatically disable the mod for thermal/night vision scopes.",
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
+            ConfigEntries.Add(NormalizeEyeDistance = config.Bind("General", "Same Scope Size On Every Weapon", true,
+                new ConfigDescription(
+                    "The eyepiece sits at a different distance from the eye on each weapon (rail position, mount), so the same scope looked bigger on one rifle than on another. On: once you have aimed for a moment, the eyepiece distance is measured and the weapon scale is corrected so it sits at 'Reference Eye Distance' on every weapon. Measured once per weapon + scope + mount position and kept (BepInEx/plugins/PiP-Disabler/user-data/eye-distance.txt).",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(ReferenceEyeDistanceMm = config.Bind("General", "Reference Eye Distance (mm)", 170f,
+                new ConfigDescription(
+                    "Eyepiece distance from the camera (at weapon scale 1) that every weapon is corrected to. Larger = the scope looks smaller on all weapons. Per-scope weapon scale still applies on top.",
+                    new AcceptableValueRange<float>(80f, 400f),
+                    new ConfigurationManagerAttributes { IsAdvanced = true })));
+            NormalizeEyeDistance.SettingChanged += (s, e) => EyeDistanceNormalizer.OnSettingsChanged();
+            ReferenceEyeDistanceMm.SettingChanged += (s, e) => EyeDistanceNormalizer.OnSettingsChanged();
             ConfigEntries.Add(AutoBypassNameContains = config.Bind("General", "Auto Bypass Name Contains", "d-evo; scope_ags_npz_pag17_2,7x",
                 new ConfigDescription(
                     "Semi-colon separated list. Any scope whose object name or scope key contains one of these gets bypassed",

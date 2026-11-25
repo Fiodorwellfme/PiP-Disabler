@@ -37,7 +37,8 @@ namespace PiPDisabler.Patches
         public static void UpdateScale()
         {
             if (!_isActive) return;
-            float scale = GetManualScale();
+            // Same scope looks the same on every weapon (eyepiece distance normalised).
+            float scale = EyeDistanceNormalizer.Apply(GetManualScale());
             if (Settings.FOVFixBehaviour.Value && CameraManager.Instance.Fov > 35)
             {
                 // float minMagnificationScale = PerScopeMeshSurgerySettings.ActiveScopeOverride.WeaponScaleMinMagnification;
@@ -179,7 +180,7 @@ namespace PiPDisabler.Patches
                 PiPDisablerPlugin.DebugLogInfo("The scale postfix didn't change the scale because at 1x and FOVFixBehaviour is on");
                 return;
             }
-            float scale = GetManualScale();
+            float scale = EyeDistanceNormalizer.Apply(GetManualScale());
             __instance.RibcageScaleCurrentTarget = scale;
             __instance.RibcageScaleCurrent = scale;
             LogScale(scale);

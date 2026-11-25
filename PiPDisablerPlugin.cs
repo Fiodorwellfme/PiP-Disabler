@@ -42,6 +42,7 @@ namespace PiPDisabler
             Settings.Init(Config);
             Patches.Patcher.Enable();
             ScopeLifecycle.Init();
+            EyeDistanceNormalizer.Init();
             FreelookTracker.Init();
             // Settings.ModEnabled.SettingChanged += OnModEnabledChanged;
             Settings.ScopeBlacklistNames.SettingChanged += OnScopeListSettingsChanged;
