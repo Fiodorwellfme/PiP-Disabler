@@ -11,7 +11,8 @@ namespace PiPDisabler
 
         public static Mesh MakeReadableMeshCopy(Mesh nonReadableMesh)
         {
-            if (nonReadableMesh == null) return null;
+            if (nonReadableMesh == null || nonReadableMesh.vertexCount == 0 || nonReadableMesh.subMeshCount == 0)
+                return null;
 
             Mesh meshCopy = new Mesh();
             meshCopy.indexFormat = nonReadableMesh.indexFormat;

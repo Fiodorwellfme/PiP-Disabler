@@ -138,7 +138,8 @@ namespace PiPDisabler.Patches
             AccessTools.Method(typeof(EFT.StringExtensions), "SetMonospaceText");
 
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(TacticalRangeFinderController), "method_0");
+            => AccessTools.DeclaredMethod(typeof(TacticalRangeFinderController),
+                nameof(TacticalRangeFinderController.MeasureDistance), System.Type.EmptyTypes);
 
         [PatchPrefix]
         private static bool Prefix(TacticalRangeFinderController __instance)
@@ -317,14 +318,15 @@ namespace PiPDisabler.Patches
     }
 
     /// <summary>
-    /// Postfix on Player.OnSetInHands(GEventArgs9).
+    /// Postfix on Player's explicit ISetInHandsHandler implementation.
     /// Slot/weapon switches flow through this path; re-sync scope state so ADS
     /// enter logic does not depend on manual slot toggling.
     /// </summary>
     internal sealed class PlayerOnSetInHandsPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(Player), "OnSetInHands");
+            => AccessTools.DeclaredMethod(typeof(Player), "EFT.ISetInHandsHandler.OnSetInHands",
+                new[] { typeof(SetInHandsEventArgs) });
 
         [PatchPostfix]
         private static void Postfix(Player __instance, EFT.InventoryLogic.SetInHandsEventArgs eventArgs)

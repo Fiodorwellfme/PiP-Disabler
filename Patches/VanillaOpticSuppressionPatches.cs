@@ -105,7 +105,8 @@ namespace PiPDisabler.Patches
     internal sealed class OpticCameraManagerEnableOptic_NoPipPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()
-            => AccessTools.Method(typeof(EFT.CameraControl.OpticCameraManager), "method_2");
+            => AccessTools.DeclaredMethod(typeof(OpticCameraManager),
+                nameof(OpticCameraManager.OnOpticSightEnabled), new[] { typeof(OpticSight) });
 
         [PatchPrefix]
         private static bool Prefix(EFT.CameraControl.OpticCameraManager __instance, OpticSight opticSight)
