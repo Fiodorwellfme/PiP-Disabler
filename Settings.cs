@@ -11,6 +11,13 @@ namespace PiPDisabler
 
         // --- 0. Global ---
         public static ConfigEntry<bool> ModEnabled;
+        public static ConfigEntry<bool> AutoCutShape;
+        public static ConfigEntry<KeyCode> RecutHoleKey;
+        public static ConfigEntry<bool> RecutEveryAim;
+        public static ConfigEntry<float> HoleOffAxisMargin;
+        public static ConfigEntry<bool> PrecutHeldScope;
+        public static ConfigEntry<bool> PixelHoleMode;
+        public static ConfigEntry<bool> PixelHoleHidesHands;
         public static ConfigEntry<KeyCode> ModToggleKey;
 
         // --- General ---
@@ -203,6 +210,41 @@ namespace PiPDisabler
                     new ConfigurationManagerAttributes { IsAdvanced = true, ShowRangeAsPercent = false })));
 
             // --- Zoom ---
+            ConfigEntries.Add(AutoCutShape = config.Bind("General", "Automatic Cut Shape", true,
+                new ConfigDescription(
+                    "Cut the hole automatically: removes exactly what the camera sees through the eyepiece lens, keeps what is seen around it. Off = use the hand-set hole values (plane settings) for every scope.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(RecutHoleKey = config.Bind("General", "Re-cut Hole Key", KeyCode.None,
+                new ConfigDescription(
+                    "While aiming: redo the automatic hole for the current view now (if something looks cut wrong).",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(RecutEveryAim = config.Bind("General", "Re-cut Hole Every Aim", true,
+                new ConfigDescription(
+                    "Does what the re-cut key does on every aim: once the view settles (~0.6 s), the hole is cut again in the background for the current view, so a cut that came out wrong fixes itself. Once per zoom level per aim.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(PixelHoleMode = config.Bind("General", "Pixel Hole", true,
+                new ConfigDescription(
+                    "Instead of cutting the scope body's meshes, hide it per pixel inside the lens circle on screen. Nothing is cut, so zooming, restarting and recoil never need a re-cut and the hole edge is the lens circle itself. If the scope body vanishes, the sky through the lens looks wrong, or the scope edge smears when turning (TAA/DLSS/FSR), turn it off: the mesh cut is used instead.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(PixelHoleHidesHands = config.Bind("General", "Pixel Hole Hides Hands", true,
+                new ConfigDescription(
+                    "With the pixel hole: your own arms, gloves and watch are hidden inside the lens circle too, so a hand or sleeve never covers the view through the scope. Outside the lens they are drawn as usual. Turning it on takes effect on the next aim.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(HoleOffAxisMargin = config.Bind("General", "Hole Off-axis Margin (mm)", 4f,
+                new ConfigDescription(
+                    "When firing or moving, the weapon shifts a few mm off the eyepiece axis and the scope's inside can show at the lens edge. The automatic hole is cut this much wider for that, never past the eyepiece housing's outline. 0 = off.",
+                    new AcceptableValueRange<float>(0f, 10f),
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
+            ConfigEntries.Add(PrecutHeldScope = config.Bind("General", "Pre-cut Held Scope", true,
+                new ConfigDescription(
+                    "Cut the hole for the scope on the weapon in your hands in the background before you aim, so the first aim has no hitch.",
+                    null,
+                    new ConfigurationManagerAttributes { IsAdvanced = false })));
             ConfigEntries.Add(BaselineFOV = config.Bind("General", "Baseline FOV", 35f,
                 new ConfigDescription(
                     "What to use when calculating magnified FOV (if set to 50 then 2x will be 25°).\n" +

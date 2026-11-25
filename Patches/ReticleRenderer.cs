@@ -557,6 +557,38 @@ namespace PiPDisabler
             if (_cmdBuffer == null || !_settled) return;
             if (GetActiveReticleMesh() == null || GetActiveReticleMaterial() == null) return;
 
+            // Already aligned earlier this frame (AlignMainCameraEarly); nothing moves the transform
+            // between then and now, so aligning again would only re-run the fire/reload blend.
+            if (_alignedFrame != Time.frameCount)
+                AlignCameraToScope(cam);
+            _alignedFrame = -1;
+
+            RebuildMatrix(cam);
+            RebuildCommandBuffer(cam);
+        }
+
+        // Frame in which the main camera was already scope-aligned (AlignMainCameraEarly).
+        private static int _alignedFrame = -1;
+
+        /// <summary>
+        /// Align the main camera now, before other pre-cull work that reads its rotation. The pixel
+        /// hole records its lens circle in MeshSurgeryManager's pre-cull hook, which is registered once
+        /// and so runs before this class's hook (re-registered on every aim): without this the hole was
+        /// placed for EFT's camera, then the view turned to the scope, and the hole sat off the lens by
+        /// that angle. OnPreCullCallback then skips the already-done alignment.
+        /// </summary>
+        internal static void AlignMainCameraEarly(Camera cam)
+        {
+            if (cam == null || cam != _attachedCamera) return;
+            if (_cmdBuffer == null || !_settled) return;
+            if (GetActiveReticleMesh() == null || GetActiveReticleMaterial() == null) return;
+            if (_alignedFrame == Time.frameCount) return;
+            AlignCameraToScope(cam);
+            _alignedFrame = Time.frameCount;
+        }
+
+        private static void AlignCameraToScope(Camera cam)
+        {
             // ── Camera alignment ─────────────────────────────────────────
             // Override the camera's rotation to look exactly where the scope
             // points.  This happens in onPreCull — after all game systems
@@ -643,9 +675,6 @@ namespace PiPDisabler
                     }
                 }
             }
-
-            RebuildMatrix(cam);
-            RebuildCommandBuffer(cam);
         }
 
         private static bool IsFireReloadStateActive()

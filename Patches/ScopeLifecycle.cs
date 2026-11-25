@@ -374,6 +374,8 @@ namespace PiPDisabler
                 }
             }
 
+            TickAutoCutZoom();
+
             if (_activeOptic != null)
             {
                 float mag = FovController.GetVisualMagnification();
@@ -403,6 +405,131 @@ namespace PiPDisabler
         public static void SyncState()
         {
             CheckAndUpdate("SyncState");
+        }
+
+        // ── Automatic hole follows the camera distance (re-fit once the view has settled) ──
+        // The weapon scale changes with zoom, which moves the eyepiece relative to the camera; the
+        // hole is re-fitted when that distance has changed by ≥20% and stayed put for 0.6 s (not
+        // during ADS motion, recoil or zoom scrolling). Same distance → same hole every time.
+        private const float AutoCutSettleTime = 0.6f;
+        private static int _autoCutBucketSeen = int.MinValue;
+        private static float _autoCutBucketSince;
+
+        private static void TickAutoCutZoom()
+        {
+            var os = _activeOptic;
+            if (os == null || _meshSurgerySuppressedByReload || PixelHole.Active || !PerScopeMeshSurgerySettings.IsAutoCut())
+                return;
+
+            MeshSurgeryManager.ConsumeRecutFinished();
+
+            // The view is "settled" once camera distance and weapon stretch hold still for 0.6 s.
+            int bucket = MeshSurgeryManager.GetAutoApexBucket();
+            int rib = MeshSurgeryManager.RibBucket(MeshSurgeryManager.RenderRibcage());
+            float now = Time.realtimeSinceStartup;
+            // A cut stored for this zoom (stretch) goes on screen at once — no waiting, no re-cut.
+            MeshSurgeryManager.TrySwitchVariant(rib);
+            if (bucket != _autoCutBucketSeen || rib != _autoCutRibSeen)
+            {
+                _autoCutBucketSeen = bucket;
+                _autoCutRibSeen = rib;
+                _autoCutBucketSince = now;
+                _settleLogged = false;
+                return;
+            }
+            if (now - _autoCutBucketSince < AutoCutSettleTime)
+                return;
+            // Remember the settled distance so the next aim cuts right away (cache hit, no recut).
+            MeshSurgeryManager.RememberSettledBucket(bucket, rib);
+
+            if (MeshSurgeryManager.RecutRunning) return;
+            bool stale = MeshSurgeryManager.AutoCutIsStale(bucket, rib, out string why);
+            // "Re-cut every aim": what the Home key does, once per zoom level per aim.
+            if (!stale && Settings.RecutEveryAim.Value && !_freshCutRibs.Contains(rib))
+            {
+                stale = true;
+                why = "re-cut every aim";
+            }
+            if (!_settleLogged)
+            {
+                // Always-on, once per settled view: lets a user log show whether zooming re-fits the hole.
+                _settleLogged = true;
+                PiPDisablerPlugin.LogSource.LogInfo(
+                    $"[AutoCut] View settled: weapon stretch {MeshSurgeryManager.RenderRibcage():F2}, camera {MeshSurgeryManager.BucketToMm(bucket):F0}mm; " +
+                    $"{MeshSurgeryManager.DescribeActiveCut()} → {(stale ? "re-cut (" + why + ")" : "fits")}");
+            }
+            if (!stale)
+            {
+                // Settled with a fitting cut: now cut the other used zoom levels ahead (aimed pose).
+                if (!_cutAheadQueued)
+                {
+                    _cutAheadQueued = true;
+                    int n = MeshSurgeryManager.QueueCutAhead(os, rib);
+                    if (n > 0) PiPDisablerPlugin.DebugLogInfo($"[ScopeLifecycle] Queued {n} cut(s) ahead for other zoom levels");
+                }
+                return;
+            }
+            if (now - _autoCutLastRecut < 0.3f) return;
+            _autoCutLastRecut = now;
+            MeshSurgeryManager.StartAsyncRecut(os, bucket, why);
+            _freshCutRibs.Add(rib); // tried once for this zoom level; stale checks still retry
+        }
+
+        // Zoom levels (weapon stretch buckets) cut fresh during the current aim.
+        private static readonly HashSet<int> _freshCutRibs = new HashSet<int>();
+
+        /// <summary>Hotkey: redo the automatic hole for the current view now.</summary>
+        public static void RecutHoleNow()
+        {
+            if (!_isScoped || _modBypassedForCurrentScope || _activeOptic == null || !PerScopeMeshSurgerySettings.IsAutoCut())
+            {
+                PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Re-cut key ignored: not aiming a scope with the automatic hole");
+                return;
+            }
+            if (PixelHole.Active)
+            {
+                PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Re-cut key ignored: pixel hole mode, nothing to re-cut");
+                return;
+            }
+            bool ok = MeshSurgeryManager.StartAsyncRecut(_activeOptic, MeshSurgeryManager.GetAutoApexBucket(), "hotkey");
+            if (ok) _freshCutRibs.Add(MeshSurgeryManager.RibBucket(MeshSurgeryManager.RenderRibcage()));
+            PiPDisablerPlugin.LogSource.LogInfo(ok ? "[ScopeLifecycle] Re-cut key: redoing the hole" : "[ScopeLifecycle] Re-cut key: could not redo the hole");
+        }
+
+        private static float _nextPrecutCheck;
+
+        /// <summary>Not aiming: cut the held weapon's scope in the background (no hitch on the first aim).</summary>
+        public static void TickPrecut()
+        {
+            MeshSurgeryManager.CheckRaidChanged();
+            if (_isScoped || !Settings.ModEnabled.Value || !Settings.PrecutHeldScope.Value) return;
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextPrecutCheck) return;
+            _nextPrecutCheck = now + 1f;
+            try
+            {
+                var os = TryGetCurrentScopeOpticFromPwa();
+                if (os == null || ShouldBypassForCurrentOptic(os)) return;
+                PerScopeMeshSurgerySettings.SetActiveScopeQuiet(ResolveWhitelistScopeKey(os));
+                try { MeshSurgeryManager.PrecutForOptic(os); }
+                finally { PerScopeMeshSurgerySettings.ClearActiveScope(); }
+            }
+            catch (Exception ex) { PiPDisablerPlugin.DebugLogInfo($"[ScopeLifecycle] pre-cut skipped: {ex.Message}"); }
+        }
+
+        private static int _autoCutRibSeen = int.MinValue;
+        private static float _autoCutLastRecut;
+
+        private static bool _settleLogged, _cutAheadQueued;
+
+        private static void ResetAutoCutFit()
+        {
+            _autoCutBucketSeen = int.MinValue;
+            _autoCutRibSeen = int.MinValue;
+            MeshSurgeryManager.CancelAsyncRecut("scope exit");
+            _freshCutRibs.Clear();
+            _settleLogged = false;
+            _cutAheadQueued = false;
         }
 
         public static string GetActiveScopeWhitelistKey()
@@ -988,6 +1115,7 @@ namespace PiPDisabler
             _isScoped = false;
             _activeOptic = null;
             PerScopeMeshSurgerySettings.ClearActiveScope();
+            ResetAutoCutFit();
 
             // If this scope was bypassed, skip mod cleanup paths.
             if (_modBypassedForCurrentScope)
