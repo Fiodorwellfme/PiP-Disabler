@@ -1357,6 +1357,38 @@ namespace PiPDisabler
             _reticleSuppressedByReload = false;
         }
 
+        // ── Per-scope cut values changed in F12: re-cut once, after the window closes ──
+        // (re-cutting on every slider step allocates new meshes each time and blows up memory.)
+        private static bool _recutPending;
+
+        public static void RequestRecut()
+        {
+            _recutPending = true;
+            SettingsApplyGate.NoteChange();
+        }
+
+        /// <summary>Called every frame from the plugin Update.</summary>
+        public static void TickPendingSettingWork()
+        {
+            if (!_recutPending || !SettingsApplyGate.CanApply) return;
+            _recutPending = false;
+
+            var os = _activeOptic;
+            if (!_isScoped || _modBypassedForCurrentScope || os == null || _meshSurgerySuppressedByReload) return;
+
+            try
+            {
+                MeshSurgeryManager.RestoreForScope(os.transform);
+                MeshSurgeryManager.ApplyForOptic(os);
+                LensTransparency.HideAllLensSurfaces(os);
+                PiPDisablerPlugin.DebugLogInfo("[ScopeLifecycle] Scope body re-cut with the new per-scope settings.");
+            }
+            catch (Exception ex)
+            {
+                PiPDisablerPlugin.DebugLogInfo($"[ScopeLifecycle] Re-cut failed: {ex.Message}");
+            }
+        }
+
         private static OpticSight TryGetCurrentScopeOpticFromPwa()
         {
             try

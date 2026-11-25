@@ -631,6 +631,7 @@ namespace PiPDisabler
                     null,
                     new ConfigurationManagerAttributes { IsAdvanced = true })));
             RegisterVisualEffectLiveUpdates();
+            RegisterPerScopeLiveEdits();
             RecalcOrder();
         }
 
@@ -661,8 +662,44 @@ namespace PiPDisabler
 
         private static void OnCustomVisualEffectSettingChanged(object sender, System.EventArgs args)
         {
-            PerScopeMeshSurgerySettings.SaveActiveScopeVisualSettings();
+            // Saving is done by the live per-scope edit handler (OnPerScopeSettingChanged).
             ScopeEffectsRenderer.RefreshSettings();
+        }
+
+        // Per-scope values apply live to the scope being aimed (or the last one aimed) and are
+        // auto-saved; values that shape the cut re-cut the scope body once the F12 window closes.
+        private static readonly HashSet<ConfigEntryBase> _perScopeLive = new HashSet<ConfigEntryBase>();
+        private static readonly HashSet<ConfigEntryBase> _perScopeRecut = new HashSet<ConfigEntryBase>();
+
+        private static void RegisterPerScopeLiveEdits()
+        {
+            _perScopeLive.Clear();
+            _perScopeRecut.Clear();
+            foreach (var entry in ConfigEntries)
+            {
+                if (entry == null || entry.Definition.Section != "Per scope settings") continue;
+                if (entry.SettingType == typeof(KeyCode)) continue;
+                _perScopeLive.Add(entry);
+            }
+            foreach (var entry in new ConfigEntryBase[]
+                     {
+                         CustomPlaneOffsetMeters, CustomPlane1Radius, CustomPlane1OffsetMeters,
+                         CustomPlane2Position, CustomPlane2Radius, CustomPlane3Position, CustomPlane3Radius,
+                         CustomPlane4Position, CustomPlane4Radius, CustomCutStartOffset, CustomCutLength,
+                         CustomNearPreserveDepth, CustomExpandSearchToWeaponRoot
+                     })
+                _perScopeRecut.Add(entry);
+
+            ModEnabled.ConfigFile.SettingChanged -= OnPerScopeSettingChanged;
+            ModEnabled.ConfigFile.SettingChanged += OnPerScopeSettingChanged;
+        }
+
+        private static void OnPerScopeSettingChanged(object sender, SettingChangedEventArgs args)
+        {
+            var changed = args?.ChangedSetting;
+            if (changed == null || !_perScopeLive.Contains(changed)) return;
+            if (PerScopeMeshSurgerySettings.ApplyLiveEditFromCustom() && _perScopeRecut.Contains(changed))
+                ScopeLifecycle.RequestRecut();
         }
 
         private static void OnVisualEffectSettingChanged(object sender, System.EventArgs args)
